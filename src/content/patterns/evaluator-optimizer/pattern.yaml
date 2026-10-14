@@ -55,15 +55,46 @@ prompts:
       Only pass the draft if every criterion is fully met.
 diagram:
   nodes:
-    - { id: input, kind: io, label: Task }
-    - { id: generator, kind: llm, label: Generator }
-    - { id: evaluator, kind: evaluator, label: Evaluator }
-    - { id: output, kind: io, label: Output }
+    - id: input
+      kind: io
+      label: Task
+      description: "The request that starts the loop, such as 'Write a board memo on the Q3 churn spike'."
+    - id: generator
+      kind: llm
+      label: Generator
+      description: "Writes the first draft from the task, then rewrites it using the evaluator's critique each round."
+    - id: evaluator
+      kind: evaluator
+      label: Evaluator
+      description: "Judges each draft against the criteria and returns JSON: passed, plus a critique when it fails."
+    - id: output
+      kind: io
+      label: Output
+      description: "The accepted draft, returned only once the evaluator says it meets every criterion."
   edges:
-    - { id: task, from: input, to: generator }
-    - { id: draft, from: generator, to: evaluator }
-    - { id: revise, from: evaluator, to: generator, style: loop, label: revise }
-    - { id: accept, from: evaluator, to: output, label: pass }
+    - id: task
+      from: input
+      to: generator
+      description: "The task goes to the generator; the criteria are kept for the evaluator."
+      example: "Task: Write a one-page board memo on Q3 churn. Criteria: cite a source for every number; formal tone."
+    - id: draft
+      from: generator
+      to: evaluator
+      description: "Each draft is sent to the evaluator, which judges it against the criteria."
+      example: "1. Churn hit 4.1% in Q3 (Finance dashboard). 2. Folks mostly bailed over the new pricing. 3. We expect recovery by Q1 (CS forecast)."
+    - id: revise
+      from: evaluator
+      to: generator
+      style: loop
+      label: revise
+      description: "The evaluator's critique goes back so the generator can fix exactly what failed."
+      example: '{"passed": false, "critique": "Claim 2 has no citation; tone too casual for a board memo."}'
+    - id: accept
+      from: evaluator
+      to: output
+      label: pass
+      description: "When passed is true, the draft leaves the loop unchanged."
+      example: '{"passed": true, "critique": ""}'
   scenarios:
     - id: fails-twice
       label: Fails twice, then passes
