@@ -6,7 +6,7 @@ Ask a model to sort 32 numbers that include duplicates and it will usually hand 
 
 Graph of Thoughts, from Besta et al., treats each intermediate result as a node in a graph and lets you wire those nodes together freely. You design the graph in advance, as a list of operations: generate a thought, score it, keep the best, merge several thoughts into one, refine a thought in place. The model fills in the thoughts; your code decides how they connect.
 
-In the sorting example, the <NodeRef id="problem">problem</NodeRef> goes to a <NodeRef id="split">split</NodeRef> step that cuts the list into four chunks of 8. Each chunk becomes its own thought, and <NodeRef id="sort1">Sort 1</NodeRef> to <NodeRef id="sort4">Sort 4</NodeRef> run in parallel. Each result is scored by counting errors. Chunk 2 dropped a number, so <NodeRef id="sort2">Sort 2</NodeRef> is generated again, and only that thought; the other three are kept.
+In the sorting example, the <NodeRef id="problem">problem</NodeRef> goes to a <NodeRef id="split">split</NodeRef> step, plain code, that cuts the list into four chunks of 8. Each chunk becomes its own thought, and <NodeRef id="sort1">Sort 1</NodeRef> to <NodeRef id="sort4">Sort 4</NodeRef> run in parallel. Each result is scored by the same code check the scorer uses, counting errors. Chunk 2 dropped a number, so <NodeRef id="sort2">Sort 2</NodeRef> is generated again, and only that thought; the other three are kept.
 
 Then the graph converges. <NodeRef id="merge1">Merge A</NodeRef> takes two sorted chunks and asks the model to combine them into one sorted list of 16; <NodeRef id="merge2">Merge B</NodeRef> does the same for the other two. The <NodeRef id="final">final merge</NodeRef> combines the two lists of 16. This many-to-one step is what a tree cannot draw.
 
@@ -24,7 +24,7 @@ The scores are what make it more than a split-and-join. Every thought can be che
 
 - Branching and pruning are enough, with nothing to merge. Use tree of thoughts.
 - The parts are independent and need no scoring or retry. Sectioning is cheaper and simpler.
-- You cannot justify many calls. Four sorts, a retry, three merges and a refine is already nine model calls for one list.
+- You cannot justify many calls. Four sorts, a retry, three merges and a refine is already at least nine model calls for one list.
 
 ## Trade-offs
 
@@ -32,7 +32,7 @@ Graph of Thoughts trades call count for accuracy on long, exact outputs. Each mo
 
 ## Failure modes
 
-- **Lossy merges:** the merge prompt quietly drops or duplicates items. Score every merge, not only the final result, and keep the best of several merges.
+- **Lossy merges:** the merge prompt quietly drops or duplicates items. Score every merge, not only the final result, and merge again when a merge scores badly.
 - **No real scorer:** if a thought cannot be checked, the retries and the keep-best steps are guesses. Use a code check wherever one exists.
 - **Refine drift:** a refine pass fixes the reported error and breaks something else. Keep the refined thought only if it scores better.
 - **Graph sprawl:** a graph with many levels multiplies calls fast. Cap regenerations and refine passes, and count calls per run.

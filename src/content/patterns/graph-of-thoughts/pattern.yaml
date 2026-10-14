@@ -18,20 +18,20 @@ origin:
   year: 2023
   url: https://arxiv.org/abs/2308.09687
   kind: introduced
-  note: "Published at AAAI 2024. The paper's running example is sorting 32 numbers by splitting them into sorted chunks and merging them back."
+  note: "Published at AAAI 2024. One of the paper's tasks is sorting numbers with duplicates by sorting sublists and merging them back; the diagram here adapts it to four chunks of 8."
 build:
   goal: "Solve a task that splits into sub-results by running a fixed graph of model operations (generate, score, merge, refine) over partial thoughts, and return the best final thought."
   steps:
     - "Write the graph of operations in code before any model call: which thoughts are generated, how each is scored, which ones are merged together, and where refinement happens. The model fills in thoughts; it never changes the graph."
     - "Split the input into parts. Do it in code when the split is mechanical, as for a list of numbers or a set of documents."
     - "For each part, call the model with the {{prompt:solve}} to produce a thought, and score it with a check (in code where possible, such as counting sorting errors). If the score is below the bar, generate it again and keep the best attempt."
-    - "Merge thoughts as the graph says, two at a time, by calling the model with the {{prompt:merge}}. Score each merged thought the same way and keep the best of k merges."
+    - "Merge thoughts as the graph says, two at a time, by calling the model with the {{prompt:merge}}. Score each merged thought the same way; if it has errors, merge again and keep the best (default 1 extra attempt)."
     - "Score the final merged thought. While it still has errors, call the model with the {{prompt:refine}}, passing the thought and the errors found, and keep the refined version only if it scores better."
     - "Return the best final thought with its score."
   stop: "Stop when the final thought scores perfectly, or after 2 refine passes. If the budget runs out, return the best-scoring final thought with its remaining errors and a status saying it is not clean."
   requirements:
     - "Keep the graph of operations as data (a list of operations and their inputs), so it can be logged and changed without touching the model calls."
-    - "Cap regenerations per thought (default 2), merges kept per pair (default 1 best of 3) and refine passes (default 2); log the total number of model calls."
+    - "Cap regenerations per thought (default 2), extra merge attempts per pair (default 1) and refine passes (default 2); log the total number of model calls."
     - "Prefer a scoring function in code over a model judgement whenever the task allows one; fall back to a model score only for parts that code cannot check."
     - "Run independent operations, such as the per-part thoughts and the merges at one level, in parallel."
     - "Add a test with a stub LLM that drops one number from the second chunk on its first try and is correct afterwards; assert the solve prompt was called 5 times for 4 chunks and the output equals the input sorted."
@@ -81,27 +81,28 @@ diagram:
     - id: problem
       kind: io
       label: Problem
-      description: "The task, from the paper's own example: sort a list of 32 numbers that contains duplicates."
+      description: "The task, adapted from the paper's sorting task: sort a list of 32 numbers that contains duplicates."
     - id: split
-      kind: llm
+      kind: tool
       label: Split
-      description: "Breaks the list into four chunks of 8 numbers, each small enough for the model to sort reliably."
+      model: false
+      description: "Plain code: breaks the list into four chunks of 8 numbers, each small enough for the model to sort reliably."
     - id: sort1
       kind: llm
       label: Sort 1
-      description: "One thought: chunk 1 sorted. It is scored by counting errors before anything is merged."
+      description: "One thought: chunk 1 sorted. The same code check as the scorer counts its errors before anything is merged."
     - id: sort2
       kind: llm
       label: Sort 2
-      description: "One thought: chunk 2 sorted. Its first attempt drops a number, scores badly and is generated again."
+      description: "One thought: chunk 2 sorted. The code check finds its first attempt dropped a number, so it is generated again and the best kept."
     - id: sort3
       kind: llm
       label: Sort 3
-      description: "One thought: chunk 3 sorted, scored like the others."
+      description: "One thought: chunk 3 sorted, and checked by the same error count."
     - id: sort4
       kind: llm
       label: Sort 4
-      description: "One thought: chunk 4 sorted, scored like the others."
+      description: "One thought: chunk 4 sorted, and checked by the same error count."
     - id: merge1
       kind: aggregator
       label: Merge A
@@ -118,7 +119,7 @@ diagram:
       kind: evaluator
       label: Scorer
       model: false
-      description: "Plain code: counts how many numbers are out of order or missing compared with the input. Zero errors passes."
+      description: "Plain code: counts numbers out of order or missing against the input. The same check scores every chunk and merge; zero errors passes."
     - id: out
       kind: io
       label: Sorted
@@ -207,7 +208,7 @@ diagram:
           duration: 1800
           events:
             - { type: send, edge: in, token: { kind: prompt, label: 32 numbers }, at: [0, 0.4] }
-            - { type: activate, node: split, status: thinking, at: [0.4, 1] }
+            - { type: activate, node: split, status: calling, at: [0.4, 1] }
         - id: fan-out
           caption: Each chunk becomes its own thought, and all four are sorted at once.
           duration: 2600
@@ -221,7 +222,7 @@ diagram:
             - { type: activate, node: sort3, status: thinking, at: [0.4, 1] }
             - { type: activate, node: sort4, status: thinking, at: [0.4, 1] }
         - id: regenerate
-          caption: Each sorted chunk is scored. Chunk 2 dropped a number, so that one thought is generated again.
+          caption: The same code check scores each sorted chunk. Chunk 2 dropped a number, so that one thought is generated again and the better attempt kept.
           duration: 2600
           events:
             - { type: activate, node: sort2, status: error, at: [0, 0.45] }
