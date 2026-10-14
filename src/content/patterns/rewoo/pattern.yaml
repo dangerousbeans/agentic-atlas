@@ -61,21 +61,74 @@ prompts:
       Give the final answer with one sentence of justification.
 diagram:
   nodes:
-    - { id: user, kind: io, label: Question }
-    - { id: planner, kind: llm, label: Planner }
-    - { id: search, kind: tool, label: Search }
-    - { id: calculator, kind: tool, label: Calculator }
-    - { id: evidence, kind: memory, label: Evidence }
-    - { id: solver, kind: llm, label: Solver }
-    - { id: out, kind: io, label: Answer }
+    - id: user
+      kind: io
+      label: Question
+      description: "The question to answer, such as 'What is Iceland's population density?'."
+    - id: planner
+      kind: llm
+      label: Planner
+      description: "Called once: writes every tool call upfront, using #E placeholders for results it cannot see yet."
+    - id: search
+      kind: tool
+      label: Search
+      description: "Runs the plan's lookups, such as Iceland's population as #E1 and its area as #E2."
+    - id: calculator
+      kind: tool
+      label: Calculator
+      description: "Runs the arithmetic step, dividing #E1 by #E2 once those values have been substituted in."
+    - id: evidence
+      kind: memory
+      label: Evidence
+      description: "Stores each tool result under its variable (#E1, #E2, #E3) for the solver to read."
+    - id: solver
+      kind: llm
+      label: Solver
+      description: "Called once: reads the question, plan and all evidence together and writes the final answer."
+    - id: out
+      kind: io
+      label: Answer
+      description: "The solver's final answer with a one-sentence justification."
   edges:
-    - { id: ask, from: user, to: planner }
-    - { id: plan, from: planner, to: search, label: "#E1 #E2 #E3" }
-    - { id: hand-off, from: search, to: calculator, label: "#E1, #E2" }
-    - { id: log-search, from: search, to: evidence, style: dashed }
-    - { id: log-calc, from: calculator, to: evidence, style: dashed }
-    - { id: gather, from: evidence, to: solver }
-    - { id: answer, from: solver, to: out }
+    - id: ask
+      from: user
+      to: planner
+      description: "The question goes to the planner, which is only ever called this one time."
+      example: "Question: What is Iceland's population density?"
+    - id: plan
+      from: planner
+      to: search
+      label: "#E1 #E2 #E3"
+      description: "The full plan, a list of tool calls with placeholders, which the workers run with no model calls between."
+      example: "Plan: Get population. #E1 = Search[Iceland population] Plan: Get area. #E2 = Search[Iceland area km2] Plan: Divide. #E3 = Calculator[#E1 / #E2]"
+    - id: hand-off
+      from: search
+      to: calculator
+      label: "#E1, #E2"
+      description: "Earlier results are substituted for #E1 and #E2 in the calculator's input, with no model call."
+      example: "Calculator[#E1 / #E2] becomes Calculator[376000 / 103000]"
+    - id: log-search
+      from: search
+      to: evidence
+      style: dashed
+      description: "Each search result is saved under its placeholder variable."
+      example: "#E1 = 376,000 people; #E2 = 103,000 km2"
+    - id: log-calc
+      from: calculator
+      to: evidence
+      style: dashed
+      description: "The calculator's result is saved as the last piece of evidence."
+      example: "#E3 = 3.65"
+    - id: gather
+      from: evidence
+      to: solver
+      description: "The plan and every piece of evidence are given to the solver in one prompt."
+      example: "Plan and evidence: #E1 = 376,000; #E2 = 103,000 km2; #E3 = 3.65"
+    - id: answer
+      from: solver
+      to: out
+      description: "The solver's single pass produces the answer; the planner is never revisited."
+      example: "About 3.7 people per km2, from 376,000 people over 103,000 km2."
   scenarios:
     - id: population-density
       label: '"What is Iceland''s population density?"'

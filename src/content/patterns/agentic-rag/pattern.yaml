@@ -46,23 +46,23 @@ prompts:
       Answer as soon as the context is enough. Never invent facts that are not in the context.
 diagram:
   nodes:
-    - { id: user, kind: io, label: Question }
-    - { id: agent, kind: llm, label: Agent }
-    - { id: router, kind: router, label: Source router }
-    - { id: vectordb, kind: memory, label: Vector DB }
-    - { id: web, kind: tool, label: Web search }
-    - { id: sql, kind: tool, label: SQL }
-    - { id: out, kind: io, label: Answer }
+    - { id: user, kind: io, label: Question, description: "The user's question, e.g. 'What is our current parental leave policy?', which starts the retrieval loop." }
+    - { id: agent, kind: llm, label: Agent, description: "Each hop it decides to search or answer, picks a source and rewrites the query; answers once context suffices." }
+    - { id: router, kind: router, label: Source router, model: false, description: "Plain code: looks up step.source in the SOURCES table and forwards the rewritten query to that backend." }
+    - { id: vectordb, kind: memory, label: Vector DB, description: "Internal document index. Returns the top matching chunks for the agent's rewritten query." }
+    - { id: web, kind: tool, label: Web search, description: "Live web search, used when internal chunks are stale or missing the answer. Returns snippets." }
+    - { id: sql, kind: tool, label: SQL, description: "Structured database the agent can query for exact figures, via run_query on a generated query." }
+    - { id: out, kind: io, label: Answer, description: "The final cited answer, written once the agent judges its context sufficient." }
   edges:
-    - { id: ask, from: user, to: agent }
-    - { id: plan, from: agent, to: router }
-    - { id: to-vec, from: router, to: vectordb }
-    - { id: to-web, from: router, to: web }
-    - { id: to-sql, from: router, to: sql }
-    - { id: vec-back, from: vectordb, to: agent, style: dashed }
-    - { id: web-back, from: web, to: agent, style: dashed }
-    - { id: sql-back, from: sql, to: agent, style: dashed }
-    - { id: answer, from: agent, to: out }
+    - { id: ask, from: user, to: agent, description: "The user's question enters the agent, along with any context gathered so far (empty on hop one).", example: "Question: What is our current parental leave policy for new hires?" }
+    - { id: plan, from: agent, to: router, description: "The agent's chosen step: which source to search and the query rewritten for that source.", example: "{\"action\": \"search\", \"source\": \"vectordb\", \"query\": \"parental leave policy 2025 new hires\"}" }
+    - { id: to-vec, from: router, to: vectordb, description: "The router forwards the standalone query to the vector database when the agent picked vectordb.", example: "search_vectors(\"parental leave policy 2025 new hires\")" }
+    - { id: to-web, from: router, to: web, description: "The router forwards the query to web search when the agent picked web.", example: "search_web(\"company parental leave policy update 2026\")" }
+    - { id: to-sql, from: router, to: sql, description: "The router forwards a query to the SQL source when the agent picked sql.", example: "run_query(\"SELECT leave_weeks FROM policies WHERE type = 'parental'\")" }
+    - { id: vec-back, from: vectordb, to: agent, style: dashed, description: "Retrieved chunks are appended to the agent's context for the next hop.", example: "3 chunks: \"HR Handbook v3 (2023): 12 weeks paid parental leave...\" (out of date)" }
+    - { id: web-back, from: web, to: agent, style: dashed, description: "Web snippets are appended to the agent's context for the next hop.", example: "Snippet: \"From Jan 2026 the company extends paid parental leave to 16 weeks.\" (hr.example.com/news)" }
+    - { id: sql-back, from: sql, to: agent, style: dashed, description: "Query rows come back as context for the agent's next decision.", example: "rows: [{\"leave_weeks\": 16}]" }
+    - { id: answer, from: agent, to: out, description: "Once context is enough the agent stops searching and sends its cited answer out.", example: "{\"action\": \"answer\", \"answer\": \"New hires get 16 weeks of paid parental leave [web: hr.example.com/news].\"}" }
   scenarios:
     - id: two-sources
       label: Internal docs first, then the web

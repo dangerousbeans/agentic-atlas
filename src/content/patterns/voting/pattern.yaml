@@ -48,20 +48,20 @@ prompts:
       <code>{{snippet}}</code>
 diagram:
   nodes:
-    - { id: user, kind: io, label: Code }
-    - { id: llm1, kind: llm, label: Voter 1 }
-    - { id: llm2, kind: llm, label: Voter 2 }
-    - { id: llm3, kind: llm, label: Voter 3 }
-    - { id: aggregator, kind: aggregator, label: Tally }
-    - { id: out, kind: io, label: Verdict }
+    - { id: user, kind: io, label: Code, description: "The code snippet to audit for an exploitable vulnerability." }
+    - { id: llm1, kind: llm, label: Voter 1, description: "First independent voter: audits the snippet, reasons step by step and ends with VERDICT: vulnerable or safe." }
+    - { id: llm2, kind: llm, label: Voter 2, description: "Second independent voter: gets the same snippet and reasons on its own, so its answer can differ." }
+    - { id: llm3, kind: llm, label: Voter 3, description: "Third independent voter: also audits the same snippet separately and may disagree with the others." }
+    - { id: aggregator, kind: aggregator, label: Tally, model: false, description: "Plain code, not a model: counts verdicts and returns the majority, or 'needs human review' without one." }
+    - { id: out, kind: io, label: Verdict, description: "The winning verdict, or 'needs human review' when no answer gets a majority." }
   edges:
-    - { id: v1, from: user, to: llm1 }
-    - { id: v2, from: user, to: llm2 }
-    - { id: v3, from: user, to: llm3 }
-    - { id: a1, from: llm1, to: aggregator }
-    - { id: a2, from: llm2, to: aggregator }
-    - { id: a3, from: llm3, to: aggregator }
-    - { id: done, from: aggregator, to: out }
+    - { id: v1, from: user, to: llm1, description: "The same snippet goes to voter 1 in the audit prompt, sampled at temperature 0.8.", example: "Decide whether the code below contains an exploitable vulnerability. <code>query = 'SELECT * FROM users WHERE id=' + uid</code>" }
+    - { id: v2, from: user, to: llm2, description: "An identical copy goes to voter 2, also at temperature 0.8; voters share nothing.", example: "Decide whether the code below contains an exploitable vulnerability. <code>query = 'SELECT * FROM users WHERE id=' + uid</code>" }
+    - { id: v3, from: user, to: llm3, description: "An identical copy goes to voter 3 at temperature 0.8; only sampling makes its answer differ.", example: "Decide whether the code below contains an exploitable vulnerability. <code>query = 'SELECT * FROM users WHERE id=' + uid</code>" }
+    - { id: a1, from: llm1, to: aggregator, description: "Voter 1's reasoning and final verdict line go to the tally.", example: "The uid value is concatenated into the SQL string with no escaping, so it is injectable. VERDICT: vulnerable" }
+    - { id: a2, from: llm2, to: aggregator, description: "Voter 2's reasoning and final verdict line go to the tally.", example: "String concatenation into a query lets an attacker alter it. VERDICT: vulnerable" }
+    - { id: a3, from: llm3, to: aggregator, description: "Voter 3's reasoning and final verdict line go to the tally; this one dissents.", example: "No exploit shown without knowing how uid is built. VERDICT: safe" }
+    - { id: done, from: aggregator, to: out, description: "The majority verdict leaves the tally as the final answer.", example: "vulnerable" }
   scenarios:
     - id: majority
       label: '"Is this snippet vulnerable?"'

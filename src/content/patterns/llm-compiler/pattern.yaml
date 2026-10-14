@@ -73,25 +73,96 @@ prompts:
       {"replan": true, "reason": "what is missing and why"}
 diagram:
   nodes:
-    - { id: user, kind: io, label: Question }
-    - { id: planner, kind: llm, label: Planner }
-    - { id: scheduler, kind: router, label: Scheduler, model: false }
-    - { id: t1, kind: tool, label: Flights }
-    - { id: t2, kind: tool, label: Weather }
-    - { id: t3, kind: tool, label: Hotel }
-    - { id: joiner, kind: aggregator, label: Joiner }
-    - { id: out, kind: io, label: Answer }
+    - id: user
+      kind: io
+      label: Question
+      description: "The request to fulfil, such as 'Plan a weekend in Lisbon'."
+    - id: planner
+      kind: llm
+      label: Planner
+      description: "Breaks the request into numbered tool calls with $1-style dependencies, and replans if the joiner asks."
+    - id: scheduler
+      kind: router
+      label: Scheduler
+      model: false
+      description: "Plain code, no model: runs every task whose dependencies are resolved, in parallel, filling in $N values."
+    - id: t1
+      kind: tool
+      label: Flights
+      description: "Flight search task for the Lisbon trip; it has no dependencies, so it starts immediately."
+    - id: t2
+      kind: tool
+      label: Weather
+      description: "Weather forecast task for Lisbon; independent of flights, so it runs at the same time."
+    - id: t3
+      kind: tool
+      label: Hotel
+      description: "Hotel booking task that waits for the arrival date from the flights task ($1) before it can run."
+    - id: joiner
+      kind: aggregator
+      label: Joiner
+      description: "Reads all task results and returns either an answer or a replan request saying what is missing."
+    - id: out
+      kind: io
+      label: Answer
+      description: "The finished itinerary built from the flights, weather and hotel results."
   edges:
-    - { id: ask, from: user, to: planner }
-    - { id: dag, from: planner, to: scheduler, label: task DAG }
-    - { id: run1, from: scheduler, to: t1 }
-    - { id: run2, from: scheduler, to: t2 }
-    - { id: dep, from: t1, to: t3, style: dashed, label: "$1 = date" }
-    - { id: res1, from: t1, to: joiner }
-    - { id: res2, from: t2, to: joiner }
-    - { id: res3, from: t3, to: joiner }
-    - { id: finish, from: joiner, to: out, label: answer }
-    - { id: replan, from: joiner, to: planner, style: loop, label: replan }
+    - id: ask
+      from: user
+      to: planner
+      description: "The question goes to the planner, along with any context from earlier failed plans."
+      example: "Question: Plan a weekend in Lisbon."
+    - id: dag
+      from: planner
+      to: scheduler
+      label: task DAG
+      description: "The numbered task list, with dependencies marked as $N, goes to the scheduler."
+      example: "1. flights(to=\"Lisbon\") 2. weather(city=\"Lisbon\") 3. hotel(city=\"Lisbon\", date=$1) end_of_plan"
+    - id: run1
+      from: scheduler
+      to: t1
+      description: "The scheduler starts the flights task right away, since it needs no other result."
+      example: "flights(to=\"Lisbon\")"
+    - id: run2
+      from: scheduler
+      to: t2
+      description: "The scheduler starts the weather task in parallel with flights."
+      example: "weather(city=\"Lisbon\")"
+    - id: dep
+      from: t1
+      to: t3
+      style: dashed
+      label: "$1 = date"
+      description: "Flights' output fills $1 in the hotel task, which releases it to run."
+      example: "$1 = Fri 14 Mar (arrival date)"
+    - id: res1
+      from: t1
+      to: joiner
+      description: "The flights result is collected for the joiner."
+      example: "Arrive Lisbon Fri 14 Mar, 10:40; return Sun 16 Mar."
+    - id: res2
+      from: t2
+      to: joiner
+      description: "The weather result is collected for the joiner."
+      example: "Sat sunny 22C, Sun partly cloudy 19C."
+    - id: res3
+      from: t3
+      to: joiner
+      description: "The hotel result is collected for the joiner."
+      example: "Hotel Alfama booked, 2 nights from Fri 14 Mar."
+    - id: finish
+      from: joiner
+      to: out
+      label: answer
+      description: "If the results answer the question, the joiner returns an answer."
+      example: "{\"answer\": \"Fly in Friday morning, stay at Hotel Alfama, and plan outdoor sights for sunny Saturday.\"}"
+    - id: replan
+      from: joiner
+      to: planner
+      style: loop
+      label: replan
+      description: "If a task failed or something is missing, the joiner sends its reason back so the planner plans only the rest."
+      example: "{\"replan\": true, \"reason\": \"flights returned no data, so the hotel date is unknown\"}"
   scenarios:
     - id: weekend-trip
       label: '"Plan a weekend in Lisbon"'

@@ -48,20 +48,73 @@ prompts:
       {{memory_notes}}
 diagram:
   nodes:
-    - { id: user, kind: io, label: Question }
-    - { id: llm, kind: llm, label: LLM }
-    - { id: retrieval, kind: tool, label: Retrieval }
-    - { id: calculator, kind: tool, label: Calculator }
-    - { id: memory, kind: memory, label: Memory }
-    - { id: out, kind: io, label: Answer }
+    - id: user
+      kind: io
+      label: Question
+      description: "The customer's message, such as 'What would a 30-day refund on my $240 plan be?'."
+    - id: llm
+      kind: llm
+      label: LLM
+      description: "Reads the system prompt, recalled notes and question, then answers or calls a tool."
+    - id: retrieval
+      kind: tool
+      label: Retrieval
+      description: "The search_docs tool: looks up help-center passages such as the refund policy."
+    - id: calculator
+      kind: tool
+      label: Calculator
+      description: "The calculator tool: does exact arithmetic, like prorating a $240 plan, instead of the model guessing."
+    - id: memory
+      kind: memory
+      label: Memory
+      description: "Durable notes about this customer; save_note writes here and recall feeds them into later prompts."
+    - id: out
+      kind: io
+      label: Answer
+      description: "The model's plain-language reply, sent once it needs no more tool calls."
   edges:
-    - { id: ask, from: user, to: llm }
-    - { id: search, from: llm, to: retrieval, label: query }
-    - { id: found, from: retrieval, to: llm, style: dashed, label: passages }
-    - { id: calc, from: llm, to: calculator, label: expression }
-    - { id: calc-back, from: calculator, to: llm, style: dashed, label: number }
-    - { id: remember, from: llm, to: memory, label: save_note }
-    - { id: answer, from: llm, to: out }
+    - id: ask
+      from: user
+      to: llm
+      description: "The question joins the system prompt, tool list and recalled notes in the model's messages."
+      example: "What would a 30-day refund on my $240 plan be?"
+    - id: search
+      from: llm
+      to: retrieval
+      label: query
+      description: "A search_docs tool call the model makes when it should not guess a policy."
+      example: "search_docs(query=\"refund policy 30 days\")"
+    - id: found
+      from: retrieval
+      to: llm
+      style: dashed
+      label: passages
+      description: "Matching help-center passages are appended to the messages for the next model call."
+      example: "Refund Policy: Annual plans cancelled within 30 days are refunded pro rata."
+    - id: calc
+      from: llm
+      to: calculator
+      label: expression
+      description: "An arithmetic expression the model hands off for exact evaluation."
+      example: "calculator(expression=\"240*29/30\")"
+    - id: calc-back
+      from: calculator
+      to: llm
+      style: dashed
+      label: number
+      description: "The exact numeric result returns to the messages so the model can quote it."
+      example: "calculator result: 232.00 (240*29/30)"
+    - id: remember
+      from: llm
+      to: memory
+      label: save_note
+      description: "A save_note tool call that stores a durable fact about the customer."
+      example: "save_note(text=\"Customer is on the $240 annual plan\")"
+    - id: answer
+      from: llm
+      to: out
+      description: "A reply with no tool calls is the final answer, returned as plain text."
+      example: "Your 30-day refund would be $232.00, based on the Refund Policy article."
   scenarios:
     - id: refund-quote
       label: '"What would a 30-day refund on my $240 plan be?"'

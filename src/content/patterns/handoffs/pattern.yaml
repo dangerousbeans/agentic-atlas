@@ -52,19 +52,19 @@ prompts:
       Never ask the user to repeat something already in the history.
 diagram:
   nodes:
-    - { id: user, kind: io, label: User }
-    - { id: triage, kind: agent, label: Triage }
-    - { id: billing, kind: agent, label: Billing }
-    - { id: tech, kind: agent, label: Tech support }
-    - { id: refunds, kind: agent, label: Refunds }
+    - { id: user, kind: io, label: User, description: "The customer, who talks to whichever agent currently holds the conversation, e.g. 'I was charged twice'." }
+    - { id: triage, kind: agent, label: Triage, description: "Front-desk agent. Works out what the user needs and hands off to billing or tech, without solving it itself." }
+    - { id: billing, kind: agent, label: Billing, description: "Specialist for charges, invoices and plans. Owns the conversation after handoff and may pass it to refunds." }
+    - { id: tech, kind: agent, label: Tech support, description: "Specialist for errors, bugs and how-to questions, e.g. an app that crashes on login." }
+    - { id: refunds, kind: agent, label: Refunds, description: "Specialist that issues refunds and replies to the user itself." }
   edges:
-    - { id: in, from: user, to: triage }
-    - { id: to-billing, from: triage, to: billing, label: handoff }
-    - { id: to-tech, from: triage, to: tech, label: handoff }
-    - { id: billing-reply, from: billing, to: user }
-    - { id: tech-reply, from: tech, to: user }
-    - { id: to-refunds, from: billing, to: refunds, label: handoff }
-    - { id: refunds-reply, from: refunds, to: user }
+    - { id: in, from: user, to: triage, description: "The user's first message lands with the triage agent.", example: "I was charged twice for my March invoice." }
+    - { id: to-billing, from: triage, to: billing, label: handoff, description: "Triage passes the whole conversation and a one-sentence goal to billing, then steps out.", example: "transfer_to_billing: \"User says they were charged twice on the March invoice and wants it fixed.\"" }
+    - { id: to-tech, from: triage, to: tech, label: handoff, description: "Triage passes the whole conversation to tech support, then steps out.", example: "transfer_to_tech: \"User reports the app crashes whenever they log in.\"" }
+    - { id: billing-reply, from: billing, to: user, description: "Billing answers the user directly, with no manager in between.", example: "I can see two charges of $29 on March 3. Want me to look into a refund?" }
+    - { id: tech-reply, from: tech, to: user, description: "Tech support answers the user directly.", example: "Let's try clearing the app cache. Go to Settings > Storage > Clear cache, then log in again." }
+    - { id: to-refunds, from: billing, to: refunds, label: handoff, description: "Billing passes the baton, with the full history, when the user asks for money back.", example: "transfer_to_refunds: \"Duplicate $29 charge on March 3 confirmed; user wants a refund.\"" }
+    - { id: refunds-reply, from: refunds, to: user, description: "Refunds replies to the user itself, ending the run with this agent holding the conversation.", example: "Done: I've refunded $29 to your card. It should arrive in 3-5 days." }
   scenarios:
     - id: billing-refund
       label: '"I was charged twice"'
