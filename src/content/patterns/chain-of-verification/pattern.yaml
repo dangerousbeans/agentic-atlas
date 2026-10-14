@@ -389,7 +389,7 @@ variants:
       steps:
         - "Call the model with the {{prompt:draft}} to write a baseline answer."
         - "Call the model with the {{prompt:plan}}, passing the question and the draft, and parse one verification question per line."
-        - "Call the model once with the {{prompt:verify-all}}, passing only the list of verification questions. It must not see the draft."
+        - "Call the model once with the {{prompt:verify-all}}, passing only the verification questions as objects with number (counting from 1) and text. It must not see the draft."
         - "Parse the numbered answers and pair each with its question."
         - "Call the model with the {{prompt:revise}}, passing the question, the draft and the pairs, and return the revised answer."
       stop: "Stop after the revise call; the pattern makes one pass. If the plan produces no questions, return the draft with a status saying nothing was checked."
@@ -547,14 +547,14 @@ variants:
         - "Call the model with the {{prompt:plan}}, passing the question and the draft, and parse its reply into pairs: each claim, quoted from the draft, with the question that checks it."
         - "Answer every question in its own call with the {{prompt:verify}}, passing only that question, in parallel."
         - "For each pair, call the model with the {{prompt:cross-check}}, passing the claim and its check's question and answer. Parse CONSISTENT, INCONSISTENT, or PARTIALLY CONSISTENT with the consistent part."
-        - "Call the model with the {{prompt:revise}}, passing the question and every claim with its verdict, and return the answer it splices together from the consistent parts."
+        - "Call the model with the {{prompt:revise}}, passing the question and every claim with its verdict line (for a partial one, 'PARTIALLY CONSISTENT: ' plus the consistent part), and return the answer it splices together from the consistent parts."
       stop: "Stop after the revise call; the pattern makes one pass. If the plan produces no claim and question pairs, return the draft with a status saying nothing was checked."
       requirements:
         - "Never include the draft in a verify call; the cross-check is the only step that sees a claim next to its check."
         - "Give each cross-check exactly one claim, so verdicts cannot bleed between claims."
         - "Treat a cross-check reply that does not start with one of the three verdicts as INCONSISTENT, and log it."
         - "Cap the claims (default 10), and run the verify and cross-check calls concurrently with a limit."
-        - "Add a test with a stub LLM: claim 'Donald Trump was born in Queens in 1948' gets PARTIALLY CONSISTENT, consistent part 'Donald Trump was born in Queens'; assert the revise prompt contains exactly that part, not '1948'."
+        - "Add a test with a stub LLM: claim 'Donald Trump was born in Queens in 1948' gets PARTIALLY CONSISTENT, consistent part 'Donald Trump was born in Queens'; assert the revise prompt pairs that claim with 'PARTIALLY CONSISTENT: Donald Trump was born in Queens'."
     prompts:
       - id: draft
         title: Draft prompt

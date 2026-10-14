@@ -263,7 +263,7 @@ variants:
           from: interpreter
           to: model
           style: loop
-          label: ans
+          label: ans, reason
           description: "When the task needs one more step, ans goes back to the model as an intermediate result."
           example: "ans = 2.05 (hours of travel)"
         - id: finish
