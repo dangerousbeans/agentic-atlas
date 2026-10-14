@@ -100,7 +100,7 @@ describe('layoutDiagram behaviour', () => {
   });
   it('hub: a return lane never runs on top of the neighbouring pair\'s dispatch (ReAct shape)', async () => {
     // agent -> two tools with observation returns, plus a final answer: three out-ports on one hub
-    const s = spec([{ id: 'q', kind: 'io', label: 'Q' }, llm('agent'), { id: 't1', kind: 'tool', label: 'Search' }, { id: 't2', kind: 'tool', label: 'Calculator' }, { id: 'out', kind: 'io', label: 'Answer' }],
+    const s = spec([{ id: 'q', description: 'Test fixture node for layout.', kind: 'io', label: 'Q' }, llm('agent'), { id: 't1', description: 'Test fixture node for layout.', kind: 'tool', label: 'Search' }, { id: 't2', description: 'Test fixture node for layout.', kind: 'tool', label: 'Calculator' }, { id: 'out', description: 'Test fixture node for layout.', kind: 'io', label: 'Answer' }],
       [e('ask', 'q', 'agent'), e('a1', 'agent', 't1', { label: 'action' }), e('o1', 't1', 'agent', { style: 'dashed', label: 'observation' }),
        e('a2', 'agent', 't2', { label: 'action' }), e('o2', 't2', 'agent', { style: 'dashed', label: 'observation' }), e('fin', 'agent', 'out', { label: 'final' })]);
     const L = await layoutDiagram(s, 'RIGHT');
