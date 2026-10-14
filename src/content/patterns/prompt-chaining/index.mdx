@@ -1,0 +1,34 @@
+## Problem
+
+Some jobs are too big for one prompt to do well. Ask a model to research, outline, draft and polish a blog post in a single call and you get a post that wanders: the structure is an afterthought, and when it is wrong you cannot tell which part went wrong. You want each call to have one narrow job, with a place to catch mistakes before they spread.
+
+## How it works
+
+The task is split into a fixed sequence of steps that you choose in advance. A <NodeRef id="user">brief</NodeRef> goes to the first call, <NodeRef id="llm1">Outline</NodeRef>, which produces a structured outline. Its output is the only input to the next stage.
+
+Between steps you can put a programmatic <NodeRef id="gate">check</NodeRef>: ordinary code that confirms the outline is valid JSON, has four to six sections, or stays under a length limit. If the check passes, the chain continues to <NodeRef id="llm2">Draft</NodeRef> and then <NodeRef id="llm3">Polish</NodeRef>, and the finished <NodeRef id="out">post</NodeRef> comes out. If it fails, the chain exits early rather than building a draft on a broken outline.
+
+The path never changes. The model fills in each step, but your code decides what the steps are and what order they run in. That is what makes this a workflow rather than an agent.
+
+## When to use
+
+- The task splits cleanly into fixed subtasks, such as outline then draft, extract then translate, or generate then format.
+- You are willing to trade latency for accuracy by making each call easier.
+- Intermediate results are worth validating with code before the next call spends tokens on them.
+
+## When to avoid
+
+- The steps cannot be known in advance. If the next step depends on what you find, consider orchestrator-workers or an agent loop.
+- One well-structured prompt already does the job. Extra calls add delay and cost for no gain.
+- The steps are independent of each other and could run side by side, which is sectioning.
+
+## Trade-offs
+
+A chain buys accuracy and debuggability at the price of latency: every step waits for the previous one, so three calls take roughly three times as long as one. In return each prompt is short and focused, each intermediate output can be logged and inspected, and a failing step is easy to find and fix. Cost grows linearly with the number of steps, and each step re-reads whatever you pass forward.
+
+## Failure modes
+
+- **Errors compound:** a subtle mistake in the outline is faithfully expanded into every later step. Put gates early, where mistakes are cheapest to catch.
+- **Information loss between steps:** the draft only knows what the outline told it. Pass forward everything later steps need, not just the previous answer.
+- **Rigid gates:** a check that is too strict rejects good output, and one that is too loose lets bad output through. Decide what happens on failure: retry, exit with an error, or hand to a person.
+- **Chain bloat:** steps accumulate until each does almost nothing. If two steps always change together, merge them.

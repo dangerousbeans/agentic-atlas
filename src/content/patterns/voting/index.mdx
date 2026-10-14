@@ -1,0 +1,34 @@
+## Problem
+
+A single model answer is one sample from a distribution. Ask whether a snippet of code is exploitable and the model may say yes on one run and no on the next, each time with a confident-sounding explanation. For high-stakes judgments, one roll of the dice is not enough, and a plausible-sounding reason is not evidence.
+
+## How it works
+
+Run the same task several times and compare the answers. The <NodeRef id="user">code snippet</NodeRef> goes to <NodeRef id="llm1">voter 1</NodeRef>, <NodeRef id="llm2">voter 2</NodeRef> and <NodeRef id="llm3">voter 3</NodeRef> at once. They can be the same prompt sampled at a nonzero temperature, or different prompts and personas that approach the question from different angles. Each reasons independently, so their mistakes are less likely to line up.
+
+The answers return at different times. In the diagram two voters say A and one says B. The <NodeRef id="aggregator">tally</NodeRef> counts the votes, and the winning answer becomes the <NodeRef id="out">verdict</NodeRef>. For free-form answers, the tally needs a way to decide that two phrasings mean the same thing, which is why the prompts end with a fixed verdict line.
+
+This is the idea behind self-consistency: sample several reasoning paths and take the most common final answer, rather than trusting the first.
+
+## When to use
+
+- Mistakes are costly and a wrong single answer is worse than a slower, pricier right one.
+- Answers can be compared, such as a label, a number or a yes/no.
+- You want confidence, not just an answer. Disagreement itself is a signal worth acting on.
+
+## When to avoid
+
+- The task has open-ended output like an essay, where there is nothing to count.
+- Errors are systematic. If the model misunderstands the question the same way every time, three votes just repeat the mistake.
+- The budget is tight. You pay for every voter.
+
+## Trade-offs
+
+Voting trades money for reliability. Cost grows linearly with the number of voters, while latency stays close to a single call because they run in parallel. Accuracy improves with more voters, but with diminishing returns, and three to five is usually the useful range. Use an odd count to avoid ties, or decide in advance what a tie means.
+
+## Failure modes
+
+- **Correlated errors:** voters from the same model with the same prompt often fail together. Vary prompts, personas or models to decorrelate them.
+- **Unclear tally:** "vulnerable in one path" and "partially unsafe" do not match. Force a fixed answer format.
+- **Ties and splits:** with no majority, the code must do something sensible, such as escalating to a person, as the pseudocode does.
+- **False confidence:** a 3-0 vote feels certain but is only as good as the voters. Measure accuracy against labelled examples.
