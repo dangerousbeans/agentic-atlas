@@ -1,0 +1,230 @@
+slug: self-ask
+name: Self-Ask
+family: reasoning-prompting
+aliases: [Self-ask with search, Follow-up questioning]
+summary: The model asks itself follow-up questions, answers each one (optionally with search), then composes the final answer.
+badges: { autonomy: medium, cost: medium, latency: medium }
+sources:
+  - title: "Measuring and Narrowing the Compositionality Gap in Language Models (Press et al., 2022)"
+    url: https://arxiv.org/abs/2210.03350
+related:
+  composesWith: [chain-of-thought, agentic-rag]
+  confusedWith:
+    - { slug: react, difference: "ReAct picks among several tools and free-form actions each turn; self-ask has one tool and a fixed scaffold whose only action is asking a sub-question." }
+    - { slug: least-to-most, difference: "Least-to-most writes all its subquestions before solving any; self-ask decides each follow-up after seeing the last answer." }
+origin:
+  by: Ofir Press et al.
+  org: University of Washington, MosaicML, Meta AI Research, Allen Institute for AI
+  year: 2022
+  url: https://arxiv.org/abs/2210.03350
+  kind: introduced
+  note: "Published in Findings of EMNLP 2023. The paper named the 'compositionality gap': models that know two facts often fail to combine them, and asking the sub-questions explicitly narrows it."
+defaultVariantName: With search
+build:
+  goal: "Answer a multi-hop factual question by letting the model ask one follow-up question at a time, answering each with a search call, until it writes its final answer."
+  steps:
+    - "Start a transcript with the {{prompt:self-ask}} and the user's question, ending with 'Are follow up questions needed here:'."
+    - "Call the model with the transcript, and stop generation at the text 'Intermediate answer:'."
+    - "If the new text contains 'So the final answer is:', parse what follows it and return that as the answer."
+    - "Otherwise take the question after the last 'Follow up:', send it to the search tool, and keep the top answer snippet."
+    - "Append the model's text, then 'Intermediate answer: ' and the search result, to the transcript, and call the model again."
+  stop: "Stop when the model writes 'So the final answer is:', or after 4 follow-up questions. On the cap, return no answer with the transcript so far and a status saying the follow-up limit was hit."
+  requirements:
+    - "Use the stop sequence 'Intermediate answer:' so the model never writes its own answer to a follow-up."
+    - "Cap follow-ups with a parameter (default 4), and stop early if the same follow-up question is asked twice."
+    - "Trim each search result to one short snippet, and write 'No answer found' when the search returns nothing."
+    - "Log every follow-up question with its search query and the snippet that came back."
+    - "Add a test with a stub LLM and a fake search: two follow-ups get '1889' and 'Benjamin Harrison'; assert exactly two searches and the answer exactly 'Benjamin Harrison'."
+prompts:
+  - id: self-ask
+    title: Self-ask prompt
+    lang: markdown
+    source: |
+      Answer the question. If it needs facts you should look up first, ask
+      follow-up questions, one per line, and wait for each intermediate answer.
+
+      Question: Who lived longer, Muhammad Ali or Alan Turing?
+      Are follow up questions needed here: Yes.
+      Follow up: How old was Muhammad Ali when he died?
+      Intermediate answer: Muhammad Ali was 74 years old when he died.
+      Follow up: How old was Alan Turing when he died?
+      Intermediate answer: Alan Turing was 41 years old when he died.
+      So the final answer is: Muhammad Ali
+
+      Question: {{question}}
+      Are follow up questions needed here:
+diagram:
+  nodes:
+    - id: question
+      kind: io
+      label: Question
+      description: "A question that joins two facts: 'Who was US president when the Eiffel Tower was completed?'"
+    - id: model
+      kind: llm
+      label: Model
+      sublabel: Follow up / Answer
+      description: "Writes one 'Follow up:' question at a time, reads the intermediate answer, and decides whether to ask another."
+    - id: search
+      kind: tool
+      label: Search
+      description: "A search engine. It answers each follow-up question with a short snippet, the 'Intermediate answer'."
+    - id: answer
+      kind: io
+      label: Answer
+      description: "The text after 'So the final answer is:', which your code returns: 'Benjamin Harrison'."
+  edges:
+    - id: ask
+      from: question
+      to: model
+      description: "The question goes to the model inside the self-ask scaffold, with one worked example."
+      example: "Question: Who was US president when the Eiffel Tower was completed? Are follow up questions needed here:"
+    - id: follow-up
+      from: model
+      to: search
+      label: Follow up
+      description: "Generation stops at 'Intermediate answer:', and your code sends the follow-up question to search."
+      example: "Yes. Follow up: When was the Eiffel Tower completed?"
+    - id: intermediate
+      from: search
+      to: model
+      style: loop
+      label: Intermediate
+      description: "The search result is added to the transcript as the intermediate answer, and the model is called again."
+      example: "Intermediate answer: The Eiffel Tower was completed in March 1889."
+    - id: final
+      from: model
+      to: answer
+      label: final answer
+      description: "Once it has the facts it needs, the model writes the final answer line instead of another follow-up."
+      example: "So the final answer is: Benjamin Harrison"
+  scenarios:
+    - id: two-hops
+      label: Two hops
+      steps:
+        - id: ask
+          caption: The question arrives in the self-ask scaffold.
+          duration: 1200
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: hop1
+          caption: The model decides it needs a follow-up and asks when the tower was completed; search answers 1889.
+          duration: 3200
+          events:
+            - { type: activate, node: model, status: thinking, at: [0, 0.25] }
+            - { type: branch, node: model, taken: follow-up, notTaken: [final], at: [0.2, 0.3] }
+            - { type: send, edge: follow-up, token: { kind: tool-call, label: completed? }, at: [0.3, 0.55] }
+            - { type: activate, node: search, status: calling, at: [0.55, 0.7] }
+            - { type: send, edge: intermediate, token: { kind: result, label: "1889" }, at: [0.7, 1] }
+        - id: hop2
+          caption: With 1889 in the transcript, it asks who was president in 1889; search answers Benjamin Harrison.
+          duration: 3200
+          events:
+            - { type: activate, node: model, status: thinking, at: [0, 0.25] }
+            - { type: branch, node: model, taken: follow-up, notTaken: [final], at: [0.2, 0.3] }
+            - { type: send, edge: follow-up, token: { kind: tool-call, label: who in 1889? }, at: [0.3, 0.55] }
+            - { type: activate, node: search, status: calling, at: [0.55, 0.7] }
+            - { type: send, edge: intermediate, token: { kind: result, label: Harrison }, at: [0.7, 1] }
+        - id: final
+          caption: Both facts are in hand, so the model writes 'So the final answer is' instead of another follow-up.
+          duration: 2400
+          events:
+            - { type: activate, node: model, status: thinking, at: [0, 0.3] }
+            - { type: branch, node: model, taken: final, notTaken: [follow-up], at: [0.25, 0.4] }
+            - { type: send, edge: final, token: { kind: result, label: Harrison }, at: [0.4, 0.85] }
+            - { type: activate, node: answer, status: done, at: [0.8, 1] }
+variants:
+  - id: no-search
+    name: Without search
+    summary: "The same scaffold with no tool: the model answers its own follow-up questions from what it knows, one line at a time."
+    build:
+      goal: "Answer a multi-hop question in one model call by having the model write each follow-up question and its own intermediate answer before the final answer."
+      steps:
+        - "Fill in the {{prompt:self-ask}} with the user's question; the worked example shows the follow-up and intermediate-answer lines."
+        - "Call the model once, with no stop sequence, so it writes the follow-ups and their answers itself."
+        - "Parse the follow-up questions and intermediate answers from the reply into a list, for logging and display."
+        - "Parse the text after 'So the final answer is:' and return it as the answer."
+      stop: "Stop after the one call. If the reply has no 'So the final answer is:' line, return no answer with the reply and a status saying it could not be parsed."
+      requirements:
+        - "Keep the scaffold identical to the search version, so you can switch search on later without changing the prompt."
+        - "Parse the final answer from the last 'So the final answer is:' line only."
+        - "Log each follow-up with the intermediate answer the model gave itself, so wrong facts can be traced to a hop."
+        - "Add a test with a stub LLM whose reply has two follow-ups and ends 'So the final answer is: Benjamin Harrison'; assert one call and the answer exactly 'Benjamin Harrison'."
+    diagram:
+      nodes:
+        - id: question
+          kind: io
+          label: Question
+          description: "A question that joins two facts: 'Who was US president when the Eiffel Tower was completed?'"
+        - id: model
+          kind: llm
+          label: Model
+          description: "Writes each follow-up question and then answers it itself from memory, in the same reply."
+        - id: ledger
+          kind: memory
+          label: Q&A ledger
+          sublabel: Follow up / Answer
+          description: "The follow-up and intermediate-answer lines the model has written so far, which it reads before each new line."
+        - id: answer
+          kind: io
+          label: Answer
+          description: "The text after 'So the final answer is:', which your code returns."
+      edges:
+        - id: ask
+          from: question
+          to: model
+          description: "The question goes to the model inside the self-ask scaffold, with one worked example."
+          example: "Question: Who was US president when the Eiffel Tower was completed? Are follow up questions needed here:"
+        - id: write
+          from: model
+          to: ledger
+          label: Q + A
+          description: "The model writes a follow-up and answers it itself; both lines become part of the reply."
+          example: "Follow up: When was the Eiffel Tower completed? Intermediate answer: 1889."
+        - id: reread
+          from: ledger
+          to: model
+          style: loop
+          label: so far
+          description: "Each new line is written with every earlier follow-up and answer in view."
+          example: "Follow up: Who was US president in 1889? Intermediate answer: Benjamin Harrison."
+        - id: final
+          from: model
+          to: answer
+          label: final answer
+          description: "When the ledger holds the facts it needs, the model writes the final answer line."
+          example: "So the final answer is: Benjamin Harrison"
+      scenarios:
+        - id: answers-itself
+          label: Answers its own follow-ups
+          steps:
+            - id: ask
+              caption: The question arrives in the self-ask scaffold.
+              duration: 1200
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question } }
+            - id: hop1
+              caption: The model asks when the tower was completed and answers itself, 1889.
+              duration: 2800
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.3] }
+                - { type: branch, node: model, taken: write, notTaken: [final], at: [0.25, 0.35] }
+                - { type: send, edge: write, token: { kind: tokens, label: "1889" }, at: [0.35, 0.7] }
+                - { type: write, node: ledger, at: [0.65, 0.8] }
+                - { type: send, edge: reread, token: { kind: tokens, label: so far }, at: [0.75, 1] }
+            - id: hop2
+              caption: Reading its first answer, it asks who was president in 1889 and answers Benjamin Harrison.
+              duration: 2800
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.3] }
+                - { type: branch, node: model, taken: write, notTaken: [final], at: [0.25, 0.35] }
+                - { type: send, edge: write, token: { kind: tokens, label: Harrison }, at: [0.35, 0.7] }
+                - { type: write, node: ledger, at: [0.65, 0.8] }
+                - { type: send, edge: reread, token: { kind: tokens, label: so far }, at: [0.75, 1] }
+            - id: final
+              caption: With both facts in its own ledger, the model writes the final answer line.
+              duration: 2400
+              events:
+                - { type: read, node: ledger, at: [0, 0.2] }
+                - { type: branch, node: model, taken: final, notTaken: [write], at: [0.2, 0.4] }
+                - { type: send, edge: final, token: { kind: result, label: Harrison }, at: [0.4, 0.85] }
+                - { type: activate, node: answer, status: done, at: [0.8, 1] }

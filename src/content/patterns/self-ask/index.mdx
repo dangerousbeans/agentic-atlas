@@ -1,0 +1,46 @@
+## Problem
+
+"Who was US president when the Eiffel Tower was completed?" A model may well know that the tower was finished in 1889, and that Benjamin Harrison took office that year, and still answer wrongly. The question asks it to combine two facts it has never seen together, and it tends to guess at the combination. Press et al. called this the compositionality gap: models get better at single facts faster than they get better at joining them.
+
+## How it works
+
+Self-ask makes the joining explicit. The <NodeRef id="question">question</NodeRef> goes to the <NodeRef id="model">model</NodeRef> inside a fixed scaffold, shown with one worked example:
+
+```
+Question: ...
+Are follow up questions needed here: Yes.
+Follow up: ...
+Intermediate answer: ...
+So the final answer is: ...
+```
+
+The model starts by writing a follow-up question: "When was the Eiffel Tower completed?" Your code stops generation as soon as the model reaches "Intermediate answer:", sends the follow-up to <NodeRef id="search">search</NodeRef>, and pastes the result ("1889") into the transcript as the intermediate answer. Then it calls the model again.
+
+Now the model can see 1889, so its next follow-up is "Who was US president in 1889?" Search returns Benjamin Harrison. With both facts written down, the model writes "So the final answer is: Benjamin Harrison" instead of another follow-up, and your code returns that as the <NodeRef id="answer">answer</NodeRef>.
+
+Each follow-up is decided after the previous answer is in, which is the difference from least-to-most, where all the subquestions are written first. And there is exactly one tool, used in exactly one way, which is the difference from ReAct.
+
+The search engine is optional. In the "Without search" tab the model answers its own follow-ups from memory, in a single call. The scaffold alone already narrows the gap; search narrows it further and lets the answers be newer than the model's training data.
+
+## When to use
+
+- Multi-hop factual questions: a date, then who held a role at that date; a company, then its founder's birthplace.
+- The individual facts are easy to look up, but the combination is not written down anywhere.
+- You want each hop visible, so a wrong answer can be traced to the follow-up that went wrong.
+
+## When to avoid
+
+- The task needs several kinds of tool or real actions. Use ReAct.
+- The question is a single fact. One search, or one call, is enough.
+- The parts are known in advance and do not depend on each other. Ask them in parallel instead.
+
+## Trade-offs
+
+With search, each hop adds a model call and a search call, in sequence, so latency grows with the number of hops. The fixed scaffold is easy to parse and debug, but it also limits the pattern: it can only ask questions, it cannot compute, filter or act. Without search, self-ask costs one call, like chain-of-thought, and inherits the model's own mistakes about facts.
+
+## Failure modes
+
+- **Self-written answers:** the model writes its own intermediate answer instead of waiting for search. Use "Intermediate answer:" as a stop sequence.
+- **Bad snippets:** search returns a related but wrong fact, and the model builds on it. Keep the snippets short and log every query with its result.
+- **Endless follow-ups:** the model keeps asking, or asks the same question again. Cap the hops and stop on a repeat.
+- **Skipping the scaffold:** the model answers "No" to the follow-up question and guesses. Include an example where follow-ups are needed, close to your real questions.
