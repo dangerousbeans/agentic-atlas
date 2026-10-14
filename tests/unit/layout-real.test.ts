@@ -7,11 +7,15 @@ import { first, last, attached } from './diagram-helpers';
 
 // Every shipped diagram, in both the wide (RIGHT) and the phone (DOWN, narrow) layouts.
 const root = 'src/content/patterns';
-const specs = readdirSync(root).sort().map(slug => ({ slug, spec: parse(readFileSync(`${root}/${slug}/pattern.yaml`, 'utf8')).diagram as DiagramSpec }));
+const dirs = readdirSync(root).sort();
+const specs = dirs.flatMap(slug => {
+  const p = parse(readFileSync(`${root}/${slug}/pattern.yaml`, 'utf8'));
+  return [{ slug, spec: p.diagram as DiagramSpec }, ...((p.variants ?? []) as { id: string; diagram: DiagramSpec }[]).map(v => ({ slug: `${slug}/${v.id}`, spec: v.diagram }))];
+});
 const layouts = [['RIGHT', 'wide'], ['DOWN', 'narrow']] as const;
 
 describe('layout of every real pattern diagram', () => {
-  it('covers all 21 patterns', () => expect(specs).toHaveLength(21));
+  it('covers every pattern', () => expect(specs.filter(s => !s.slug.includes('/'))).toHaveLength(dirs.length));
   for (const { slug, spec } of specs) for (const [dir, variant] of layouts) {
     describe(`${slug} ${dir}`, async () => {
       const L = await layoutDiagram(spec, dir, variant);

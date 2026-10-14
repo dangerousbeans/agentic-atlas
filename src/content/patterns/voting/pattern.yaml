@@ -14,6 +14,29 @@ related:
   confusedWith:
     - { slug: sectioning, difference: "Voting runs the same task several times and compares answers; sectioning gives each call a different part of the work." }
     - { slug: evaluator-optimizer, difference: "Voting picks among independent attempts; the evaluator-optimizer revises one attempt using feedback, in a loop." }
+origin:
+  by: Xuezhi Wang et al.
+  org: Google Research, Brain Team
+  year: 2022
+  url: https://arxiv.org/abs/2203.11171
+  kind: introduced
+  note: "Self-consistency (ICLR 2023): sample several reasoning paths and take the most common final answer. Anthropic popularized the \"voting\" framing in 2024."
+build:
+  goal: "Decide whether a code snippet is exploitable by asking several independent model calls and returning the majority verdict, or 'needs human review' when there is none."
+  steps:
+    - "Send the snippet to N independent calls at once (default 3) with the {{prompt:audit}}, sampled at a nonzero temperature; to vary the angle, swap some for the {{prompt:variant}} with a different persona."
+    - "Give no call another's output; each one reasons on its own."
+    - "From each reply, read the last line and accept it only if it is exactly \"VERDICT: vulnerable\" or \"VERDICT: safe\". Any other reply is an abstention, not a vote."
+    - "Count the votes in plain code. If one verdict has more than half of all N calls, return it with the counts and every voter's reasoning."
+    - "Otherwise return \"needs human review\" with the counts and the reasoning, so a person sees the disagreement."
+  stop: "One round: N calls, one tally, done. No call is re-sampled to break a tie; a split goes to a person."
+  requirements:
+    - "Make N (default 3, odd) and the temperature (default 0.8) parameters."
+    - "Count a majority against all N calls, abstentions included, so one valid vote among failures cannot win."
+    - "If a call errors, retry it once, then count it as an abstention."
+    - "Log every voter's reasoning and verdict next to the final tally, so a wrong majority can be studied."
+    - "Add a test with a stub LLM that returns vulnerable, vulnerable, safe; assert the result is vulnerable with counts {vulnerable: 2, safe: 1}, and that vulnerable, safe plus one malformed reply gives needs human review."
+defaultVariantName: Majority vote
 prompts:
   - id: audit
     title: Vulnerability audit prompt
@@ -80,3 +103,197 @@ diagram:
           duration: 1400
           events:
             - { type: send, edge: done, token: { kind: result, label: A } }
+variants:
+  - id: llm-select
+    name: LLM picks
+    summary: "For free-form answers that never match exactly, an LLM reads all N candidates and picks the one most consistent with the rest."
+    origin:
+      by: Xinyun Chen et al.
+      org: Google
+      year: 2023
+      url: https://arxiv.org/abs/2311.17311
+      kind: introduced
+      note: "Universal self-consistency: the model itself selects the most consistent response, which extends voting to open-ended outputs such as summaries and code."
+    build:
+      goal: "Produce a written security finding for a code snippet by sampling several independent findings and having an LLM select the one most consistent with the others."
+      steps:
+        - "Send the snippet to N independent calls at once (default 5) with the {{prompt:finding}}, sampled at a nonzero temperature."
+        - "Number the replies 1 to N; drop any that are empty or errored after one retry."
+        - "Send all the numbered candidates to one more call with the {{prompt:select}}, which picks the one most consistent with the majority."
+        - "Parse the selector's reply into a candidate number. If it is not a valid number in range, retry the selector once, then fall back to candidate 1 and mark the result unselected; every candidate is an independent sample, so the first is as good a default as any."
+        - "Return the chosen candidate verbatim, with its number and all the candidates for audit."
+      stop: "One round: N samples and one selection call (plus at most one retry). The selector picks; it never rewrites or merges."
+      requirements:
+        - "Make N (default 5) and the sampling temperature (default 0.8) parameters."
+        - "Return the selected candidate exactly as sampled; the selector's reply is used only for its number."
+        - "Put every candidate in the selection prompt in full; if they do not fit the context window, lower N rather than truncating them."
+        - "Log the candidates, the selector's raw reply and the chosen number."
+        - "Add a test with a stub LLM whose selector replies \"Response 2\"; assert the returned text equals the second sampled candidate exactly."
+    prompts:
+      - id: finding
+        title: Finding prompt
+        lang: markdown
+        source: |
+          You are a security reviewer. Write a one-paragraph finding for
+          the code below: what is exploitable, how an attacker would use
+          it, and the fix. If nothing is exploitable, say why.
+
+          <code>{{snippet}}</code>
+      - id: select
+        title: Selection prompt
+        lang: markdown
+        source: |
+          I have generated the following responses to the same question:
+
+          {{#each candidates}}
+          Response {{number}}: {{text}}
+          {{/each}}
+
+          Evaluate these responses and select the one most consistent
+          with the majority. Answer with only: "Response <number>".
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Code, description: "The code snippet that needs a written security finding, not just a yes or no." }
+        - { id: llm1, kind: llm, label: Sample 1, description: "First independent sample: writes a full one-paragraph finding for the snippet." }
+        - { id: llm2, kind: llm, label: Sample 2, description: "Second independent sample of the same prompt; its wording differs even when its conclusion agrees." }
+        - { id: llm3, kind: llm, label: Sample 3, description: "Third independent sample; a real run often uses five or more." }
+        - { id: aggregator, kind: llm, label: Selector, description: "An LLM that reads every candidate and picks the one most consistent with the rest, answering with its number only." }
+        - { id: out, kind: io, label: Finding, description: "The selected candidate, returned word for word as it was sampled." }
+      edges:
+        - { id: v1, from: user, to: llm1, description: "The snippet goes to the first sample in the finding prompt.", example: "You are a security reviewer. Write a one-paragraph finding... <code>query = 'SELECT * FROM users WHERE id=' + uid</code>" }
+        - { id: v2, from: user, to: llm2, description: "An identical copy goes to the second sample at the same time.", example: "You are a security reviewer. Write a one-paragraph finding... <code>query = 'SELECT * FROM users WHERE id=' + uid</code>" }
+        - { id: v3, from: user, to: llm3, description: "An identical copy goes to the third sample at the same time.", example: "You are a security reviewer. Write a one-paragraph finding... <code>query = 'SELECT * FROM users WHERE id=' + uid</code>" }
+        - { id: a1, from: llm1, to: aggregator, description: "Candidate 1, a full paragraph, goes to the selector.", example: "SQL injection: uid is concatenated into the query, so '1 OR 1=1' returns every user. Use a parameterized query." }
+        - { id: a2, from: llm2, to: aggregator, description: "Candidate 2 goes to the selector.", example: "The query is built by string concatenation with uid, allowing SQL injection (e.g. uid = \"1; DROP TABLE users\"). Bind uid as a parameter instead." }
+        - { id: a3, from: llm3, to: aggregator, description: "Candidate 3 goes to the selector; this one reaches a different conclusion.", example: "Nothing is exploitable here unless uid comes from user input, which the snippet does not show." }
+        - { id: done, from: aggregator, to: out, label: pick, description: "The selector names one candidate, and that candidate is returned unchanged.", example: "Response 2" }
+      scenarios:
+        - id: select
+          label: '"Write the finding for this snippet"'
+          steps:
+            - id: fan-out
+              caption: The same snippet goes to three samples at once.
+              duration: 1400
+              events:
+                - { type: send, edge: v1, token: { kind: prompt, label: snippet } }
+                - { type: send, edge: v2, token: { kind: prompt, label: snippet } }
+                - { type: send, edge: v3, token: { kind: prompt, label: snippet } }
+            - id: work
+              caption: Each sample writes its own paragraph; no two match word for word, so an exact-match vote cannot count them.
+              duration: 2600
+              events:
+                - { type: activate, node: llm1, status: thinking, at: [0, 0.5] }
+                - { type: activate, node: llm2, status: thinking, at: [0, 0.75] }
+                - { type: activate, node: llm3, status: thinking, at: [0, 0.9] }
+                - { type: send, edge: a1, token: { kind: result, label: paragraph }, at: [0.5, 0.7] }
+                - { type: send, edge: a2, token: { kind: result, label: paragraph }, at: [0.75, 0.9] }
+                - { type: send, edge: a3, token: { kind: result, label: paragraph }, at: [0.9, 1] }
+            - id: select
+              caption: The selector reads all three, sees that two agree on SQL injection, and picks the one most consistent with the others.
+              duration: 2000
+              events:
+                - { type: activate, node: aggregator, status: thinking }
+            - id: return
+              caption: Candidate 2 is returned exactly as it was written.
+              duration: 1400
+              events:
+                - { type: send, edge: done, token: { kind: result, label: response 2 } }
+  - id: model-ensemble
+    name: Model ensemble
+    summary: "Different models answer the same question; a ranker compares their answers in pairs and a fuser merges the best ones into one."
+    origin:
+      by: Dongfu Jiang et al.
+      org: AI2, USC, Zhejiang University
+      year: 2023
+      url: https://arxiv.org/abs/2306.02561
+      kind: introduced
+      note: "LLM-Blender (ACL 2023): a pairwise ranker (PairRanker) picks the top candidates and a generative fuser (GenFuser) merges them. The paper trains a small ranker and fuser; here both are prompted LLMs."
+    build:
+      goal: "Answer a question with several different models, rank their answers by pairwise comparison, and fuse the top-ranked ones into a single answer."
+      steps:
+        - "Send the question to K different models at once (default 3), each configured separately, with the same prompt."
+        - "For every pair of answers, ask the ranker which is better with the {{prompt:rank}}; run each pair twice with the order swapped, and count a win only when both orders agree."
+        - "Score each answer by its number of wins and keep the top 2, breaking ties by the earlier model in the list."
+        - "Send the question and the top answers, best first, to the fuser with the {{prompt:fuse}}, and return its reply."
+      stop: "One round: K answers, K x (K - 1) ranking calls and one fusion call. Nothing loops back to the answering models."
+      requirements:
+        - "Make K (default 3) and the number of answers to fuse (default 2) parameters, and keep the model list as configuration."
+        - "If one model errors or times out, rank the answers that did arrive; with only one answer, return it without fusing."
+        - "If a ranking reply is neither \"A\" nor \"B\", retry it once, then count that comparison as a draw."
+        - "Log every pairwise verdict and the final scores, so a model that keeps losing can be dropped."
+        - "Add a test with stub models and a stub ranker that prefers B over A, B over C and A over C; assert the fuser prompt contains B's answer before A's and does not contain C's."
+    prompts:
+      - id: rank
+        title: Pairwise ranking prompt
+        lang: markdown
+        source: |
+          Which answer to the question is better: more correct, more
+          complete and clearer?
+
+          <question>{{question}}</question>
+          <answer_a>{{a}}</answer_a>
+          <answer_b>{{b}}</answer_b>
+
+          Reply with exactly one letter: A or B.
+      - id: fuse
+        title: Fusion prompt
+        lang: markdown
+        source: |
+          Write the best possible answer to the question by combining
+          the strengths of these candidate answers, which are ranked best
+          first. Keep what is correct, drop what is wrong, and do not add
+          claims none of them support.
+
+          <question>{{question}}</question>
+          <candidates>{{ranked_answers}}</candidates>
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, description: "The question to answer, such as 'How should we store user passwords?'." }
+        - { id: llm1, kind: llm, label: Model A, description: "The first of several different models, each answering the same question independently." }
+        - { id: llm2, kind: llm, label: Model B, description: "A second, different model; its strengths and blind spots differ from model A's." }
+        - { id: llm3, kind: llm, label: Model C, description: "A third, different model, run in parallel with the others." }
+        - { id: aggregator, kind: evaluator, label: Ranker, sublabel: pairwise, description: "Compares the answers two at a time, in both orders, and scores each by its wins." }
+        - { id: fuser, kind: llm, label: Fuser, description: "Merges the top-ranked answers into one, keeping what they get right and dropping what they get wrong." }
+        - { id: out, kind: io, label: Answer, description: "The single fused answer." }
+      edges:
+        - { id: v1, from: user, to: llm1, description: "The question goes to model A.", example: "How should we store user passwords?" }
+        - { id: v2, from: user, to: llm2, description: "The same question goes to model B at the same time.", example: "How should we store user passwords?" }
+        - { id: v3, from: user, to: llm3, description: "The same question goes to model C at the same time.", example: "How should we store user passwords?" }
+        - { id: a1, from: llm1, to: aggregator, description: "Model A's answer goes to the ranker.", example: "Hash them with bcrypt at cost 12 and a per-user salt; never store plain text." }
+        - { id: a2, from: llm2, to: aggregator, description: "Model B's answer goes to the ranker.", example: "Use Argon2id with a unique salt per user and tune memory cost to about 64 MB; rehash on login when parameters change." }
+        - { id: a3, from: llm3, to: aggregator, description: "Model C's answer goes to the ranker.", example: "Encrypt them with AES-256 and keep the key in a vault." }
+        - { id: top, from: aggregator, to: fuser, label: top 2, description: "The two highest-scoring answers go to the fuser, best first.", example: "Scores: B 2 wins, A 1 win, C 0 wins. Fusing B then A." }
+        - { id: done, from: fuser, to: out, description: "The fused answer is returned.", example: "Hash passwords with Argon2id (or bcrypt at cost 12 if Argon2 is unavailable), with a unique salt per user; rehash on login when parameters change. Never encrypt or store plain text." }
+      scenarios:
+        - id: ensemble
+          label: '"How should we store passwords?"'
+          steps:
+            - id: fan-out
+              caption: The question goes to three different models at once.
+              duration: 1400
+              events:
+                - { type: send, edge: v1, token: { kind: prompt, label: question } }
+                - { type: send, edge: v2, token: { kind: prompt, label: question } }
+                - { type: send, edge: v3, token: { kind: prompt, label: question } }
+            - id: work
+              caption: Each model answers in its own way and at its own speed.
+              duration: 2600
+              events:
+                - { type: activate, node: llm1, status: thinking, at: [0, 0.45] }
+                - { type: activate, node: llm2, status: thinking, at: [0, 0.8] }
+                - { type: activate, node: llm3, status: thinking, at: [0, 0.6] }
+                - { type: send, edge: a1, token: { kind: result, label: answer A }, at: [0.45, 0.65] }
+                - { type: send, edge: a3, token: { kind: result, label: answer C }, at: [0.6, 0.8] }
+                - { type: send, edge: a2, token: { kind: result, label: answer B }, at: [0.8, 1] }
+            - id: rank
+              caption: The ranker compares every pair in both orders; B beats both others, A beats C.
+              duration: 2200
+              events:
+                - { type: activate, node: aggregator, status: thinking, at: [0, 0.7] }
+                - { type: send, edge: top, token: { kind: result, label: "B, A" }, at: [0.7, 1] }
+            - id: fuse
+              caption: The fuser merges B and A into one answer; C's weaker advice to encrypt is left out.
+              duration: 2000
+              events:
+                - { type: activate, node: fuser, status: thinking, at: [0, 0.55] }
+                - { type: send, edge: done, token: { kind: result, label: answer }, at: [0.55, 1] }

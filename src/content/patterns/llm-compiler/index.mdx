@@ -12,6 +12,8 @@ When everything has finished, the <NodeRef id="joiner">joiner</NodeRef> decides.
 
 In the paper's evaluations, this parallelism reduced latency substantially compared with sequential ReAct-style execution.
 
+Many model APIs now offer a lighter version, shown in the native-parallel-calls variant: the model itself returns several tool calls in one turn and your runtime runs them together. There is no planner, scheduler or joiner, but also no dependency graph, so a call that needs an earlier result, like the hotel, has to wait a whole turn.
+
 ## When to use
 
 - A question needs several tool calls, and at least some are independent.

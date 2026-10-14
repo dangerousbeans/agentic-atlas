@@ -3,4 +3,4 @@ name: "Planning & Search"
 rank: 4
 accent: "#22D3EE"
 description: Plan or explore the task before or while acting, as a plan, a DAG or a tree.
-order: [plan-and-execute, rewoo, llm-compiler, tree-of-thoughts]
+order: [plan-and-execute, rewoo, llm-compiler, tree-of-thoughts, graph-of-thoughts, lats]
