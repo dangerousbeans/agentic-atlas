@@ -4,15 +4,16 @@ import type { Family, Pattern } from '../../lib/schema';
 interface Props { family: Family; patterns: Pattern[] }
 const { family: f, patterns } = Astro.props;
 ---
-<article class="family-card" style={`--family-accent:${f.accent}`}>
+<article class="family-card">
   <h3><a href={href(`/families/${f.slug}/`)}>{f.name}</a></h3>
   <p class="muted">{f.description}</p>
   <ul>{patterns.map(p => <li><a href={href(`/patterns/${p.slug}/`)}>{p.name}</a></li>)}</ul>
 </article>
 <style>
-  .family-card { border: 1px solid var(--line); border-radius: 16px; padding: 22px 24px; background: linear-gradient(160deg, color-mix(in oklab, var(--family-accent) 9%, var(--bg-1)), var(--bg) 70%); position: relative; }
-  .family-card::before { content: ""; position: absolute; top: 24px; right: 24px; width: 8px; height: 8px; border-radius: 50%; background: var(--family-accent); box-shadow: 0 0 14px var(--family-accent); }
-  h3 { margin: 0 0 6px; } h3 a { text-decoration: none; }
+  .family-card { border: 1px solid var(--line); border-radius: 0; padding: 22px 24px; background: var(--bg-1); position: relative; }
+  .family-card:hover { border-color: var(--line-strong); }
+  .family-card::before { content: ""; position: absolute; top: -1px; left: -1px; width: var(--mark); height: var(--mark); background: var(--accent); }
+  h3 { margin: 0 0 6px; font: 800 1.3rem/1.15 var(--font-display); font-stretch: 125%; letter-spacing: -0.01em; } h3 a { text-decoration: none; }
   ul { list-style: none; padding: 0; margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; }
   ul a { color: var(--text-2); }
 </style>

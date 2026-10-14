@@ -1,6 +1,5 @@
 flow-player { display: block; --accent: var(--family-accent); }
 .diagram-stage { position: relative; border: 1px solid var(--line); border-radius: 18px; background: radial-gradient(ellipse at 50% 40%, color-mix(in oklab, var(--accent) 7%, var(--bg-1)) 0%, var(--bg) 75%); padding: 12px; container-type: inline-size; overflow-x: auto; }
-.diagram-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .diagram-svg { display: block; width: 100%; height: auto; max-height: 70vh; overflow: visible; }
 .diagram-svg[data-layout="narrow"] { display: none; }
 @container (max-width: 640px) {
@@ -66,17 +65,6 @@ flow-player { display: block; --accent: var(--family-accent); }
 .token .head { filter: drop-shadow(0 0 4px var(--tok)) drop-shadow(0 0 10px var(--tok)); }
 .token text { font: 500 10px var(--font-mono); fill: var(--text); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
 
-.fp-controls { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-flow-player.is-enhanced .fp-controls { display: flex; }
-.fp-controls[hidden] { display: none; }
-.fp-controls button { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line); background: var(--bg-1); color: var(--text); cursor: pointer; }
-.fp-controls button:hover { border-color: var(--accent); }
-.fp-controls button svg { width: 16px; height: 16px; fill: currentColor; stroke: currentColor; stroke-width: 0; }
-.fp-controls button[data-action="prev"] path:first-child, .fp-controls button[data-action="next"] path:first-child { stroke-width: 2; fill: none; }
-.fp-controls .i-pause { display: none; } .fp-controls [aria-pressed="true"] .i-pause { display: block; } .fp-controls [aria-pressed="true"] .i-play { display: none; }
-.fp-controls input[type="range"] { flex: 1 1 160px; accent-color: var(--accent); }
-.fp-controls select { background: var(--bg-1); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; }
-.fp-counter { font: 12px var(--font-mono); color: var(--text-2); min-width: 72px; text-align: right; }
 .fp-caption { min-height: 3.2em; margin: 12px 0 0; font-size: 17px; color: var(--text); }
 flow-player:not(.is-enhanced) .fp-caption { display: none; }
 .fp-steps { margin-top: 12px; color: var(--text-2); font-size: 14px; }
@@ -84,4 +72,49 @@ flow-player:not(.is-enhanced) .fp-caption { display: none; }
 .fp-steps li[aria-current="step"] { color: var(--text); }
 .fp-steps li[aria-current="step"]::marker { color: var(--accent); }
 flow-player.is-enhanced .fp-scenario-steps[data-inactive] { display: none; }
-.fp-steps h4 { font: 500 13px var(--font-ui); color: var(--text); margin: 12px 0 4px; }
+.fp-scenario-title { font: 500 13px var(--font-ui); color: var(--text); margin: 12px 0 4px; }
+
+/* --- explore mode: step navigation, tabs, parts list --- */
+.fp-steps li { list-style-position: outside; }
+.fp-steps li button { all: unset; box-sizing: border-box; cursor: pointer; padding: 3px 8px; margin: 0 -8px; border-radius: 8px; color: inherit; display: inline-block; }
+.fp-steps li button:hover { color: var(--text); background: color-mix(in oklab, var(--accent) 8%, transparent); }
+.fp-steps li button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+flow-player:not(.is-enhanced) .fp-steps li button { cursor: default; }
+.fp-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.fp-tabs[hidden] { display: none; }
+.fp-tabs button { font: 500 13px var(--font-ui); padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg-1); color: var(--text-2); cursor: pointer; }
+.fp-tabs button:hover { border-color: var(--accent); color: var(--text); }
+.fp-tabs button[aria-selected="true"] { border-color: var(--accent); color: var(--text); background: color-mix(in oklab, var(--accent) 14%, var(--bg-1)); }
+.fp-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fp-parts { margin-top: 8px; color: var(--text-2); font-size: 14px; }
+.fp-parts summary { cursor: pointer; color: var(--text-3); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; }
+.fp-parts dl { margin: 10px 0 0; display: grid; gap: 10px; }
+.fp-parts dt { color: var(--text); font-weight: 500; }
+.fp-parts dd { margin: 2px 0 0; }
+.part-kind { margin-left: 8px; font: 500 10px var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.part-ex { display: block; margin-top: 4px; padding: 4px 10px; border-left: 2px solid var(--accent); background: var(--bg-2); font: 12px/1.5 var(--font-mono); quotes: none; }
+
+/* --- hover / focus exploration --- */
+.node[tabindex] { cursor: help; outline: none; }
+.node[data-state="hidden"] { pointer-events: none; }
+.node:focus-visible .shape { stroke-width: 3; stroke: var(--text); }
+.node:focus-visible .halo { opacity: 1; }
+.node.is-hover .halo { opacity: 1; }
+.node.is-hover .shape { stroke-width: 2.6; }
+.node.is-hover .label { fill: var(--text); }
+.edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: help; }
+.edge.is-hover { stroke: var(--accent); stroke-width: 2.4; filter: drop-shadow(0 0 4px var(--accent)); }
+.edge-label.is-hover { fill: var(--text); }
+flow-player.has-focus .edge:not(.is-rel), flow-player.has-focus .edge-label:not(.is-rel) { opacity: 0.22; }
+
+.fp-tip { position: fixed; z-index: 50; left: 0; top: 0; max-width: min(320px, calc(100vw - 16px)); padding: 12px 14px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--line)); background: color-mix(in oklab, var(--bg-1) 94%, transparent); backdrop-filter: blur(8px); box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.3), 0 0 24px -6px var(--accent); pointer-events: auto; opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity 0.12s, transform 0.12s, visibility 0.12s; }
+.fp-tip.is-on { opacity: 1; visibility: visible; transform: none; }
+.fp-tip-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fp-tip-t { font: 400 20px/1.1 var(--font-display); color: var(--text); }
+.fp-tip-k { font: 500 10px/1 var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); padding: 4px 8px; border-radius: 999px; border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent); background: color-mix(in oklab, var(--accent) 10%, transparent); }
+.fp-tip-k:empty, .fp-tip-x:empty { display: none; }
+.fp-tip-d { margin: 6px 0 0; font: 400 13.5px/1.45 var(--font-ui); color: var(--text-2); }
+.fp-tip-x { margin: 8px 0 0; padding: 6px 10px; border-left: 2px solid var(--accent); border-radius: 0 6px 6px 0; background: var(--bg-2); font: 400 12px/1.5 var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .fp-tip { transition: none; transform: none; } }
+/* With tabs present the active tab names the panel, so the in-panel title is redundant. */
+flow-player.is-enhanced .fp-scenario-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

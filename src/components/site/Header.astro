@@ -1,25 +1,69 @@
 ---
 import { href } from '../../lib/url';
 import Search from './Search.astro';
+
+const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
+const raw = Astro.url.pathname;
+// Normalise to a leading and trailing slash so /about and /about/ compare equal.
+const norm = (p: string) => ('/' + p.replace(/^\/+|\/+$/g, '') + '/').replace(/^\/\/$/, '/');
+const path = norm(base && raw.startsWith(base) ? raw.slice(base.length) : raw);
+const links = [
+  { label: 'Atlas', to: '/', page: '/', active: path === '/' || path.startsWith('/patterns/') },
+  { label: 'Families', to: '/#families', page: '/families/', active: path.startsWith('/families/') },
+  { label: 'About', to: '/about/', page: '/about/', active: path.startsWith('/about/') },
+];
+// Exact page -> aria-current="page"; inside the section (e.g. Atlas on /patterns/*) -> "true".
+const current = (l: (typeof links)[number]) => (!l.active ? undefined : path === l.page ? 'page' : 'true');
 ---
 <header class="site-header">
-  <div class="wrap bar">
-    <a class="brand" href={href('/')}><span class="mark" aria-hidden="true">✦</span> Agentic <em>Atlas</em></a>
+  <div class="bar">
+    <a class="brand" href={href('/')}><span class="mark" aria-hidden="true"></span><span>Agentic Atlas</span></a>
     <nav aria-label="Primary">
-      <a href={href('/#families')}>Families</a>
-      <a href={href('/about')}>About</a>
+      <ul>
+        {links.map(l => (
+          <li><a href={href(l.to)} class:list={{ active: l.active }} aria-current={current(l)}>{l.label}</a></li>
+        ))}
+      </ul>
       <Search />
       <slot name="actions" />
     </nav>
   </div>
 </header>
 <style>
-  .site-header { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: color-mix(in oklab, var(--bg) 75%, transparent); border-bottom: 1px solid var(--line); }
-  .bar { display: flex; align-items: center; justify-content: space-between; height: 60px; }
-  .brand { font: 400 22px var(--font-display); text-decoration: none; }
-  .brand em { color: var(--brand); }
-  .mark { color: var(--brand); }
-  nav { display: flex; gap: 22px; align-items: center; font-size: 14px; }
-  nav a { text-decoration: none; color: var(--text-2); }
-  nav a:hover { color: var(--text); }
+  .site-header {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in oklab, var(--bg) 92%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 24px;
+    min-height: var(--header-h); padding: 0 var(--gutter);
+    max-width: var(--max); margin: 0 auto;
+  }
+  .brand {
+    display: inline-flex; align-items: center; gap: 12px;
+    font: 800 13px/1 var(--font-display); font-stretch: 125%;
+    letter-spacing: .12em; text-transform: uppercase; text-decoration: none; white-space: nowrap;
+  }
+  .brand:hover { color: var(--text); }
+  nav { display: flex; align-items: center; gap: 28px; }
+  ul { display: flex; gap: 28px; list-style: none; margin: 0; padding: 0; }
+  ul a {
+    position: relative; display: inline-flex; align-items: center; min-height: var(--header-h);
+    font-size: 15px; font-weight: 500; text-decoration: none; color: var(--text-2);
+  }
+  ul a:hover { color: var(--text); }
+  ul a.active { color: var(--text); }
+  ul a.active::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 10px; height: 2px; background: var(--accent);
+  }
+  @media (max-width: 720px) {
+    .bar { flex-wrap: wrap; row-gap: 0; padding-top: 14px; }
+    .brand { min-height: 28px; }
+    nav { width: 100%; justify-content: space-between; gap: 12px; }
+    ul { gap: 22px; }
+    ul a { min-height: 48px; font-size: 14px; }
+    ul a.active::after { bottom: 8px; }
+  }
 </style>

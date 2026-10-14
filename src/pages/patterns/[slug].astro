@@ -22,7 +22,7 @@ if (!prose) throw new Error(`Missing index.mdx for pattern ${p.slug}`);
 const { Content } = await render(prose);
 const { prev, next } = cat.neighbors(p.slug);
 ---
-<BaseLayout title={p.name} description={p.summary} accent={fam.accent} pagefind>
+<BaseLayout title={p.name} description={p.summary} pagefind>
   <article class="wrap pattern">
     <PatternHeader pattern={p} family={fam} />
     <Diagram uid={p.slug} spec={p.diagram as DiagramSpec} title={p.name} />

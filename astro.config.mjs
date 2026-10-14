@@ -10,9 +10,9 @@ export default defineConfig({
       themes: ['github-dark-dimmed'],
       styleOverrides: {
         codeFontFamily: "'JetBrains Mono Variable', ui-monospace, monospace",
-        codeBackground: '#0F1424',
-        borderColor: '#2A3150',
-        borderRadius: '10px',
+        codeBackground: '#1A1615',
+        borderColor: '#3A302D',
+        borderRadius: '0',
       },
     }),
     mdx(),

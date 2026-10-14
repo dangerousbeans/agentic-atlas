@@ -1,4 +1,4 @@
-import { frameAt, nextStepEnd, prevStepStart, type FrameState, type TokenState } from '../../lib/diagram/state';
+import { frameAt, type FrameState, type TokenState } from '../../lib/diagram/state';
 import type { Timeline } from '../../lib/diagram/compile';
 import type { DiagramSpec } from '../../lib/diagram/types';
 
@@ -7,6 +7,7 @@ interface Rect { x: number; y: number; w: number; h: number }
 interface View { svg: SVGSVGElement; layer: SVGGElement; paths: Map<string, SVGPathElement>; lengths: Map<string, number>; pool: SVGGElement[]; active: boolean; obstacles?: Rect[] }
 const NS = 'http://www.w3.org/2000/svg';
 const HOLD_MS = 1600;
+const EPS = 0.001;
 const TRAIL = [0.05, 0.1, 0.15];
 const hit = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 /** What a token label must not cover: node glyphs, labels and sublabels, edge labels and group titles, in SVG units. */
@@ -27,10 +28,10 @@ class FlowPlayer extends HTMLElement {
   private data!: Payload;
   private tl!: Timeline;
   private t = 0;
-  private speed = 1;
   private playing = false;
-  private stopAt: number | null = null;
-  private userControl = false;
+  private hover = false;
+  private focused = false;
+  private jumpHold = false;
   private visible = false;
   private raf = 0;
   private last = 0;
@@ -39,10 +40,15 @@ class FlowPlayer extends HTMLElement {
   private views: View[] = [];
   private nodeEls = new Map<string, Element[]>();
   private edgeEls = new Map<string, Element[]>();
-  private scrub?: HTMLInputElement;
-  private scrubbing = false;
+  private tip?: HTMLElement;
+  private tipParts: HTMLElement[] = [];
+  private tipFor: Element | null = null;
+  private hideTimer = 0;
+  private lit: Element[] = [];
   private onDoc = (e: Event) => this.onNodeRef(e as CustomEvent<{ node: string | null }>);
   private onVis = () => this.ensureLoop();
+  private onWin = () => this.showTip(null);
+  private onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') this.showTip(null); };
   private inited = false;
   private observers: (ResizeObserver | IntersectionObserver)[] = [];
 
@@ -60,15 +66,12 @@ class FlowPlayer extends HTMLElement {
     this.querySelectorAll<SVGSVGElement>('svg.diagram-svg').forEach(svg => {
       const paths = new Map<string, SVGPathElement>();
       svg.querySelectorAll<SVGPathElement>('path.edge').forEach(p => paths.set(p.dataset.edge!, p));
-      const view: View = { svg, layer: svg.querySelector('g.tokens')!, paths, lengths: new Map(), pool: [], active: false };
-      this.views.push(view);
+      this.views.push({ svg, layer: svg.querySelector('g.tokens')!, paths, lengths: new Map(), pool: [], active: false });
     });
     document.fonts?.ready.then(() => { for (const v of this.views) v.obstacles = undefined; this.render(); });
     this.classList.add('is-enhanced');
     this.setAttribute('data-playing', 'false');
-    this.querySelector('.fp-controls')?.removeAttribute('hidden');
-    this.bindControls();
-    this.syncScenarioLists();
+    if (!this.compact) this.bindExplore();
     this.observe();
     this.attachGlobal();
     this.render();
@@ -95,17 +98,17 @@ class FlowPlayer extends HTMLElement {
       const ro = new ResizeObserver(sync);
       ro.observe(stage); this.observers.push(ro);
     }
-    const io = new IntersectionObserver(([e]) => {
-      this.visible = e.isIntersecting;
-      if (this.visible && !this.userControl && !this.reduced && !this.playing) this.setPlaying(true);
-      this.ensureLoop();
-    }, { threshold: 0.3 });
+    const io = new IntersectionObserver(([e]) => { this.visible = e.isIntersecting; this.sync(); }, { threshold: 0.3 });
     io.observe(this); this.observers.push(io);
   }
 
   private attachGlobal() {
     document.addEventListener('visibilitychange', this.onVis);
-    if (!this.compact) document.addEventListener('noderef', this.onDoc);
+    if (!this.compact) {
+      document.addEventListener('noderef', this.onDoc);
+      addEventListener('scroll', this.onWin, { passive: true });
+      addEventListener('resize', this.onWin);
+    }
   }
 
   disconnectedCallback() {
@@ -115,69 +118,126 @@ class FlowPlayer extends HTMLElement {
     for (const v of this.views) v.active = false;
     document.removeEventListener('visibilitychange', this.onVis);
     document.removeEventListener('noderef', this.onDoc);
+    removeEventListener('scroll', this.onWin);
+    removeEventListener('resize', this.onWin);
+    this.hover = this.focused = this.jumpHold = false;
+    if (this.tip) this.showTip(null);
+    this.sync();
   }
 
   private push(m: Map<string, Element[]>, k: string, el: Element) { const a = m.get(k); if (a) a.push(el); else m.set(k, [el]); }
 
-  private bindControls() {
-    const q = <T extends Element>(s: string) => this.querySelector<T>(s);
-    q<HTMLButtonElement>('[data-action="play"]')?.addEventListener('click', () => this.togglePlay());
-    q<HTMLButtonElement>('[data-action="next"]')?.addEventListener('click', () => this.next());
-    q<HTMLButtonElement>('[data-action="prev"]')?.addEventListener('click', () => this.prev());
-    this.scrub = q<HTMLInputElement>('[data-scrub]') ?? undefined;
-    this.scrub?.addEventListener('input', () => { this.take(); this.setPlaying(false); this.t = (+this.scrub!.value / 1000) * this.tl.duration; this.render(); });
-    this.scrub?.addEventListener('pointerdown', () => (this.scrubbing = true));
-    const endScrub = () => (this.scrubbing = false);
-    ['pointerup', 'pointercancel', 'lostpointercapture', 'blur'].forEach(ev => this.scrub?.addEventListener(ev, endScrub));
-    q<HTMLSelectElement>('[data-speed]')?.addEventListener('change', e => (this.speed = +(e.target as HTMLSelectElement).value));
-    q<HTMLSelectElement>('[data-scenario]')?.addEventListener('change', e => {
-      this.tl = this.data.timelines[+(e.target as HTMLSelectElement).value];
-      this.t = 0; this.lastStep = -1; this.syncScenarioLists(); this.render();
-    });
-    this.addEventListener('keydown', e => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'SELECT') return;
-      if (tag === 'BUTTON' && (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter')) return;
-      const k = e.key;
-      if (k === ' ' || k === 'Spacebar') { e.preventDefault(); this.togglePlay(); }
-      else if (k === 'ArrowRight') { e.preventDefault(); this.next(); }
-      else if (k === 'ArrowLeft') { e.preventDefault(); this.prev(); }
-      else if (k === 'Home') { e.preventDefault(); this.take(); this.setPlaying(false); this.t = 0; this.render(); }
-      else if (k === 'End') { e.preventDefault(); this.take(); this.setPlaying(false); this.t = this.tl.duration; this.render(); }
-    });
-  }
+  private get held() { return this.hover || this.focused || this.jumpHold; }
 
-  private take() { this.userControl = true; this.stopAt = null; }
-
-  private togglePlay() {
-    this.take();
-    if (!this.playing && this.t >= this.tl.duration) this.t = 0;
-    this.setPlaying(!this.playing);
-  }
-
-  private next() {
-    this.take();
-    const target = nextStepEnd(this.tl, this.t);
-    if (this.reduced) { this.setPlaying(false); this.t = target; this.render(); return; }
-    this.stopAt = target; this.setPlaying(true);
-  }
-
-  private prev() {
-    this.take(); this.setPlaying(false);
-    this.t = prevStepStart(this.tl, this.t); this.render();
-  }
-
-  private setPlaying(v: boolean) {
-    this.playing = v;
-    this.setAttribute('data-playing', String(v));
-    const b = this.querySelector('[data-action="play"]');
-    b?.setAttribute('aria-pressed', String(v));
-    b?.setAttribute('aria-label', v ? 'Pause' : 'Play');
+  /** Autoplay-loop whenever visible and not held by the pointer or keyboard focus. Reduced motion never autoplays. */
+  private sync() {
+    const run = !this.reduced && this.visible && !this.held;
+    if (run !== this.playing) { this.playing = run; this.setAttribute('data-playing', String(run)); }
     this.ensureLoop();
   }
 
+  private bindExplore() {
+    const on = (t: EventTarget, type: string, fn: (e: any) => void) => t.addEventListener(type, fn);
+    const hit = (e: Event) => (e.target as Element).closest<SVGElement>('[data-tip-t]');
+    const stage = this.querySelector('.diagram-stage')!;
+    on(stage, 'pointerenter', () => { this.hover = true; this.sync(); });
+    on(stage, 'pointerleave', () => { this.hover = false; this.sync(); });
+    on(this, 'pointerleave', () => { this.jumpHold = false; this.sync(); });
+    on(this, 'focusin', e => { this.focused = (e.target as Element).matches(':focus-visible'); this.sync(); const el = hit(e); if (el) this.showTip(el); });
+    on(this, 'focusout', e => {
+      this.showTip(null);
+      if (!this.contains(e.relatedTarget as Node | null)) { this.focused = false; this.jumpHold = false; this.sync(); }
+    });
+    // One tooltip element for the whole player.
+    const tip = (this.tip = document.createElement('div'));
+    tip.className = 'fp-tip'; tip.setAttribute('role', 'tooltip');
+    const head = document.createElement('div'); head.className = 'fp-tip-head';
+    this.tipParts = ['span:fp-tip-t', 'span:fp-tip-k', 'p:fp-tip-d', 'p:fp-tip-x'].map(s => {
+      const [tag, cls] = s.split(':'); const el = document.createElement(tag); el.className = cls; return el;
+    });
+    head.append(this.tipParts[0], this.tipParts[1]);
+    tip.append(head, this.tipParts[2], this.tipParts[3]);
+    this.append(tip);
+    on(tip, 'pointerenter', () => { clearTimeout(this.hideTimer); this.hover = true; this.sync(); });
+    on(tip, 'pointerleave', () => { this.hover = false; this.sync(); this.hideSoon(); });
+    on(this, 'pointerover', e => { const el = hit(e); if (el) this.showTip(el, e); });
+    on(this, 'pointermove', e => { if (this.tipFor?.hasAttribute('data-hit') && !tip.contains(e.target as Node)) this.place(e.clientX, e.clientY, e.clientX, e.clientY); });
+    on(this, 'pointerout', e => {
+      if (e.pointerType === 'touch') return;
+      const to = (e.relatedTarget as Element | null)?.closest?.('[data-tip-t]') ?? null;
+      if (to !== hit(e)) { if (to) this.showTip(to); else this.hideSoon(); }
+    });
+    on(this, 'pointerdown', e => { if (e.pointerType === 'touch' && !hit(e)) this.showTip(null); });
+    on(stage, 'scroll', this.onWin);
+
+    on(this, 'click', e => {
+      const b = (e.target as Element).closest<HTMLElement>('button[data-step-index]');
+      if (!b) return;
+      this.t = this.tl.steps[+b.dataset.stepIndex!].end - EPS;
+      this.jumpHold = true; this.sync(); this.render();
+    });
+
+    const tabs = [...this.querySelectorAll<HTMLElement>('[data-scenario-tab]')];
+    const list = this.querySelector('.fp-tabs');
+    list?.removeAttribute('hidden');
+    const pick = (i: number) => {
+      tabs.forEach((b, j) => { b.setAttribute('aria-selected', String(j === i)); b.tabIndex = j === i ? 0 : -1; });
+      this.tl = this.data.timelines[i]; this.t = 0; this.lastStep = -1;
+      this.syncScenarioLists(); this.render();
+    };
+    tabs.forEach((b, i) => on(b, 'click', () => pick(i)));
+    if (list) on(list, 'keydown', e => {
+      const n = tabs.length, i = tabs.indexOf(document.activeElement as HTMLElement);
+      const j = e.key === 'ArrowRight' ? (i + 1) % n : e.key === 'ArrowLeft' ? (i - 1 + n) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
+      if (j < 0) return;
+      e.preventDefault(); pick(j); tabs[j].focus();
+    });
+  }
+
+  /** Give the pointer a moment to travel from the anchor onto the tooltip (WCAG 1.4.13 hoverable). */
+  private hideSoon() {
+    clearTimeout(this.hideTimer);
+    this.hideTimer = window.setTimeout(() => this.showTip(null), 150);
+  }
+
+  private showTip(el: Element | null, e?: PointerEvent) {
+    clearTimeout(this.hideTimer);
+    if (el === this.tipFor) return;
+    this.tipFor = el;
+    if (el) document.addEventListener('keydown', this.onEsc); else document.removeEventListener('keydown', this.onEsc);
+    const tip = this.tip!;
+    for (const x of this.lit) x.classList.remove('is-hover');
+    this.lit = [];
+    if (this.classList.contains('has-focus')) {
+      this.classList.remove('has-focus');
+      this.edgeEls.forEach(a => a.forEach(x => x.classList.remove('is-rel')));
+    }
+    tip.classList.toggle('is-on', !!el);
+    if (!el) return;
+    const d = (el as HTMLElement).dataset;
+    this.tipParts.forEach((p, i) => (p.textContent = [d.tipT, d.tipK, d.tipD, d.tipX][i] ?? ''));
+    if (d.node) {
+      this.lit = this.nodeEls.get(d.node) ?? [];
+      this.classList.add('has-focus');
+      this.edgeEls.forEach(a => a.forEach(x => x.classList.toggle('is-rel', (x as HTMLElement).dataset.from === d.node || (x as HTMLElement).dataset.to === d.node)));
+    } else this.lit = this.edgeEls.get(d.hit!) ?? [];
+    this.lit.forEach(x => x.classList.add('is-hover'));
+    if (e && d.hit) this.place(e.clientX, e.clientY, e.clientX, e.clientY);
+    else { const r = el.getBoundingClientRect(); this.place(r.left, r.top, r.right, r.bottom); }
+  }
+
+  /** Centre the tooltip above the anchor box (below if there is no room) and clamp it inside the viewport. */
+  private place(l: number, t: number, r: number, b: number) {
+    const tip = this.tip!, w = tip.offsetWidth, h = tip.offsetHeight, M = 8;
+    const x = Math.min(Math.max((l + r) / 2 - w / 2, M), Math.max(M, document.documentElement.clientWidth - w - M));
+    let y = t - h - 12;
+    if (y < M) y = b + 12;
+    tip.style.left = `${x}px`;
+    tip.style.top = `${Math.min(Math.max(y, M), Math.max(M, document.documentElement.clientHeight - h - M))}px`;
+  }
+
   private ensureLoop() {
-    const run = this.playing && this.visible && !document.hidden;
+    const run = this.playing && !document.hidden;
     if (run && !this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame(this.tick); }
     if (!run && this.raf) { cancelAnimationFrame(this.raf); this.raf = 0; }
   }
@@ -185,12 +245,8 @@ class FlowPlayer extends HTMLElement {
   private tick = (now: number) => {
     const dt = Math.max(0, Math.min(now - this.last, 100));
     this.last = now;
-    let t = this.t + dt * this.speed;
-    if (this.stopAt !== null && t >= this.stopAt) { t = this.stopAt; this.stopAt = null; this.t = t; this.render(); this.raf = 0; this.setPlaying(false); return; }
-    if (t >= this.tl.duration) {
-      if (!this.userControl) { if (t >= this.tl.duration + HOLD_MS) t = 0; }
-      else { this.t = this.tl.duration; this.render(); this.raf = 0; this.setPlaying(false); return; }
-    }
+    let t = this.t + dt;
+    if (t >= this.tl.duration + HOLD_MS) t = 0;
     this.t = t;
     this.render();
     this.raf = requestAnimationFrame(this.tick);
@@ -200,16 +256,18 @@ class FlowPlayer extends HTMLElement {
     if (!this.reduced) return this.t;
     const f = frameAt(this.data.spec, this.tl, this.t);
     const step = this.tl.steps[f.stepIndex];
-    return this.t >= this.tl.duration ? this.tl.duration : step.end - 0.001;
+    return this.t >= this.tl.duration ? this.tl.duration : step.end - EPS;
   }
 
   private render() {
     if (!this.data) return;
     const f = frameAt(this.data.spec, this.tl, this.shownT());
-    for (const [id, s] of Object.entries(f.nodes)) for (const el of this.nodeEls.get(id) ?? []) if (el.getAttribute('data-state') !== s) el.setAttribute('data-state', s);
+    for (const [id, s] of Object.entries(f.nodes)) for (const el of this.nodeEls.get(id) ?? []) if (el.getAttribute('data-state') !== s) {
+      el.setAttribute('data-state', s);
+      if (el.hasAttribute('tabindex')) el.setAttribute('tabindex', s === 'hidden' ? '-1' : '0');
+    }
     for (const [id, s] of Object.entries(f.edges)) for (const el of this.edgeEls.get(id) ?? []) if (el.getAttribute('data-state') !== s) el.setAttribute('data-state', s);
     for (const v of this.views) if (v.active) this.drawTokens(v, f.tokens);
-    if (this.scrub && !this.scrubbing) this.scrub.value = String(Math.round((Math.min(this.t, this.tl.duration) / this.tl.duration) * 1000));
     if (f.stepIndex !== this.lastStep) this.onStep(f);
   }
 
@@ -279,10 +337,9 @@ class FlowPlayer extends HTMLElement {
     if (cap) cap.textContent = step.caption + (step.iteration ? ` (round ${step.iteration.n} of ${step.iteration.of})` : '');
     const ref = f.codeRef;
     this.setAttribute('data-code-ref', ref ? `${ref.block}:${ref.lines}` : '');
-    const counter = this.querySelector('.fp-counter');
-    if (counter) counter.textContent = `Step ${f.stepIndex + 1} / ${this.tl.steps.length}`;
-    this.querySelectorAll(`ol.fp-captions[data-scenario="${this.tl.id}"] li`).forEach(li => {
-      if ((li as HTMLElement).dataset.stepIndex === String(f.stepIndex)) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+    this.querySelectorAll<HTMLElement>(`ol.fp-captions[data-scenario="${this.tl.id}"] button`).forEach(b => {
+      const li = b.parentElement!;
+      if (b.dataset.stepIndex === String(f.stepIndex)) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
     });
     this.dispatchEvent(new CustomEvent('flowstep', { bubbles: true, detail: { uid: this.dataset.uid, stepIndex: f.stepIndex, codeRef: f.codeRef } }));
   }

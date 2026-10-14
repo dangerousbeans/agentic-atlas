@@ -16,7 +16,7 @@ const desc: Record<string, string> = {
     <h2>Node shapes</h2>
     <ul class="legend">
       {NODE_KINDS.map(k => (
-        <li class="legend-item"><svg viewBox="0 -8 136 72" aria-hidden="true"><g class="node" style="--accent:#F5B14C;--halo:#F5B14C"><NodeShape kind={k} cx={68} /></g></svg><div><strong>{k}</strong><span>{desc[k]}</span></div></li>
+        <li class="legend-item"><svg viewBox="0 -8 136 72" aria-hidden="true"><g class="node" style="--halo:var(--accent)"><NodeShape kind={k} cx={68} /></g></svg><div><strong>{k}</strong><span>{desc[k]}</span></div></li>
       ))}
     </ul>
     <h2>Edges and tokens</h2>
@@ -29,11 +29,11 @@ const desc: Record<string, string> = {
     <h2>Methodology</h2>
     <p>Patterns are curated from Anthropic's <a href="https://www.anthropic.com/engineering/building-effective-agents">Building effective agents</a>, OpenAI's <a href="https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf">A practical guide to building agents</a>, and the original papers cited on each page. Diagrams play scripted traces that illustrate control flow; they are not live model runs. Pseudocode is framework-agnostic on purpose.</p>
     <h2>Credits</h2>
-    <p>Built with Astro, ELK, three.js, Expressive Code and Pagefind. Typeset in Instrument Serif, Inter Tight and JetBrains Mono.</p>
+    <p>Built with Astro, ELK, three.js, Expressive Code and Pagefind. Typeset in Archivo and JetBrains Mono.</p>
   </article>
 </BaseLayout>
 <style>
-  .about { max-width: 820px; }
+  .about { max-width: 820px; padding-top: 56px; }
   .legend { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px 24px; }
   .legend-item { display: flex; align-items: center; gap: 14px; }
   .legend-item svg { width: 96px; flex: none; }

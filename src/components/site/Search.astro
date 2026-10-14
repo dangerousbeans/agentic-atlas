@@ -2,7 +2,7 @@
 import { getCatalog } from '../../lib/catalog';
 const cat = await getCatalog();
 ---
-<button type="button" class="search-btn" data-search-open aria-haspopup="dialog">Search <kbd data-kbd>Ctrl K</kbd></button>
+<button type="button" class="btn btn-sm search-btn" data-search-open aria-haspopup="dialog">Search <kbd data-kbd>Ctrl K</kbd></button>
 <dialog class="search" aria-label="Search patterns">
   <div class="search-head">
     <input type="search" aria-label="Search" placeholder="Search patterns, e.g. 'loop', 'memory', 'tools'" autocomplete="off" />
@@ -60,19 +60,19 @@ const cat = await getCatalog();
   fam.addEventListener('change', run);
 </script>
 <style>
-  .search-btn { background: var(--bg-1); color: var(--text-2); border: 1px solid var(--line); border-radius: 99px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
-  kbd { font: 11px var(--font-mono); color: var(--text-3); margin-left: 6px; }
-  dialog.search { width: min(640px, 92vw); border: 1px solid var(--line); border-radius: 16px; background: var(--bg-1); color: var(--text); padding: 0; margin-top: 12vh; }
-  dialog.search::backdrop { background: #0B0F1Acc; backdrop-filter: blur(4px); }
+  .search-btn { padding-inline: 12px; font-weight: 500; }
+  kbd { font: 11px var(--font-mono); color: var(--text-2); }
+  dialog.search { width: min(640px, 92vw); border: 1px solid var(--line-strong); border-top: 2px solid var(--accent); border-radius: 0; background: var(--bg-1); color: var(--text); padding: 0; margin-top: 12vh; }
+  dialog.search::backdrop { background: #120F0Ecc; backdrop-filter: blur(4px); }
   .search-head { display: flex; gap: 8px; padding: 14px; border-bottom: 1px solid var(--line); }
   .search-head input { flex: 1; background: transparent; border: 0; color: var(--text); font: 16px var(--font-ui); outline: none; }
-  .search-head select, .search-head button { background: var(--bg); color: var(--text-2); border: 1px solid var(--line); border-radius: 8px; font: 12px var(--font-ui); padding: 4px 8px; }
-  .status { margin: 0; padding: 8px 16px; font-size: 12px; color: var(--text-3); }
+  .search-head select, .search-head button { background: var(--bg); color: var(--text-2); border: 1px solid var(--line-strong); border-radius: 0; font: 12px var(--font-ui); padding: 4px 8px; }
+  .status { margin: 0; padding: 8px 16px; font: 12px var(--font-mono); color: var(--text-2); }
   .results { list-style: none; margin: 0; padding: 0 8px 8px; max-height: 60vh; overflow: auto; }
-  .results :global(a) { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 12px; border-radius: 10px; text-decoration: none; }
-  .results :global(a:hover), .results :global(a:focus) { background: var(--bg-2); }
-  .results :global(.title) { font: 400 20px var(--font-display); }
-  .results :global(.fam) { font-size: 11px; color: var(--text-3); letter-spacing: .1em; text-transform: uppercase; align-self: center; }
+  .results :global(a) { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 12px; border-radius: 0; border-left: 2px solid transparent; text-decoration: none; }
+  .results :global(a:hover), .results :global(a:focus) { background: var(--bg-2); border-left-color: var(--accent); }
+  .results :global(.title) { font: 700 17px/1.3 var(--font-ui); }
+  .results :global(.fam) { font: 11px var(--font-mono); color: var(--text-2); letter-spacing: .1em; text-transform: uppercase; align-self: center; }
   .results :global(.ex) { grid-column: 1 / -1; font-size: 13px; color: var(--text-2); }
-  .results :global(.ex mark) { background: none; color: var(--family-accent, var(--brand)); }
+  .results :global(.ex mark) { background: none; color: var(--text); text-decoration: underline; text-decoration-color: var(--accent); }
 </style>

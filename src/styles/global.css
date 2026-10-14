@@ -1,43 +1,86 @@
-@import '@fontsource/instrument-serif/400.css';
-@import '@fontsource/instrument-serif/400-italic.css';
-@import '@fontsource-variable/inter-tight';
+/* Agentic Atlas: "instrument" design system (addendum §1). Dark only. */
+@import '@fontsource-variable/archivo/wdth.css'; /* wght 100–900 + wdth 62–125 */
 @import '@fontsource-variable/jetbrains-mono';
+@import './buttons.css';
 
 :root {
-  --bg: #0B0F1A; --bg-1: #10162A; --bg-2: #161D3A;
-  --line: #2A3150; --line-strong: #4A5378;
-  --text: #E6E8F0; --text-2: #AAB0C6; --text-3: #8A91AE;
-  --danger: #FF7A7A; --ok: #7EE0A1;
-  --font-display: 'Instrument Serif', Georgia, serif;
-  --font-ui: 'Inter Tight Variable', system-ui, sans-serif;
+  /* Palette: one accent */
+  --bg: #120F0E;
+  --bg-1: #1A1615;
+  --bg-2: #221D1B;
+  --line: #3A302D;
+  --line-strong: #5A4A45;
+  --text: #F4EDE7;
+  --text-2: #B8ABA4;
+  --text-3: #8C7F79;
+  --accent: #FF3B30;
+  --accent-soft: #FF3B3033;
+  --on-accent: var(--bg); /* text on solid red; cream on red is only 3.0:1 */
+  /* Families are told apart by name and shape, never colour. */
+  --family-accent: var(--accent);
+  --brand: var(--accent);
+  --danger: var(--accent);
+  --ok: #CFE3B5;
+
+  /* Type */
+  --font-display: 'Archivo Variable', 'Archivo', system-ui, sans-serif;
+  --font-ui: 'Archivo Variable', 'Archivo', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
-  --max: 1160px; --radius: 12px;
-  --brand: #F5B14C;
-  --family-accent: #F5B14C; /* default; pages override inline from the family YAML */
+  --display-stretch: 125%;
+  --display-weight: 800;
+
+  /* Shape */
+  --max: 1280px;
+  --gutter: clamp(20px, 5vw, 72px);
+  --radius: 0;
+  --mark: 6px;
+  --header-h: 60px;
   color-scheme: dark;
 }
+
 *, *::before, *::after { box-sizing: border-box; }
-html { background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 16px; line-height: 1.6; }
-body { margin: 0; min-height: 100vh;
-  background:
-    radial-gradient(ellipse 80% 50% at 70% -10%, var(--bg-2) 0%, transparent 60%),
-    radial-gradient(1px 1px at 20% 30%, #ffffff40 50%, transparent 51%),
-    radial-gradient(1px 1px at 80% 12%, #ffffff30 50%, transparent 51%),
-    radial-gradient(1px 1px at 55% 60%, #ffffff25 50%, transparent 51%),
-    var(--bg);
-  background-attachment: fixed; }
-a { color: inherit; text-decoration-color: color-mix(in oklab, var(--family-accent) 60%, transparent); text-underline-offset: 3px; }
-a:hover { color: var(--family-accent); }
-:focus-visible { outline: 2px solid var(--family-accent); outline-offset: 3px; border-radius: 4px; }
-h1, h2, h3 { font-family: var(--font-display); font-weight: 400; line-height: 1.1; letter-spacing: -0.01em; }
-h1 { font-size: clamp(2.5rem, 6vw, 4.25rem); margin: 0.2em 0 0.3em; }
-h2 { font-size: clamp(1.75rem, 3.5vw, 2.4rem); margin: 2em 0 0.5em; }
-h3 { font-size: 1.4rem; margin: 1.5em 0 0.4em; }
-h1 em, h2 em { color: var(--family-accent); }
-code { font-family: var(--font-mono); font-size: 0.9em; }
-.wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
-.eyebrow { font: 500 11px/1 var(--font-ui); letter-spacing: 0.18em; text-transform: uppercase; color: var(--family-accent); }
+html {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-ui); font-size: 16px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+body { margin: 0; min-height: 100vh; background: var(--bg); }
+::selection { background: var(--accent); color: var(--on-accent); }
+
+a { color: inherit; text-decoration-color: color-mix(in oklab, var(--accent) 70%, transparent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { color: var(--text); text-decoration-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 0; }
+
+/* Headings: h1/h2 in the wide heavy display cut; h3 at normal width. */
+h1, h2, .display {
+  font-family: var(--font-display); font-weight: var(--display-weight); font-stretch: var(--display-stretch);
+  line-height: 1.02; letter-spacing: -0.02em; text-wrap: balance; color: var(--text);
+}
+h1 { font-size: clamp(2.4rem, 5.6vw, 4.5rem); margin: 0.25em 0 0.35em; }
+h2 { font-size: clamp(1.6rem, 3.2vw, 2.4rem); margin: 2em 0 0.5em; }
+h3 { font-family: var(--font-ui); font-weight: 700; font-size: 1.25rem; line-height: 1.25; letter-spacing: -0.005em; margin: 1.5em 0 0.4em; }
+h1 em, h2 em, h3 em { font-style: normal; color: inherit; }
+p { text-wrap: pretty; }
+strong { font-weight: 650; color: var(--text); }
+code, kbd, samp { font-family: var(--font-mono); font-size: 0.9em; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+img { max-width: 100%; }
+
+/* Utilities */
+.wrap { max-width: var(--max); margin: 0 auto; padding: 0 var(--gutter); }
+.mark { display: inline-block; flex: none; width: var(--mark); height: var(--mark); background: var(--accent); vertical-align: middle; }
+.eyebrow {
+  display: flex; align-items: center; gap: 10px;
+  font: 600 11px/1.2 var(--font-ui); letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-2);
+}
+.eyebrow::before { content: ""; width: var(--mark); height: var(--mark); background: var(--accent); flex: none; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--text-2); }
+.hairline { border: 1px solid var(--line); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-.skip { position: absolute; left: -999px; } .skip:focus { left: 16px; top: 16px; z-index: 100; background: var(--bg-1); padding: 8px 12px; }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; } }
+.skip { position: absolute; left: -999px; }
+.skip:focus { left: 16px; top: 16px; z-index: 100; background: var(--bg-1); border: 1px solid var(--accent); padding: 8px 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+}
