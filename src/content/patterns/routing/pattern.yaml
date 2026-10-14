@@ -10,6 +10,29 @@ sources:
 related:
   composesWith: [evaluator-optimizer, orchestrator-workers]
   confusedWith: []
+origin:
+  by: Erik Schluntz and Barry Zhang
+  org: Anthropic
+  year: 2024
+  url: https://www.anthropic.com/engineering/building-effective-agents
+  kind: popularized
+  note: "Anthropic named the pattern in 2024. Classify-then-dispatch is much older than LLMs, and no single inventor is known."
+build:
+  goal: "Send each customer message to exactly one specialist handler, chosen by a cheap LLM classifier, with a general handler as the fallback for anything unclear."
+  steps:
+    - "Define the route table in code: each label (billing, tech, general) maps to one handler with its own prompt, tools and model."
+    - "Call a small, fast model with the {{prompt:classifier}}, filling in the message, and parse the JSON reply into a label."
+    - "If the reply is not valid JSON, or the label is not in the route table, use the general route."
+    - "Call the chosen handler with the original message, not the classifier's output; for the tech label that is the {{prompt:tech-handler}} with its knowledge-base and log tools."
+    - "Return the handler's reply together with the label that was used."
+  stop: "Each message makes one classifier call and one handler call, then stops. Nothing re-routes: if the handler cannot help, it says so in its reply."
+  requirements:
+    - "Keep the labels in one list that both the classifier prompt and the route table are built from, so they cannot drift apart."
+    - "Never throw on a bad classification: a parse failure or an unknown label goes to the general handler, and a classifier timeout (default 5 s) does too."
+    - "Run the classifier at temperature 0 with its own model setting, separate from the handlers' models."
+    - "Log the message id, the raw classifier reply, the label used and whether it fell back, and sample the logs into a labelled test set."
+    - "Add a test with a stub LLM whose classifier returns {\"label\": \"refunds\"}; assert the general handler was called once and the billing and tech handlers were not called."
+defaultVariantName: LLM classifier
 prompts:
   - id: classifier
     title: Classifier prompt
@@ -85,3 +108,162 @@ diagram:
           events:
             - { type: activate, node: billing, status: thinking, at: [0, 0.5] }
             - { type: send, edge: billing-out, token: { kind: result, label: reply }, at: [0.5, 1] }
+variants:
+  - id: embedding-router
+    name: Embedding router
+    summary: "No LLM picks the route: the message is embedded and matched to the nearest example utterances, and a weak match goes to the fallback."
+    origin:
+      by: Aurelio AI
+      org: Aurelio AI
+      year: 2023
+      url: https://github.com/aurelio-labs/semantic-router
+      kind: popularized
+      uncertain: true
+      note: "The open-source semantic-router library popularized embedding-based routing for LLM apps. Nearest-neighbour intent matching is older, and the year is from the repository's first release, not checked against a paper."
+    build:
+      goal: "Route each message to a specialist handler by comparing its embedding with stored example utterances for every route, with no LLM call in the routing step and a fallback when nothing is close."
+      steps:
+        - "For each route (billing, tech), write 10 to 30 example utterances taken from real traffic."
+        - "At startup, embed every example once and store each vector with its route name."
+        - "For each incoming message, embed it with the same embedding model and compute its cosine similarity to every stored example."
+        - "Take the top 5 matches and pick the route that most of them belong to; record the best similarity score."
+        - "If the best score is below the threshold, use the general handler; otherwise call the chosen route's handler with the original message, such as the {{prompt:tech-handler}} for tech."
+      stop: "Each message makes one embedding call and one handler call. There is no retry: a weak match goes to the general handler rather than being routed again."
+      requirements:
+        - "Make the similarity threshold (default 0.75) and the number of neighbours (default 5) parameters, and tune the threshold on labelled messages."
+        - "Embed the examples and the messages with the same model; re-embed every example when that model changes."
+        - "If the embedding call errors or times out, send the message to the general handler instead of failing."
+        - "Log the chosen route, the best score and the runner-up score, so near-ties can be found and new examples added."
+        - "Add a test with a stub embedder that returns fixed vectors; assert a message whose best similarity is 0.40 goes to the general handler and one at 0.92 to tech."
+    diagram:
+      nodes:
+        - { id: input, kind: io, label: Request, description: "The incoming customer message, such as 'The app crashes on login' or 'I was charged twice'." }
+        - { id: router, kind: router, label: Nearest match, sublabel: embed + compare, model: false, description: "No LLM: embeds the message, compares it with every stored example and picks the route of the closest ones." }
+        - { id: routes, kind: memory, label: Route examples, description: "Example utterances for each route, embedded once at startup and stored as vectors with their route name." }
+        - { id: billing, kind: llm, label: Billing, description: "Specialist prompt for charges, invoices, refunds and plan changes, with account context." }
+        - { id: tech, kind: llm, label: Tech support, description: "Specialist prompt for errors, crashes and how-to questions, with knowledge-base search and error-log tools." }
+        - { id: general, kind: llm, label: General, description: "Fallback handler for any message whose best match is below the similarity threshold." }
+        - { id: output, kind: io, label: Reply, description: "The reply written by whichever handler took the message." }
+      edges:
+        - { id: in, from: input, to: router, description: "The raw message is embedded with the same model used for the examples.", example: "\"The app crashes on login\" -> [0.012, -0.087, 0.231, ...] (1,024 dimensions)" }
+        - { id: lookup, from: router, to: routes, label: nearest?, description: "The message vector is compared with every stored example by cosine similarity; the closest examples come back with their scores.", example: "tech: 'app won't open' 0.91, 'crash after update' 0.89; billing: 'charged twice' 0.22" }
+        - { id: to-billing, from: router, to: billing, description: "Taken when most of the nearest examples are billing ones and the best score clears the threshold.", example: "I was charged twice for my March invoice (best match 'double charge on invoice', 0.93)" }
+        - { id: to-tech, from: router, to: tech, description: "Taken when most of the nearest examples are tech ones and the best score clears the threshold.", example: "The app crashes on login (best match 'app won't open', 0.91)" }
+        - { id: to-general, from: router, to: general, style: dashed, label: no match, description: "Taken when even the best match is below the threshold, so no route is a confident fit.", example: "Do you have an office in Berlin? (best match 'change my plan', 0.41, below 0.75)" }
+        - { id: billing-out, from: billing, to: output, description: "The billing specialist's reply goes back to the customer.", example: "Sorry about that. I can see two charges of $29 on March 3. I've flagged the duplicate for a refund; you'll hear from us within 3 days." }
+        - { id: tech-out, from: tech, to: output, description: "The tech-support reply goes back to the customer.", example: "1. Update to version 4.2.1. 2. Clear the app cache. 3. Log in again. If it still crashes, send us the log from Settings > Help." }
+        - { id: general-out, from: general, to: output, description: "The general handler's reply goes back to the customer.", example: "Thanks for reaching out. We are a fully remote team, so we do not have a Berlin office, but you can book a call at any time." }
+      scenarios:
+        - id: tech
+          label: '"The app crashes on login"'
+          steps:
+            - { id: arrive, caption: A customer message arrives and is embedded., duration: 1000, events: [{ type: send, edge: in, token: { kind: prompt, label: crash? } }] }
+            - id: match
+              caption: The message's vector is compared with the stored examples; the closest ones are tech examples, at 0.91.
+              duration: 1800
+              events:
+                - { type: send, edge: lookup, token: { kind: prompt, label: vector }, at: [0, 0.3] }
+                - { type: read, node: routes, at: [0.3, 0.5] }
+                - { type: branch, node: router, taken: to-tech, notTaken: [to-billing, to-general], at: [0.5, 0.7] }
+                - { type: send, edge: to-tech, token: { kind: prompt }, at: [0.7, 1] }
+            - id: handle
+              caption: The tech-support prompt writes the reply.
+              duration: 1800
+              events:
+                - { type: activate, node: tech, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: tech-out, token: { kind: result, label: reply }, at: [0.5, 1] }
+        - id: no-match
+          label: '"Do you have a Berlin office?"'
+          steps:
+            - { id: arrive, caption: A customer message arrives and is embedded., duration: 1000, events: [{ type: send, edge: in, token: { kind: prompt, label: office? } }] }
+            - id: match
+              caption: Nothing stored is close; the best match scores 0.41, below the 0.75 threshold.
+              duration: 1800
+              events:
+                - { type: send, edge: lookup, token: { kind: prompt, label: vector }, at: [0, 0.3] }
+                - { type: read, node: routes, at: [0.3, 0.5] }
+                - { type: branch, node: router, taken: to-general, notTaken: [to-billing, to-tech], at: [0.5, 0.7] }
+                - { type: send, edge: to-general, token: { kind: prompt }, at: [0.7, 1] }
+            - id: handle
+              caption: The general handler answers instead of a specialist guessing.
+              duration: 1800
+              events:
+                - { type: activate, node: general, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: general-out, token: { kind: result, label: reply }, at: [0.5, 1] }
+  - id: rules-then-llm
+    name: Rules first
+    summary: "Deterministic rules settle the obvious messages for free, and only the messages no rule matches go to the LLM classifier."
+    build:
+      goal: "Route each message to one specialist handler, letting cheap deterministic rules decide the clear cases and calling an LLM classifier only for messages no rule matches."
+      steps:
+        - "Write an ordered list of rules in code, each a pattern (a keyword, a regular expression or a metadata field) and the route it selects, such as 'charged twice' to billing."
+        - "Run the rules against each message in order; the first rule that matches decides the route."
+        - "If no rule matches, call the {{prompt:classifier}} and parse its JSON reply into a label; an invalid reply or unknown label means general."
+        - "Call the chosen handler with the original message, such as the {{prompt:tech-handler}} for tech, and return its reply with the route and whether a rule or the classifier chose it."
+      stop: "Each message is decided by at most one rule match or one classifier call, then handled once. Nothing re-routes."
+      requirements:
+        - "Keep the rules as data, in order, each with a name, so a rule can be added or removed without a code change and every decision can name its rule."
+        - "Only add a rule when it is precise on labelled traffic (default bar: 98% of its matches are correct); vague keywords belong to the classifier."
+        - "A rule that throws (such as a bad regular expression) is skipped and logged, never fatal."
+        - "Log which rule fired, or that the classifier was used, so the share of free decisions can be tracked."
+        - "Add a test with a stub LLM: assert \"I was charged twice\" reaches billing with zero classifier calls, and \"The app crashes on login\" makes exactly one classifier call."
+    diagram:
+      nodes:
+        - { id: input, kind: io, label: Request, description: "The incoming customer message, such as 'The app crashes on login' or 'I was charged twice'." }
+        - { id: rules, kind: guard, label: Rules, model: false, description: "Plain code, not a model: an ordered list of keyword and pattern rules; the first match decides the route at no model cost." }
+        - { id: router, kind: router, label: Classifier, description: "An LLM classifier that only sees the messages no rule matched, and returns a label as JSON." }
+        - { id: billing, kind: llm, label: Billing, description: "Specialist prompt for charges, invoices, refunds and plan changes, with account context." }
+        - { id: tech, kind: llm, label: Tech support, description: "Specialist prompt for errors, crashes and how-to questions, with knowledge-base search and error-log tools." }
+        - { id: general, kind: llm, label: General, description: "Fallback handler for anything the classifier does not clearly place as billing or tech." }
+        - { id: output, kind: io, label: Reply, description: "The reply written by whichever specialist handled the message." }
+      edges:
+        - { id: in, from: input, to: rules, description: "Every message is checked against the rules first.", example: "I was charged twice for my March invoice" }
+        - { id: rule-hit, from: rules, to: billing, label: match, description: "A rule matched, so the message goes straight to its handler without any model call.", example: "Rule 'duplicate-charge' (/charged (twice|two times)/i) matched: route billing." }
+        - { id: unmatched, from: rules, to: router, style: dashed, label: no rule, description: "No rule matched, so the message goes to the LLM classifier.", example: "Classify the customer message into exactly one category. <message>The app crashes on login</message>" }
+        - { id: to-billing, from: router, to: billing, description: "Taken when the classifier's label is billing.", example: "My plan renewed at the wrong price" }
+        - { id: to-tech, from: router, to: tech, description: "Taken when the classifier's label is tech.", example: "The app crashes on login" }
+        - { id: to-general, from: router, to: general, description: "Taken for any other or unclear label.", example: "Do you have an office in Berlin?" }
+        - { id: billing-out, from: billing, to: output, description: "The billing specialist's reply goes back to the customer.", example: "Sorry about that. I can see two charges of $29 on March 3. I've flagged the duplicate for a refund; you'll hear from us within 3 days." }
+        - { id: tech-out, from: tech, to: output, description: "The tech-support reply goes back to the customer.", example: "1. Update to version 4.2.1. 2. Clear the app cache. 3. Log in again. If it still crashes, send us the log from Settings > Help." }
+        - { id: general-out, from: general, to: output, description: "The general handler's reply goes back to the customer.", example: "Thanks for reaching out. We are a fully remote team, so we do not have a Berlin office, but you can book a call at any time." }
+      scenarios:
+        - id: rule-hit
+          label: '"I was charged twice"'
+          steps:
+            - { id: arrive, caption: A customer message reaches the rules., duration: 1000, events: [{ type: send, edge: in, token: { kind: prompt, label: refund? } }] }
+            - id: match
+              caption: The duplicate-charge rule matches, so the message skips the classifier and goes straight to billing.
+              duration: 1600
+              events:
+                - { type: activate, node: rules, status: thinking, at: [0, 0.3] }
+                - { type: branch, node: rules, taken: rule-hit, notTaken: [unmatched], at: [0.3, 0.5] }
+                - { type: send, edge: rule-hit, token: { kind: prompt }, at: [0.5, 1] }
+            - id: handle
+              caption: The billing specialist answers; no model call was spent on routing.
+              duration: 1800
+              events:
+                - { type: activate, node: billing, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: billing-out, token: { kind: result, label: reply }, at: [0.5, 1] }
+        - id: fallback
+          label: '"The app crashes on login"'
+          steps:
+            - { id: arrive, caption: A customer message reaches the rules., duration: 1000, events: [{ type: send, edge: in, token: { kind: prompt, label: crash? } }] }
+            - id: no-rule
+              caption: No rule matches, so the message goes to the LLM classifier.
+              duration: 1400
+              events:
+                - { type: activate, node: rules, status: thinking, at: [0, 0.3] }
+                - { type: branch, node: rules, taken: unmatched, notTaken: [rule-hit], at: [0.3, 0.5] }
+                - { type: send, edge: unmatched, token: { kind: prompt }, at: [0.5, 1] }
+            - id: classify
+              caption: The classifier labels it a technical issue.
+              duration: 1400
+              events:
+                - { type: branch, node: router, taken: to-tech, notTaken: [to-billing, to-general], at: [0, 0.5] }
+                - { type: send, edge: to-tech, token: { kind: prompt }, at: [0.5, 1] }
+            - id: handle
+              caption: The tech-support prompt writes the reply.
+              duration: 1800
+              events:
+                - { type: activate, node: tech, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: tech-out, token: { kind: result, label: reply }, at: [0.5, 1] }

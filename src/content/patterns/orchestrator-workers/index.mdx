@@ -10,6 +10,8 @@ As the workers finish, their results flow back to the orchestrator. It reconcile
 
 The number of workers, and what each does, is chosen by the model per input. That is the whole difference from a fixed fan-out.
 
+In the iterative variant, used by research systems, the orchestrator does not stop after one round. It reads what the workers found, decides whether more research is needed, and sends out another, usually smaller, round. When it has enough, a separate finishing worker adds citations before the report goes out.
+
 ## When to use
 
 - The subtasks cannot be predicted in advance and depend on the input.

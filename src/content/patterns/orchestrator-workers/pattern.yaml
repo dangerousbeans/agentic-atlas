@@ -11,6 +11,29 @@ related:
   composesWith: [evaluator-optimizer]
   confusedWith:
     - { slug: routing, difference: "Routing picks one fixed path; the orchestrator invents the subtasks at run time and uses several workers." }
+origin:
+  by: Erik Schluntz and Barry Zhang
+  org: Anthropic
+  year: 2024
+  url: https://www.anthropic.com/engineering/building-effective-agents
+  kind: popularized
+  note: "Anthropic named the pattern in 2024; it describes a central LLM that breaks down tasks dynamically, delegates them to worker LLMs and synthesizes their results."
+build:
+  goal: "Carry out a task whose subtasks cannot be known in advance: an orchestrator model plans them at run time, workers do them in parallel, and the orchestrator combines the results."
+  steps:
+    - "Call the orchestrator with the {{prompt:planner}}, filling in the task, and parse the JSON reply into a list of subtasks, each with a target and an instruction."
+    - "Check the plan in code: at least one subtask, no more than the cap, and every subtask has a non-empty target and instruction. If the reply is not valid JSON or fails the check, re-ask once with the error, then stop with that error."
+    - "Start one worker per subtask, concurrently, with the {{prompt:worker}}; each worker sees only its own target and instruction."
+    - "Collect every worker's result, keyed by target. A worker that errors is retried once, then recorded as failed with its error."
+    - "Call the orchestrator again with the {{prompt:synthesis}}, passing the task and all the results, failures included, and return its combined answer."
+  stop: "One plan, one round of workers and one synthesis, then stop. The orchestrator does not spawn a second round; if work is missing, the synthesis says so."
+  requirements:
+    - "Cap the number of subtasks (default 8) and the number of workers running at once (default 4)."
+    - "Make each worker's instruction self-contained: a worker gets no shared history and cannot see the other workers."
+    - "The synthesis must list every failed subtask and every conflict between workers, never drop them."
+    - "Log the plan, each worker's input, output and latency, and the synthesis input, under one run id."
+    - "Add a test with a stub LLM whose plan has 3 subtasks; assert 3 worker calls with distinct targets and one synthesis call whose input holds all 3 results."
+defaultVariantName: Single round
 prompts:
   - id: planner
     title: Orchestrator planning prompt
@@ -97,3 +120,128 @@ diagram:
           events:
             - { type: activate, node: orchestrator, status: thinking, at: [0, 0.5] }
             - { type: send, edge: done, token: { kind: result, label: diff }, at: [0.5, 1] }
+variants:
+  - id: iterative
+    name: Iterative rounds
+    summary: "The orchestrator reviews each round of results and may send out another round; a separate finishing worker adds citations before output."
+    origin:
+      by: Anthropic
+      org: Anthropic
+      year: 2025
+      url: https://www.anthropic.com/engineering/multi-agent-research-system
+      kind: popularized
+      note: "\"How we built our multi-agent research system\" (2025): a lead agent spins up 3-5 subagents in parallel, decides whether more research is needed, and hands the report to a separate CitationAgent."
+    build:
+      goal: "Answer a research question with a lead model that sends out rounds of parallel subagents, decides after each round whether more research is needed, and passes the final report to a citation step."
+      steps:
+        - "Call the lead with the {{prompt:lead}}, passing the question and the findings so far (none in round 1), and parse the JSON reply into done, subtasks and, when done, a report."
+        - "If done is false, start one subagent per subtask, concurrently, with the {{prompt:subagent}}; each has its own search tools and returns findings with their source URLs."
+        - "Append every subagent's findings to the findings list; a subagent that errors or hits its tool-call cap returns what it has with a note saying so."
+        - "Call the lead again with the question and all the findings, and repeat until it replies done or the round cap is reached."
+        - "Send the report and the findings to the citation step with the {{prompt:citations}}, which attaches a source to every claim, and return the cited report."
+      stop: "Stop when the lead replies done, or after 3 rounds; on the cap, ask the lead for its report from the findings so far and mark it incomplete. The citation step always runs once at the end."
+      requirements:
+        - "Cap rounds (default 3), subagents per round (default 5) and tool calls per subagent (default 10), all as parameters."
+        - "If the lead's reply is not valid JSON, retry once with the parse error, then end the research and write the report from the findings so far."
+        - "Store the plan and the findings outside the lead's context, so a long run can be resumed and the lead re-reads only what it needs."
+        - "The citation step may only cite URLs that appear in the findings; flag any claim it cannot source instead of inventing one."
+        - "Add a test with a stub LLM whose lead returns 3 subtasks, then 2, then done; assert 5 subagent calls, 3 lead calls and 1 citation call."
+    prompts:
+      - id: lead
+        title: Lead agent prompt
+        lang: markdown
+        source: |
+          You lead a research team. Decide what still needs finding out
+          to answer the question well, and split it into independent
+          subtasks for parallel researchers (at most {{max_subagents}}).
+
+          <question>{{question}}</question>
+          <findings>{{findings}}</findings>
+
+          Respond in JSON. If more research is needed:
+          {"done": false, "subtasks": [{"objective": "...", "where_to_look": "..."}]}
+          If the findings are enough:
+          {"done": true, "report": "the full answer, written from the findings"}
+      - id: subagent
+        title: Subagent prompt
+        lang: markdown
+        source: |
+          You are one of several researchers working in parallel. Research
+          only this objective, using your search tools, and stop when you
+          have solid answers or after {{max_tool_calls}} tool calls.
+
+          <objective>{{objective}}</objective>
+          <hints>{{where_to_look}}</hints>
+
+          Return your findings as short statements, each with its source URL.
+      - id: citations
+        title: Citation prompt
+        lang: markdown
+        source: |
+          Add citations to the report below. For every factual claim, attach
+          the URL from the findings that supports it. If no finding supports
+          a claim, mark it [unsourced]; never invent a source.
+
+          <report>{{report}}</report>
+          <findings>{{findings}}</findings>
+    diagram:
+      nodes:
+        - { id: input, kind: io, label: Question, description: "The research question, such as 'Which EU countries offer the best R&D tax credits for startups?'." }
+        - { id: orchestrator, kind: llm, label: Lead agent, description: "Plans each round of subtasks, reads the findings, and decides whether to send out another round or write the report." }
+        - { id: w1, kind: llm, label: Agent 1, description: "A research subagent with its own search tools, working on one objective from the current round." }
+        - { id: w2, kind: llm, label: Agent 2, description: "A second research subagent working in parallel on a different objective, with its own context." }
+        - { id: w3, kind: llm, label: Agent 3, description: "A third research subagent; a round has as many as the lead asks for, up to a cap." }
+        - { id: citer, kind: llm, label: Citations, description: "A separate finishing step that attaches a source from the findings to every claim in the report." }
+        - { id: output, kind: io, label: Report, description: "The final report, with a citation on every claim." }
+      edges:
+        - { id: task, from: input, to: orchestrator, description: "The question goes to the lead agent, which plans the first round.", example: "Which EU countries offer the best R&D tax credits for startups?" }
+        - { id: d1, from: orchestrator, to: w1, description: "An objective for subagent 1 in the current round.", example: "{\"objective\": \"France: the Crédit d'Impôt Recherche rate and startup eligibility\", \"where_to_look\": \"official tax sites\"}" }
+        - { id: d2, from: orchestrator, to: w2, description: "An objective for subagent 2, sent in parallel.", example: "{\"objective\": \"Netherlands: WBSO rates for startups in 2026\", \"where_to_look\": \"rvo.nl\"}" }
+        - { id: d3, from: orchestrator, to: w3, description: "An objective for subagent 3, sent in parallel.", example: "{\"objective\": \"Ireland: the R&D tax credit rate and refund rules\", \"where_to_look\": \"revenue.ie\"}" }
+        - { id: r1, from: w1, to: orchestrator, style: dashed, description: "Subagent 1's findings, each with a source URL, go back to the lead.", example: "France CIR: 30% of eligible R&D spend up to EUR 100M; young innovative firms get early refunds. (impots.gouv.fr)" }
+        - { id: r2, from: w2, to: orchestrator, style: dashed, description: "Subagent 2's findings go back to the lead.", example: "Netherlands WBSO: 40% wage-cost credit on the first EUR 350k for starters. (rvo.nl)" }
+        - { id: r3, from: w3, to: orchestrator, style: dashed, description: "Subagent 3's findings go back to the lead; they may raise new questions.", example: "Ireland: 30% credit, refundable in instalments. Unclear: how the 2026 budget changed the rate. (revenue.ie)" }
+        - { id: cite, from: orchestrator, to: citer, label: draft, description: "When the lead decides the findings are enough, it writes the report and sends it, with the findings, to the citation step.", example: "{\"done\": true, \"report\": \"France and the Netherlands are the strongest options for early-stage startups...\"}" }
+        - { id: done, from: citer, to: output, description: "The report, with a source on every claim, is returned.", example: "France and the Netherlands are the strongest options [1][2]... [1] impots.gouv.fr/... [2] rvo.nl/..." }
+      scenarios:
+        - id: two-rounds
+          label: '"Best EU R&D tax credits?"'
+          steps:
+            - { id: arrive, caption: The research question reaches the lead agent., duration: 1000, events: [{ type: send, edge: task, token: { kind: prompt, label: question } }] }
+            - id: round-1
+              caption: The lead plans three objectives and sends them out in parallel.
+              duration: 1800
+              events:
+                - { type: activate, node: orchestrator, status: thinking, at: [0, 0.45] }
+                - { type: branch, node: orchestrator, taken: d1, notTaken: [cite], at: [0.45, 0.55] }
+                - { type: send, edge: d1, token: { kind: prompt, label: France }, at: [0.55, 1] }
+                - { type: send, edge: d2, token: { kind: prompt, label: NL }, at: [0.55, 1] }
+                - { type: send, edge: d3, token: { kind: prompt, label: Ireland }, at: [0.55, 1] }
+            - id: work-1
+              caption: The subagents search on their own and report findings with sources.
+              duration: 2400
+              events:
+                - { type: activate, node: w1, status: calling, at: [0, 0.4] }
+                - { type: activate, node: w2, status: calling, at: [0, 0.6] }
+                - { type: activate, node: w3, status: calling, at: [0, 0.75] }
+                - { type: send, edge: r1, token: { kind: result, label: findings }, at: [0.4, 0.65] }
+                - { type: send, edge: r2, token: { kind: result, label: findings }, at: [0.6, 0.85] }
+                - { type: send, edge: r3, token: { kind: result, label: open question }, at: [0.75, 1] }
+            - id: round-2
+              caption: The lead sees a gap, the 2026 Irish rate, and decides more research is needed; it sends a second, smaller round.
+              duration: 2400
+              events:
+                - { type: activate, node: orchestrator, status: thinking, at: [0, 0.45] }
+                - { type: branch, node: orchestrator, taken: d1, notTaken: [cite], at: [0.45, 0.55] }
+                - { type: send, edge: d1, token: { kind: prompt, label: Ireland 2026 }, at: [0.55, 0.8] }
+                - { type: activate, node: w1, status: calling, at: [0.8, 0.9] }
+                - { type: send, edge: r1, token: { kind: result, label: findings }, at: [0.85, 1] }
+            - id: finish
+              caption: Now the findings are enough; the lead writes the report and the citation step attaches a source to every claim.
+              duration: 2800
+              events:
+                - { type: activate, node: orchestrator, status: thinking, at: [0, 0.3] }
+                - { type: branch, node: orchestrator, taken: cite, notTaken: [d1, d2, d3], at: [0.3, 0.4] }
+                - { type: send, edge: cite, token: { kind: result, label: report }, at: [0.4, 0.6] }
+                - { type: activate, node: citer, status: thinking, at: [0.6, 0.8] }
+                - { type: send, edge: done, token: { kind: result, label: cited }, at: [0.8, 1] }
