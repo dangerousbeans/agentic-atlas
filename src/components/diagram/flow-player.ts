@@ -1,11 +1,10 @@
-import { frameAt, type FrameState, type TokenState } from '../../lib/diagram/state';
+import { frameAt, type FrameSpec, type FrameState, type TokenState } from '../../lib/diagram/state';
 import type { Timeline } from '../../lib/diagram/compile';
-import type { DiagramSpec } from '../../lib/diagram/types';
 import { pickLayout } from '../../lib/diagram/fit';
 import type { SoundHook } from '../../lib/sound/hook';
 import { cuesBetween, type CueCursor } from '../../lib/sound/cues';
 
-interface Payload { spec: DiagramSpec; timelines: Timeline[] }
+interface Payload { spec: FrameSpec; timelines: Timeline[] }
 interface Rect { x: number; y: number; w: number; h: number }
 interface Track { len: number; pts: Float32Array }
 interface View { svg: SVGSVGElement; layer: SVGGElement; paths: Map<string, SVGPathElement>; tracks: Map<string, Track>; pool: SVGGElement[]; active: boolean; glow: (string | undefined)[]; obstacles?: Rect[] }
@@ -84,8 +83,23 @@ class FlowPlayer extends HTMLElement {
   static observedAttributes = ['data-suspended'];
   attributeChangedCallback() { if (this.inited) this.sync(); }
 
+  /** A compact player (atlas tile, family card) starts only once it nears the viewport: pages with every pattern
+   *  on them would otherwise parse and draw all of them in one long task at load. */
+  private lazy?: IntersectionObserver;
+  private near = false;
+
   connectedCallback() {
     if (this.inited) { this.attachGlobal(); this.observe(); this.render(); return; }
+    if (this.compact && !this.near) {
+      if (this.lazy) return;
+      this.lazy = new IntersectionObserver(es => {
+        if (!es[es.length - 1].isIntersecting) return;
+        this.lazy!.disconnect(); this.lazy = undefined; this.near = true;
+        if (this.isConnected) this.connectedCallback();
+      }, { rootMargin: '300px' });
+      this.lazy.observe(this);
+      return;
+    }
     const json = this.querySelector('script[data-diagram]');
     if (!json?.textContent) return;
     this.inited = true;
@@ -168,6 +182,8 @@ class FlowPlayer extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this.lazy?.disconnect(); this.lazy = undefined;
+    if (!this.inited) return;
     cancelAnimationFrame(this.raf); this.raf = 0;
     clearTimeout(this.hideTimer); this.hideTimer = 0;
     this.observers.forEach(o => o.disconnect()); this.observers = [];

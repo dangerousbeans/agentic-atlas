@@ -1,4 +1,4 @@
-import type { DiagramSpec, TokenKind, ActivateStatus } from './types';
+import type { DiagramNode, DiagramEdge, TokenKind, ActivateStatus } from './types';
 import type { Timeline } from './compile';
 
 export type NodeState = 'idle' | 'active' | 'thinking' | 'calling' | 'waiting' | 'done' | 'error' | 'dim' | 'hidden';
@@ -9,7 +9,10 @@ export interface FrameState { t: number; stepIndex: number; nodes: Record<string
 const SETTLED: Record<ActivateStatus, NodeState> = { thinking: 'done', calling: 'done', waiting: 'done', done: 'done', error: 'error' };
 const EPS = 1;
 
-export function frameAt(d: DiagramSpec, tl: Timeline, tIn: number): FrameState {
+/** The part of a diagram the frame computation reads (a full DiagramSpec qualifies); the player ships only this. */
+export interface FrameSpec { nodes: Pick<DiagramNode, 'id' | 'kind' | 'hidden'>[]; edges: Pick<DiagramEdge, 'id' | 'to'>[] }
+
+export function frameAt(d: FrameSpec, tl: Timeline, tIn: number): FrameState {
   const t = Math.min(Math.max(tIn, 0), tl.duration);
   const nodes: Record<string, NodeState> = {};
   for (const n of d.nodes) nodes[n.id] = n.hidden ? 'hidden' : 'idle';

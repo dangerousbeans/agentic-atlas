@@ -2,6 +2,7 @@
 import type { DiagramSpec } from '../../lib/diagram/types';
 import { layoutDiagram } from '../../lib/diagram/layout';
 import { compileDiagram } from '../../lib/diagram/compile';
+import type { FrameSpec } from '../../lib/diagram/state';
 import { spansPage } from '../../lib/diagram/fit';
 import { KIND_LABEL, nodeDescription, edgeDescription, edgeTitle, nodeMap } from '../../lib/diagram/kinds';
 import DiagramSvg from './DiagramSvg.astro';
@@ -13,9 +14,12 @@ const wide = await layoutDiagram(spec, spec.direction ?? 'RIGHT', compact ? 'com
 // Phones: top-to-bottom. (A left-to-right phone layout was never narrower for any pattern, so it is not offered.)
 const narrow = compact ? null : await layoutDiagram(spec, 'DOWN', 'narrow');
 const timelines = compileDiagram(spec);
-// The player only needs structure, not the tooltip prose (that lives in the markup).
-const lean = { ...spec, nodes: spec.nodes.map(({ description, ...n }) => n), edges: spec.edges.map(({ description, example, ...e }) => e) };
-const payload = JSON.stringify({ spec: lean, timelines }).replace(/</g, '\\u003c');
+// The player only needs what frameAt reads (prose, labels and scenarios live in the markup or the timelines). A
+// compact tile plays its first scenario and shows no captions, so it ships just that timeline, without captions or per-step event copies (only the step buttons read those): pages
+// with every pattern on them (home, families) carry one per pattern.
+const frameSpec: FrameSpec = { nodes: spec.nodes.map(({ id, kind, hidden }) => (hidden ? { id, kind, hidden } : { id, kind })), edges: spec.edges.map(({ id, to }) => ({ id, to })) };
+const shipped = compact ? [{ ...timelines[0], steps: timelines[0].steps.map(s => ({ ...s, caption: '', events: [] })) }] : timelines;
+const payload = JSON.stringify({ spec: frameSpec, timelines: shipped }).replace(/</g, '\\u003c');
 const labels = nodeMap(spec);
 // Full diagrams sit in the viewfinder frame (Frame.astro). Only the stage is framed: tabs, caption, steps and parts
 // follow below it, so the corner brackets never sit on the controls. Pages must not wrap Diagram in another Frame.
