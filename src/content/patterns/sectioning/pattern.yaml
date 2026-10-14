@@ -113,13 +113,14 @@ variants:
       year: 2023
       url: https://arxiv.org/abs/2310.00785
       kind: popularized
-      note: "BooookScore (ICLR 2024) studies this hierarchical merging, against incremental updating, for book-length summaries; it does not coin the technique."
+      uncertain: true
+      note: "Studied, not introduced, by BooookScore (ICLR 2024), which evaluates hierarchical merging against incremental updating for book-length summaries; the workflow was already common in LLM tooling."
     build:
       goal: "Extract every obligation from a contract too long for one call by running one map prompt on each chunk in parallel and merging the partial lists pairwise until one list remains."
       steps:
         - "Split the document in code into ordered chunks (default 3,000 tokens each, breaking at clause boundaries), and number them."
         - "Run the {{prompt:map}} on every chunk concurrently; each call sees one chunk and returns a JSON list of obligations, each with its clause number."
-        - "Parse each reply; if one is not valid JSON, retry that chunk once, then record the chunk as failed and carry on."
+        - "Parse each reply. A map call that errors or returns invalid JSON is retried once, then its chunk is recorded as failed and the run carries on."
         - "Merge the lists pairwise with the {{prompt:reduce}}: chunk 1 with 2, 3 with 4, and so on, keeping document order; then merge the merged lists the same way."
         - "When one list remains, return it with the numbers of any chunks that failed."
       stop: "The map runs once per chunk and the merge tree halves the number of lists each level, so a run ends after one map pass and about log2(chunks) merge levels."
@@ -127,7 +128,7 @@ variants:
         - "Make the chunk size (default 3,000 tokens) and the map concurrency (default 8) parameters."
         - "Keep the map prompt identical for every chunk; only the chunk text and its number change."
         - "Have every merge keep each item's clause number, so the final list can be checked against the source."
-        - "Never return a list that silently skips a chunk: report the numbers of failed chunks next to the result."
+        - "A merge call that errors or returns invalid JSON is retried once; if it fails again, concatenate its two inputs in clause order and flag that merge in the result. Never silently skip a chunk: report failed chunk numbers too."
         - "Add a test with a stub LLM and 4 chunks that yield one item each; assert 4 map calls, 3 merge calls, and a final list of 4 items in clause order."
     prompts:
       - id: map

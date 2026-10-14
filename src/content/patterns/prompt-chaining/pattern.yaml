@@ -27,7 +27,7 @@ build:
     - "If the gate fails, end the chain and return an error result holding the rejected outline and the name of the check that failed. Do not call the draft step."
     - "If it passes, call the model with the {{prompt:draft}}, passing only the approved outline and the target word count."
     - "Send the draft to a third call that polishes tone and clarity without changing the structure, and return its text as the post."
-  stop: "The chain ends after the polish step, or at the first failed gate. Nothing loops: each step runs once, so a run makes at most 3 model calls."
+  stop: "The chain ends after the polish step, or at the first failed gate. Nothing loops: each step runs once, so a run makes at most 3 model calls, plus one retry per failed call."
   requirements:
     - "Keep the section bounds (default 4 to 6) and the word count (default 800) as parameters, not literals inside a prompt."
     - "If a model call errors or times out, retry it once, then end the chain with an error that names the step."
@@ -242,14 +242,15 @@ variants:
       year: 2023
       url: https://arxiv.org/abs/2310.00785
       kind: popularized
-      note: "BooookScore (ICLR 2024) compares this incremental updating with hierarchical merging for book-length summaries; it studies the technique rather than coining it."
+      uncertain: true
+      note: "Studied, not introduced, by BooookScore (ICLR 2024), which evaluates incremental updating against hierarchical merging for book-length summaries; the workflow was already common in LLM tooling."
     build:
       goal: "Summarize a document too long for one call by running a single refine step once per chunk, in order, carrying a running summary forward from chunk to chunk."
       steps:
         - "Split the document in code into chunks that fit the context window with room to spare (default 2,000 tokens each), keeping their order and breaking at paragraph ends."
         - "Start with an empty running summary."
         - "For each chunk in order, call the model with the {{prompt:refine}}, passing the chunk, its position (3 of 40) and the running summary, and replace the summary with the reply."
-        - "If the new summary is longer than the length cap, call the same prompt once more asking it to compress, and keep the shorter result."
+        - "If the new summary is longer than the length cap, call the model once with the {{prompt:compress}}, and keep the shorter of the two summaries."
         - "After the last chunk, return the running summary."
       stop: "Stop after the last chunk has been folded in. The loop runs exactly once per chunk, so the number of calls is fixed by the input's length, plus at most one compression call per chunk."
       requirements:
@@ -271,6 +272,15 @@ variants:
           Update the summary so it also covers this part. Keep earlier
           points unless this part contradicts them, keep events in order,
           and stay under {{max_words}} words. Return only the summary.
+      - id: compress
+        title: Compress prompt
+        lang: markdown
+        source: |
+          Shorten this summary to under {{max_words}} words. Keep events
+          in order, keep every name the later parts may need, and drop
+          detail before dropping events. Return only the summary.
+
+          <summary>{{summary}}</summary>
     diagram:
       nodes:
         - { id: user, kind: io, label: Book, description: "The long input, here a 300-page novel, far too long for one call." }

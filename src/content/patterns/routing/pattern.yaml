@@ -119,22 +119,22 @@ variants:
       url: https://github.com/aurelio-labs/semantic-router
       kind: popularized
       uncertain: true
-      note: "The open-source semantic-router library popularized embedding-based routing for LLM apps. Nearest-neighbour intent matching is older, and the year is from the repository's first release, not checked against a paper."
+      note: "The open-source semantic-router library popularized embedding-based routing for LLM apps. Nearest-neighbour intent matching is older, so who first applied it to LLM routing is unclear. The repository was created in October 2023."
     build:
       goal: "Route each message to a specialist handler by comparing its embedding with stored example utterances for every route, with no LLM call in the routing step and a fallback when nothing is close."
       steps:
         - "For each route (billing, tech), write 10 to 30 example utterances taken from real traffic."
         - "At startup, embed every example once and store each vector with its route name."
         - "For each incoming message, embed it with the same embedding model and compute its cosine similarity to every stored example."
-        - "Take the top 5 matches and pick the route that most of them belong to; record the best similarity score."
-        - "If the best score is below the threshold, use the general handler; otherwise call the chosen route's handler with the original message, such as the {{prompt:tech-handler}} for tech."
+        - "Take the top 5 matches, group them by route, score each route by the sum of its matches' similarities, and pick the highest-scoring route."
+        - "If the chosen route's own best similarity is below the threshold, use the general handler; otherwise call the chosen route's handler with the original message, such as the {{prompt:tech-handler}} for tech."
       stop: "Each message makes one embedding call and one handler call. There is no retry: a weak match goes to the general handler rather than being routed again."
       requirements:
         - "Make the similarity threshold (default 0.75) and the number of neighbours (default 5) parameters, and tune the threshold on labelled messages."
         - "Embed the examples and the messages with the same model; re-embed every example when that model changes."
         - "If the embedding call errors or times out, send the message to the general handler instead of failing."
-        - "Log the chosen route, the best score and the runner-up score, so near-ties can be found and new examples added."
-        - "Add a test with a stub embedder that returns fixed vectors; assert a message whose best similarity is 0.40 goes to the general handler and one at 0.92 to tech."
+        - "Log the chosen route with its score and best similarity, and the runner-up route with its score, so near-ties can be found and new examples added."
+        - "Add a test with a stub embedder that returns fixed vectors; assert 0.40 to the best example goes to general and 0.92 to a tech example goes to tech, and that one billing match at 0.93 plus three tech matches at 0.60 goes to general (tech wins at 1.80, but its best is under 0.75)."
     diagram:
       nodes:
         - { id: input, kind: io, label: Request, description: "The incoming customer message, such as 'The app crashes on login' or 'I was charged twice'." }
@@ -146,7 +146,7 @@ variants:
         - { id: output, kind: io, label: Reply, description: "The reply written by whichever handler took the message." }
       edges:
         - { id: in, from: input, to: router, description: "The raw message is embedded with the same model used for the examples.", example: "\"The app crashes on login\" -> [0.012, -0.087, 0.231, ...] (1,024 dimensions)" }
-        - { id: lookup, from: router, to: routes, label: nearest?, description: "The message vector is compared with every stored example by cosine similarity; the closest examples come back with their scores.", example: "tech: 'app won't open' 0.91, 'crash after update' 0.89; billing: 'charged twice' 0.22" }
+        - { id: lookup, from: router, to: routes, style: dashed, label: lookup, description: "The message vector is compared with every stored example by cosine similarity; the closest examples come back with their scores.", example: "tech: 'app won't open' 0.91, 'crash after update' 0.89; billing: 'charged twice' 0.22" }
         - { id: to-billing, from: router, to: billing, description: "Taken when most of the nearest examples are billing ones and the best score clears the threshold.", example: "I was charged twice for my March invoice (best match 'double charge on invoice', 0.93)" }
         - { id: to-tech, from: router, to: tech, description: "Taken when most of the nearest examples are tech ones and the best score clears the threshold.", example: "The app crashes on login (best match 'app won't open', 0.91)" }
         - { id: to-general, from: router, to: general, style: dashed, label: no match, description: "Taken when even the best match is below the threshold, so no route is a confident fit.", example: "Do you have an office in Berlin? (best match 'change my plan', 0.41, below 0.75)" }
@@ -196,9 +196,9 @@ variants:
     build:
       goal: "Route each message to one specialist handler, letting cheap deterministic rules decide the clear cases and calling an LLM classifier only for messages no rule matches."
       steps:
-        - "Write an ordered list of rules in code, each a pattern (a keyword, a regular expression or a metadata field) and the route it selects, such as 'charged twice' to billing."
+        - "Keep an ordered list of rules as data, each a pattern (a keyword, a regular expression or a metadata field) and the route it selects, such as 'charged twice' to billing."
         - "Run the rules against each message in order; the first rule that matches decides the route."
-        - "If no rule matches, call the {{prompt:classifier}} and parse its JSON reply into a label; an invalid reply or unknown label means general."
+        - "If no rule matches, call the {{prompt:classifier}} and parse its JSON reply into a label; an invalid reply, an unknown label, or a classifier error or timeout (default 5 s) means general."
         - "Call the chosen handler with the original message, such as the {{prompt:tech-handler}} for tech, and return its reply with the route and whether a rule or the classifier chose it."
       stop: "Each message is decided by at most one rule match or one classifier call, then handled once. Nothing re-routes."
       requirements:
@@ -218,7 +218,7 @@ variants:
         - { id: output, kind: io, label: Reply, description: "The reply written by whichever specialist handled the message." }
       edges:
         - { id: in, from: input, to: rules, description: "Every message is checked against the rules first.", example: "I was charged twice for my March invoice" }
-        - { id: rule-hit, from: rules, to: billing, label: match, description: "A rule matched, so the message goes straight to its handler without any model call.", example: "Rule 'duplicate-charge' (/charged (twice|two times)/i) matched: route billing." }
+        - { id: rule-hit, from: rules, to: billing, label: "rule: billing", description: "A rule matched, so the message goes straight to its handler without any model call.", example: "Rule 'duplicate-charge' (/charged (twice|two times)/i) matched: route billing." }
         - { id: unmatched, from: rules, to: router, style: dashed, label: no rule, description: "No rule matched, so the message goes to the LLM classifier.", example: "Classify the customer message into exactly one category. <message>The app crashes on login</message>" }
         - { id: to-billing, from: router, to: billing, description: "Taken when the classifier's label is billing.", example: "My plan renewed at the wrong price" }
         - { id: to-tech, from: router, to: tech, description: "Taken when the classifier's label is tech.", example: "The app crashes on login" }

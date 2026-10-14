@@ -120,7 +120,7 @@ variants:
         - "Send the snippet to N independent calls at once (default 5) with the {{prompt:finding}}, sampled at a nonzero temperature."
         - "Number the replies 1 to N; drop any that are empty or errored after one retry."
         - "Send all the numbered candidates to one more call with the {{prompt:select}}, which picks the one most consistent with the majority."
-        - "Parse the selector's reply into a candidate number. If it is not a valid number in range, retry the selector once, then fall back to the shortest candidate and mark the result unselected."
+        - "Parse the selector's reply into a candidate number. If it is not a valid number in range, retry the selector once, then fall back to candidate 1 and mark the result unselected; every candidate is an independent sample, so the first is as good a default as any."
         - "Return the chosen candidate verbatim, with its number and all the candidates for audit."
       stop: "One round: N samples and one selection call (plus at most one retry). The selector picks; it never rewrites or merges."
       requirements:
@@ -189,7 +189,7 @@ variants:
                 - { type: send, edge: a2, token: { kind: result, label: paragraph }, at: [0.75, 0.9] }
                 - { type: send, edge: a3, token: { kind: result, label: paragraph }, at: [0.9, 1] }
             - id: select
-              caption: The selector reads all three, sees that two agree on SQL injection, and picks the clearer of those.
+              caption: The selector reads all three, sees that two agree on SQL injection, and picks the one most consistent with the others.
               duration: 2000
               events:
                 - { type: activate, node: aggregator, status: thinking }
@@ -207,7 +207,7 @@ variants:
       year: 2023
       url: https://arxiv.org/abs/2306.02561
       kind: introduced
-      note: "LLM-Blender (ACL 2023): a pairwise ranker (PairRanker) picks the top candidates and a generative fuser (GenFuser) merges them."
+      note: "LLM-Blender (ACL 2023): a pairwise ranker (PairRanker) picks the top candidates and a generative fuser (GenFuser) merges them. The paper trains a small ranker and fuser; here both are prompted LLMs."
     build:
       goal: "Answer a question with several different models, rank their answers by pairwise comparison, and fuse the top-ranked ones into a single answer."
       steps:
