@@ -14,6 +14,28 @@ related:
   confusedWith:
     - { slug: react, difference: "ReAct calls the model again after every observation to choose the next action; ReWOO writes the whole plan once, runs it with no model calls in between, and never revisits the planner." }
     - { slug: plan-and-execute, difference: "Plan-and-Execute has a replanner that revises the plan after each step; ReWOO's plan is final and the tools run blind." }
+origin:
+  by: Binfeng Xu et al.
+  year: 2023
+  url: https://arxiv.org/abs/2305.18323
+  kind: introduced
+  note: "The authors' affiliations are not confirmed: the paper's first page lists only email addresses (microsoft.com, tamu.edu, ncsu.edu), so no organisation is given here."
+build:
+  goal: "Answer a question with two model calls on the happy path: a planner that writes every tool call upfront with #E placeholders, and a solver that answers from the collected evidence."
+  steps:
+    - "Call the planner model once with the {{prompt:planner}}, passing the question and the tool descriptions."
+    - "Parse the reply into an ordered list of steps, each with a reason, a variable (#E1, #E2...), a tool name and an input string."
+    - "Validate the plan before running anything: every tool name exists, every variable is unique, and every #E an input mentions belongs to an earlier step."
+    - "Run the steps in order with plain code and no model calls: substitute the stored evidence for each #E in the input, call the tool, and store the result under its variable."
+    - "Call the solver model once with the {{prompt:solver}}, passing the question and the plan with every step's evidence filled in, and return its answer."
+  stop: "Stop after the solver's single call; the planner is never called again (an LLM used as a worker tool counts as a tool, not a planner call). If the plan fails validation twice, stop before any tool runs and return the validation errors with a failed status."
+  requirements:
+    - "Cap the plan length (default 8 steps) and give each tool call a timeout (default 30 seconds)."
+    - "If the plan cannot be parsed or fails validation, retry the planner once with the errors appended; do not run a partly valid plan."
+    - "When a tool call errors or times out, store the error text as that variable's evidence and keep going, so the solver can say what it could not determine."
+    - "Log the plan, each substituted tool input and each piece of evidence, so a wrong answer can be traced to the step that caused it."
+    - "Add a test with a stub LLM that plans 3 steps and fake tools; assert exactly two model calls (one planner, one solver), and that the third tool received the first two results in place of #E1 and #E2."
+defaultVariantName: Sequential workers
 prompts:
   - id: planner
     title: Planner prompt
@@ -155,3 +177,130 @@ diagram:
             - { type: send, edge: gather, token: { kind: tokens, label: evidence }, at: [0.2, 0.5] }
             - { type: activate, node: solver, status: thinking, at: [0.5, 0.75] }
             - { type: send, edge: answer, token: { kind: result, label: 3.7 per km2 }, at: [0.75, 1] }
+variants:
+  - id: parallel-workers
+    name: Parallel evidence
+    summary: "Planned calls that do not reference each other's #E results run at the same time; only a call that needs an earlier result waits for it."
+    build:
+      goal: "Answer a question with one planner call and one solver call, running the planned tool calls in dependency waves so that independent calls overlap."
+      steps:
+        - "Call the planner model once with the {{prompt:planner}}, passing the question and the tool descriptions, and parse the steps (variable, tool, input) as in the sequential version."
+        - "For each step, record the set of #E variables its input mentions; reject the plan if any refers to a later or missing step."
+        - "Start every step whose referenced variables all have evidence, concurrently, with each input's #E placeholders substituted."
+        - "As each call finishes, store its result under its variable and start any step that has just become ready; repeat until no step is waiting."
+        - "Call the solver model once with the {{prompt:solver}}, passing the question and the plan with all evidence filled in, and return its answer."
+      stop: "Stop after the solver's single call. If a step can never start because its input depends on a failed step, mark it skipped rather than waiting forever."
+      requirements:
+        - "Cap the concurrent tool calls (default 4) and the plan length (default 8), and give each call a timeout (default 30 seconds)."
+        - "If a tool call errors, store the error text as its evidence and mark every step that depends on it as skipped, with the reason, in the evidence."
+        - "If the plan cannot be parsed or has a dependency cycle, retry the planner once with the error appended, then stop before any tool runs."
+        - "Record each call's start and end time, so the overlap is visible in logs."
+        - "Add a test with a stub planner and two fake 100 ms search tools; assert both searches started before either finished and the calculator started only after both."
+    diagram:
+      nodes:
+        - id: user
+          kind: io
+          label: Question
+          description: "The question to answer, such as 'What is Iceland's population density?'."
+        - id: planner
+          kind: llm
+          label: Planner
+          description: "Called once: writes every tool call upfront with #E placeholders, exactly as in the sequential version."
+        - id: s1
+          kind: tool
+          label: Search
+          sublabel: "#E1"
+          description: "The population lookup. It references no other result, so it starts as soon as the plan is parsed."
+        - id: s2
+          kind: tool
+          label: Search
+          sublabel: "#E2"
+          description: "The area lookup. It is independent of #E1, so it runs at the same time."
+        - id: calculator
+          kind: tool
+          label: Calculator
+          sublabel: "#E3"
+          description: "The division step. Its input mentions #E1 and #E2, so it waits for both, then runs."
+        - id: solver
+          kind: llm
+          label: Solver
+          sublabel: "all #E"
+          description: "Called once: reads the question, plan and all evidence together and writes the final answer."
+        - id: out
+          kind: io
+          label: Answer
+          description: "The solver's final answer with a one-sentence justification."
+      edges:
+        - id: ask
+          from: user
+          to: planner
+          description: "The question goes to the planner, which is only ever called this one time."
+          example: "Question: What is Iceland's population density?"
+        - id: run1
+          from: planner
+          to: s1
+          label: "#E1"
+          description: "The first planned call has no #E in its input, so it is started immediately."
+          example: "#E1 = Search[Iceland population]"
+        - id: run2
+          from: planner
+          to: s2
+          label: "#E2"
+          description: "The second planned call is also free of #E references, so it starts in the same wave as #E1."
+          example: "#E2 = Search[Iceland area km2]"
+        - id: dep1
+          from: s1
+          to: calculator
+          style: dashed
+          description: "The population result is substituted for #E1 in the calculator's input."
+          example: "#E1 = 376,000"
+        - id: dep2
+          from: s2
+          to: calculator
+          style: dashed
+          description: "The area result is substituted for #E2; with both in place, the calculator is released."
+          example: "#E2 = 103,000 km2"
+        - id: evidence
+          from: calculator
+          to: solver
+          label: evidence
+          description: "With the last step done, the plan and all three results (#E1 to #E3) go to the solver together in one prompt."
+          example: "#E1 = 376,000; #E2 = 103,000 km2; #E3 = 3.65"
+        - id: answer
+          from: solver
+          to: out
+          description: "The solver's single pass produces the answer; the planner is never revisited."
+          example: "About 3.7 people per km2, from 376,000 people over 103,000 km2."
+      scenarios:
+        - id: population-density
+          label: '"What is Iceland''s population density?"'
+          steps:
+            - id: ask
+              caption: The question reaches the planner, which will be called exactly once.
+              duration: 1000
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: "density?" } }
+            - id: wave-1
+              caption: "The plan is parsed; #E1 and #E2 reference nothing, so both searches start at once while the calculator waits."
+              duration: 3000
+              events:
+                - { type: activate, node: planner, status: thinking, at: [0, 0.35] }
+                - { type: send, edge: run1, token: { kind: tool-call, label: "#E1" }, at: [0.35, 0.65] }
+                - { type: send, edge: run2, token: { kind: tool-call, label: "#E2" }, at: [0.35, 0.65] }
+                - { type: activate, node: calculator, status: waiting, at: [0.35, 1] }
+                - { type: activate, node: s1, status: calling, at: [0.65, 1] }
+                - { type: activate, node: s2, status: calling, at: [0.65, 1] }
+            - id: wave-2
+              caption: "Both results arrive and are substituted into the calculator's input, which releases it."
+              duration: 2600
+              events:
+                - { type: send, edge: dep1, token: { kind: result, label: "#E1" }, at: [0, 0.4] }
+                - { type: send, edge: dep2, token: { kind: result, label: "#E2" }, at: [0.1, 0.5] }
+                - { type: activate, node: calculator, status: calling, at: [0.5, 1] }
+            - id: solve
+              caption: The solver reads the plan and all the evidence once and writes the answer.
+              duration: 2600
+              events:
+                - { type: send, edge: evidence, token: { kind: tokens, label: evidence }, at: [0, 0.4] }
+                - { type: activate, node: solver, status: thinking, at: [0.4, 0.7] }
+                - { type: send, edge: answer, token: { kind: result, label: 3.7 per km2 }, at: [0.7, 1] }

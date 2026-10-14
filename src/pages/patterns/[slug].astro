@@ -112,11 +112,11 @@ const ld = origins.length ? { '@context': 'https://schema.org', '@type': 'TechAr
   /* Diagrams too wide to read beside the info column (fit.ts spansPage) take the full width, once flow-player
      finds the wide layout reads at that width; the title and measurements move above them as a band. */
   @media (min-width: 961px) {
-    .instrument:has(flow-player[data-wide]:not([data-fit="narrow"])) { grid-template-columns: minmax(0, 1fr); gap: 20px; }
-    .instrument:has(flow-player[data-wide]:not([data-fit="narrow"])) :global(.diagram-stage) { padding-inline: 0; }
-    .instrument:has(flow-player[data-wide]:not([data-fit="narrow"])) .info { order: -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 56px; align-items: start; }
-    .instrument:has(flow-player[data-wide]:not([data-fit="narrow"])) .info :global(.spec) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 28px; }
-    .instrument:has(flow-player[data-wide]:not([data-fit="narrow"])) .info :global(h2.spec-h) { margin-top: 14px; }
+    .instrument:has(.variant-pane[data-on] flow-player[data-wide]:not([data-fit="narrow"])) { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+    .instrument:has(.variant-pane[data-on] flow-player[data-wide]:not([data-fit="narrow"])) :global(.diagram-stage) { padding-inline: 0; }
+    .instrument:has(.variant-pane[data-on] flow-player[data-wide]:not([data-fit="narrow"])) .info { order: -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 56px; align-items: start; }
+    .instrument:has(.variant-pane[data-on] flow-player[data-wide]:not([data-fit="narrow"])) .info :global(.spec) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 28px; }
+    .instrument:has(.variant-pane[data-on] flow-player[data-wide]:not([data-fit="narrow"])) .info :global(h2.spec-h) { margin-top: 14px; }
   }
   @media (max-width: 960px) {
     .instrument, .body { grid-template-columns: minmax(0, 1fr); }

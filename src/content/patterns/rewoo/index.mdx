@@ -14,6 +14,8 @@ Finally the <NodeRef id="solver">solver</NodeRef> receives the question, the pla
 
 What makes ReWOO distinctive is what is missing from the diagram: there is no edge back to the planner. Once the plan is written, it is final.
 
+The workers do not have to run one at a time. In the parallel-evidence variant, calls whose inputs mention no #E variable start together, and a call such as the calculator waits only for the results it names. That scheduling idea is the heart of LLMCompiler, which adds streaming and a joiner that can replan.
+
 ## When to use
 
 - The steps can be named before seeing any results, as in multi-hop lookups or standard report assembly.
