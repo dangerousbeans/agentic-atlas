@@ -23,7 +23,7 @@ origin:
   url: https://docs.langchain.com/oss/python/langgraph/durable-execution
   kind: popularized
   uncertain: true
-  note: "No single inventor. Durable execution comes from workflow engines such as Temporal and Azure Durable Functions; LangGraph's checkpointers brought it to LLM agents. The year is LangGraph's release, January 2024, per secondary sources."
+  note: "No single inventor. Durable execution comes from workflow engines such as Temporal and Azure Durable Functions; LangGraph's checkpointers brought it to LLM agents. The year is LangGraph's first PyPI release, 8 January 2024."
 build:
   goal: "Run a long, multi-step agent so that its full state is saved after every step and any process can resume the run from the last checkpoint, without repeating steps that already had side effects."
   steps:
@@ -31,7 +31,7 @@ build:
     - "On start, load the latest checkpoint for the run id from a durable store (a database table, not process memory). If there is none, create the initial state."
     - "For each step, call the model with the {{prompt:step}}, filling in the goal, the completed steps from the state and the latest tool result, and run the tool call it asks for."
     - "Pass every side-effecting tool call an idempotency key built from the run id and step number, so a step that is retried after a crash does not apply twice."
-    - "After the step finishes, append its result to the state and write a new checkpoint in the same transaction as the step counter, before starting the next step."
+    - "After the step finishes, append its result to the state and write the new checkpoint (state plus step counter) atomically, with a version check, before starting the next step."
     - "When the run must wait for a person or an event, save a checkpoint with status waiting and exit the process; a later request with the run id loads it and continues."
   stop: "Stop when the model reports the goal is complete, or after a step cap (default 60). On a crash, nothing is returned: the run stays in the store and a supervisor restarts it on another worker. If a step fails 3 times, mark the run failed with its last checkpoint."
   requirements:
@@ -40,6 +40,7 @@ build:
     - "Keep old checkpoints for a retention window so a run can be inspected or replayed from any earlier step."
     - "Log each checkpoint write with the run id, step number, worker id and size."
     - "Add a test with a stub LLM and a fake tool where the process raises after step 2's checkpoint; restart with the same run id and assert the fake tool received steps 1 and 2 exactly once each and the run completes from step 3."
+    - "Add a second test where the process raises after step 3's tool call but before its checkpoint; restart and assert the fake tool received key 'run/step-3' twice but applied it once (its row count is unchanged), and the run completes."
 prompts:
   - id: step
     title: Step prompt
@@ -67,10 +68,6 @@ diagram:
       kind: agent
       label: Worker A
       description: "The agent process running the job: it plans each step, calls the database tool, and checkpoints after every step."
-    - id: tool
-      kind: tool
-      label: Database
-      description: "The migration target. Each write carries an idempotency key, so a step replayed after a crash does not copy rows twice."
     - id: store
       kind: memory
       label: Checkpoints
@@ -80,6 +77,10 @@ diagram:
       label: Worker B
       hidden: true
       description: "A fresh process that picks the run up from its last checkpoint, with the full history, and carries on."
+    - id: tool
+      kind: tool
+      label: Database
+      description: "The migration target. Each write carries an idempotency key, so a step replayed after a crash does not copy rows twice."
     - id: out
       kind: io
       label: Done
@@ -109,6 +110,13 @@ diagram:
       label: resume
       description: "A new process loads the latest checkpoint and continues from the step after it, with the full history."
       example: "load mig-0412 v22: resume at step 23 of 40"
+    - id: redo
+      from: worker2
+      to: tool
+      style: dashed
+      label: next steps
+      description: "The new worker runs the remaining steps. After a crash the first is a redo of step 23 with the same idempotency key, which the database recognizes and skips."
+      example: "copy_batch(offset=2,200,000, key='mig-0412/step-23') -> already applied, skipped"
     - id: done
       from: worker2
       to: out
@@ -124,7 +132,7 @@ diagram:
           events:
             - { type: send, edge: start, token: { kind: prompt, label: job } }
         - id: steps
-          caption: Each step copies one batch of rows, then saves a checkpoint before the next begins.
+          caption: Steps 1 to 22 each copy one batch of rows, then save a checkpoint before the next begins.
           duration: 2600
           repeat: 2
           events:
@@ -149,8 +157,8 @@ diagram:
           caption: Step 23 is redone safely thanks to its idempotency key; the remaining steps finish and the run completes.
           duration: 2400
           events:
-            - { type: activate, node: worker2, status: thinking, at: [0, 0.3] }
-            - { type: activate, node: tool, status: calling, at: [0.2, 0.6] }
+            - { type: send, edge: redo, token: { kind: tool-call, label: step 23 }, at: [0, 0.35] }
+            - { type: activate, node: tool, status: calling, at: [0.35, 0.6] }
             - { type: send, edge: done, token: { kind: result, label: 40/40 }, at: [0.6, 0.95] }
             - { type: activate, node: out, status: done, at: [0.9, 1] }
     - id: human-pause
@@ -177,12 +185,12 @@ diagram:
           events:
             - { type: appear, node: worker2, at: [0, 0.2] }
             - { type: read, node: store, at: [0.2, 0.4] }
-            - { type: send, edge: load, token: { kind: tokens, label: approved }, at: [0.4, 1] }
+            - { type: send, edge: load, token: { kind: tokens, label: resume }, at: [0.4, 1] }
         - id: finish
-          caption: The new worker drops the old table and finishes the run.
+          caption: The new worker runs the approved step, dropping the old table, and finishes the run.
           duration: 2200
           events:
-            - { type: activate, node: worker2, status: thinking, at: [0, 0.3] }
-            - { type: activate, node: tool, status: calling, at: [0.2, 0.45] }
+            - { type: send, edge: redo, token: { kind: tool-call, label: drop old }, at: [0, 0.35] }
+            - { type: activate, node: tool, status: calling, at: [0.35, 0.5] }
             - { type: send, edge: done, token: { kind: result, label: done }, at: [0.5, 0.95] }
             - { type: activate, node: out, status: done, at: [0.9, 1] }
