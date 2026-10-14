@@ -1,0 +1,34 @@
+## Problem
+
+Some problems have no known path to a solution. "Why do the nightly ETL jobs fail about one night in five?" could be the logs, the database, the network or something nobody has thought of yet. A supervisor would need to know in advance which specialist to ask and in what order, and a fixed pipeline would check things in an order that is wrong half the time. What you want is for the right expert to step in as soon as the evidence makes their expertise relevant.
+
+## How it works
+
+Everyone works on one shared <NodeRef id="board">blackboard</NodeRef>. The problem is posted as its first entry. Each round, a <NodeRef id="control">control unit</NodeRef> reads the whole board and decides which specialists should act next: often several at once, and only those whose skills fit what is on the board. Each selected specialist reads the whole board and posts one entry: a finding, a hypothesis with evidence, or a correction. Specialists never message each other. The board is the only channel.
+
+In the example, the first round activates the <NodeRef id="logs">log analyst</NodeRef> and the <NodeRef id="db">DB expert</NodeRef>. The logs show that every failure happens between 02:00 and 02:10; the database is clean at those times. With the timing known and the database ruled out, the control unit activates the <NodeRef id="net">network expert</NodeRef>, who finds that a full backup saturates the link at 02:00 on some nights. The control unit then calls the <NodeRef id="critic">critic</NodeRef>, which judges that the board now holds a supported cause and returns the <NodeRef id="out">diagnosis</NodeRef>. If the critic is called too early, it posts what is missing instead, and that objection steers the next round.
+
+The idea comes from 1970s AI. In the Hearsay-II speech recognizer, independent knowledge sources watched a shared blackboard and volunteered when they could contribute, while a scheduler picked which of them ran. LLM versions usually let the control model choose directly from the board's contents, as in the diagram.
+
+## When to use
+
+- The solution path is unknown, and the order in which experts are needed depends on what is found.
+- Many specialists can each contribute partial results that others build on.
+- You want to add or remove specialists without rewriting a manager that must know each one's skills in detail.
+
+## When to avoid
+
+- The roles and the order are clear. A supervisor or an SOP-driven team is simpler and cheaper.
+- The task is small enough for one agent with a few tools.
+- You cannot afford many rounds. Each one costs a control call plus one call per selected specialist, all over a growing board.
+
+## Trade-offs
+
+The blackboard trades efficiency for flexibility. Because the control unit chooses from the current state rather than a plan, the team adapts to surprises, and because every contribution is on the board, the reasoning behind the final answer is easy to audit. The costs are more rounds than a planned approach would need, a board that grows every round, and a control unit whose choices are only as good as the specialists' one-line descriptions.
+
+## Failure modes
+
+- **Board bloat:** entries pile up until they swamp the context. Summarize old entries, but keep the problem and the newest entries verbatim.
+- **Wheel-spinning:** the control unit keeps activating the same specialists, who repeat themselves. Tell specialists not to repeat the board, and cap the rounds.
+- **Premature success:** the critic accepts a plausible story without evidence. Require the solution to cite specific board entries.
+- **Conflicting entries:** two specialists post contradicting findings and nobody resolves them. Have the critic name the conflict and the control unit route it to someone who can settle it.

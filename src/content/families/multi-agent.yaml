@@ -3,4 +3,4 @@ name: "Multi-Agent"
 rank: 6
 accent: "#FB7185"
 description: Several role-specialized agents coordinate through a manager, hand off to each other, or debate.
-order: [supervisor, handoffs, group-chat, role-play, sop-team, debate]
+order: [supervisor, handoffs, group-chat, role-play, sop-team, blackboard, debate]

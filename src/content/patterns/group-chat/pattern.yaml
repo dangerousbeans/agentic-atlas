@@ -14,6 +14,7 @@ related:
   confusedWith:
     - { slug: supervisor, difference: "A supervisor delegates tasks and each result comes back to it privately; in a group chat every message goes to the shared thread, and the manager only picks the next speaker." }
     - { slug: debate, difference: "In a debate every agent answers the same question each round in parallel; in a group chat one agent speaks per turn, chosen for what the conversation needs next." }
+    - { slug: blackboard, difference: "A blackboard holds structured partial results that specialists add to when they can help; a group chat is a linear transcript in which the manager calls on one agent at a time." }
 origin:
   by: Qingyun Wu et al.
   org: Microsoft Research, Penn State University, University of Washington, Xidian University
