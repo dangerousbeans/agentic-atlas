@@ -1,0 +1,7 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { href } from '../lib/url';
+---
+<BaseLayout title="Lost in space" description="Page not found.">
+  <section class="wrap"><p class="eyebrow">404</p><h1>Lost in <em>space</em></h1><p class="muted">No star at these coordinates. <a href={href('/')}>Back to the atlas</a>.</p></section>
+</BaseLayout>

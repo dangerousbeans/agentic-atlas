@@ -1,5 +1,6 @@
 ---
 import { href } from '../../lib/url';
+import Search from './Search.astro';
 ---
 <header class="site-header">
   <div class="wrap bar">
@@ -7,6 +8,7 @@ import { href } from '../../lib/url';
     <nav aria-label="Primary">
       <a href={href('/#families')}>Families</a>
       <a href={href('/about')}>About</a>
+      <Search />
       <slot name="actions" />
     </nav>
   </div>
