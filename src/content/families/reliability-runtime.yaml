@@ -3,4 +3,4 @@ name: "Reliability & Runtime"
 rank: 8
 accent: "#94A3B8"
 description: "The plumbing that keeps agents running in production: validate and repair outputs, fail over between models, persist state, and wake up on events."
-order: []
+order: [schema-repair]

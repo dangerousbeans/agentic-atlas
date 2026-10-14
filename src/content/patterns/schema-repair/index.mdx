@@ -1,0 +1,36 @@
+## Problem
+
+Code downstream of a model needs data it can trust: a real date, a positive decimal, a currency from a fixed list. Models usually return the right shape, but not always. Asked to extract an invoice dated 2 March, a model may copy the due date as the words "next Friday", drop a required field, or wrap the JSON in a sentence. JSON mode and constrained decoding fix the syntax, but they cannot enforce rules such as "the due date is after the invoice date". One bad record that slips through ends up in the ledger.
+
+## How it works
+
+The <NodeRef id="llm">extractor</NodeRef> reads the <NodeRef id="doc">invoice</NodeRef> and replies with JSON. Before any code trusts that reply, a <NodeRef id="validator">validator</NodeRef> parses it, checks types and required fields against the schema, and runs the business rules. The validator is plain code, not a model, so its verdict is deterministic.
+
+If everything passes, the parsed object leaves as <NodeRef id="out">typed data</NodeRef>. If anything fails, the validator's exact error messages go back to the model along with its previous reply: "due_date: 'next Friday' is not a valid date (expected YYYY-MM-DD, after invoice date 2026-03-02)". That message tells the model which field is wrong and why, so the second try is usually right. In the example the model resolves "next Friday" to 2026-03-06 and the record passes.
+
+The loop has a hard cap, typically three attempts. If the last one still fails, the item goes to a <NodeRef id="fail">review queue</NodeRef> with its errors rather than into the database.
+
+The specific error is what makes this cheap. A generic "that was invalid, try again" wastes a call; a field path plus the rule that broke usually fixes the output in one round.
+
+## When to use
+
+- Downstream code needs typed data: records for a database, arguments for an API, rows for a report.
+- You have rules a schema cannot express, such as ranges, cross-field checks or totals that must add up.
+- Occasional bad outputs are expected and one extra call is cheaper than a human cleaning up later.
+
+## When to avoid
+
+- The provider's constrained decoding already enforces every constraint you have; the loop would never fire.
+- The output is free text for a person to read. There is no schema to check against.
+- The rule needs judgement ("is this summary accurate?"). That is an evaluator's job, not a validator's.
+
+## Trade-offs
+
+Most calls pass on the first try and cost nothing extra. The failures cost one more call each, and they are the inputs most likely to be ambiguous, so a repaired value can still be a guess. The strictness of the rules sets the balance: loose rules let bad data through; overly strict rules burn retries on records that were fine.
+
+## Failure modes
+
+- **Plausible repair:** the model invents a value just to satisfy the rule, such as a made-up date. Allow null for missing fields and test that the extractor uses it.
+- **Fixing one, breaking another:** the repaired reply drops a field that was correct. Send every error in one call and tell the model to keep the other fields unchanged.
+- **Silent give-up:** after the cap, the code stores the last reply anyway. Raise an error and route the item to review instead.
+- **Vague errors:** a raw stack trace or "invalid input" gives the model nothing to act on. Report each failure as a field path plus a plain message.
