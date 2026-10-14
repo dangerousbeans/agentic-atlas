@@ -19,6 +19,13 @@ const cat = await getCatalog();
 const L = atlasLayout(cat.families.map(f => ({ slug: f.slug, name: f.name, rank: f.rank, patterns: f.order })));
 const tileOf = new Map(L.tiles.map(t => [t.slug, t]));
 const islandOf = new Map(L.islands.map(i => [i.slug, i]));
+// Far out, labels wrap to their island's width: keep "&" with whichever neighbour gives the shorter longest line,
+// so "Knowledge & Memory" breaks onto two lines ("Knowledge" / "& Memory"), never three.
+const islandName = (name: string) => {
+  const [a, b] = name.split(' & ');
+  if (b === undefined) return name;
+  return Math.max(a.length, b.length + 2) <= Math.max(a.length + 2, b.length) ? `${a} &\u00a0${b}` : `${a}\u00a0& ${b}`;
+};
 const tileLine = (spec: DiagramSpec) => {
   const s = patternStats(spec);
   return [`${s.nodes} nodes`, `${s.llmCalls} LLM`, s.loop && 'loop', s.parallel && 'parallel', s.branch && 'branch', s.humanInLoop && 'human'].filter(Boolean).slice(0, 3).join(' · ');
@@ -44,7 +51,7 @@ const px = (n: number) => `${n}px`;
         const isl = islandOf.get(f.slug)!;
         return (
           <section class="atlas-island" data-family={f.slug} aria-labelledby={`isl-${f.slug}`} style={`--x:${px(isl.x)};--y:${px(isl.y)};--w:${px(isl.w)};--h:${px(isl.h)}`}>
-            <Heading class="atlas-island-label" id={`isl-${f.slug}`}><span class="mark" aria-hidden="true"></span>{f.name}<span class="isl-count">{String(f.order.length).padStart(2, '0')}</span></Heading>
+            <Heading class="atlas-island-label" id={`isl-${f.slug}`}><span class="mark" aria-hidden="true"></span>{islandName(f.name)}<span class="isl-count">{String(f.order.length).padStart(2, '0')}</span></Heading>
             <ul>
               {cat.patternsOf(f.slug).map(p => {
                 const t = tileOf.get(p.slug)!;
