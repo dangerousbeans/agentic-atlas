@@ -213,27 +213,34 @@ function init(root: HTMLElement) {
       if (drag.moved) apply(z, drag.ox + dx, drag.oy + dy);
     }
   });
+  // `ptr` marks "focus came from a pointer" and must never stick (it would block keyboard focus flights).
+  const clearPtr = () => setTimeout(() => (ptr = false), 0);
   const end = (e: PointerEvent) => {
+    clearPtr();
     if (!pts.delete(e.pointerId)) return;
     if (pinch) swallowClick = true;
     if (pts.size < 2) pinch = null;
     if (drag?.moved) swallowClick = true;
-    if (pts.size === 0) { drag = null; vp.classList.remove('is-dragging'); setTimeout(() => { swallowClick = false; ptr = false; }, 0); }
+    if (pts.size === 0) { drag = null; vp.classList.remove('is-dragging'); setTimeout(() => (swallowClick = false), 0); }
     // After a pinch, the remaining finger neither pans nor shows the hint.
     else if (pts.size === 1) {
       const [[id, p]] = [...pts];
       drag = e.pointerType === 'touch' ? null : { sx: p.x, sy: p.y, ox: x, oy: y, moved: true, id, touch: false };
     }
   };
-  vp.addEventListener('pointerup', end);
-  vp.addEventListener('pointercancel', end);
+  // On window, so a release outside the map (without capture) still ends the gesture.
+  addEventListener('pointerup', end, true);
+  addEventListener('pointercancel', end, true);
+  addEventListener('blur', () => { pts.clear(); drag = null; pinch = null; vp.classList.remove('is-dragging'); clearPtr(); });
+  vp.addEventListener('lostpointercapture', clearPtr);
   vp.addEventListener('click', e => { if (swallowClick) { e.preventDefault(); e.stopPropagation(); swallowClick = false; } }, true);
   vp.addEventListener('dragstart', e => e.preventDefault());
   vp.addEventListener('wheel', e => {
     const p = local(e), d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vh : 1);
     const f = Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0015));
-    // At a zoom limit, let the page scroll instead of swallowing the wheel.
-    if ((f > 1 && z >= MAX_Z - 1e-6) || (f < 1 && z <= minZ + 1e-6)) return;
+    // At a zoom limit, let a plain wheel scroll the page. ctrl+wheel (trackpad pinch) is always ours,
+    // or the browser would zoom the whole page.
+    if (!e.ctrlKey && ((f > 1 && z >= MAX_Z - 1e-6) || (f < 1 && z <= minZ + 1e-6))) return;
     e.preventDefault(); stop(); touched = true;
     apply(...zoomed(f, p.x, p.y));
   }, { passive: false });

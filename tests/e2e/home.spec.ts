@@ -170,6 +170,39 @@ test.describe('atlas map', () => {
     expect(await zoomOf(page)).toBe(2);
   });
 
+  test('ctrl+wheel (trackpad pinch) at the zoom limit is still swallowed, a plain wheel is not', async ({ page }) => {
+    await openMap(page);
+    for (let i = 0; i < 12 && (await zoomOf(page)) < 2; i++) {
+      await page.locator('[data-zoom-btn="in"]').click();
+      await expect(page.locator('.atlas-plane')).not.toHaveClass(/is-flying/);
+    }
+    expect(await zoomOf(page)).toBe(2);
+    const prevented = (ctrlKey: boolean) => page.evaluate(ctrl => {
+      const v = document.querySelector('.atlas-viewport')!, r = v.getBoundingClientRect();
+      const ev = new WheelEvent('wheel', { deltaY: -100, ctrlKey: ctrl, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, cancelable: true });
+      v.dispatchEvent(ev);
+      return ev.defaultPrevented;
+    }, ctrlKey);
+    expect(await prevented(true)).toBe(true);
+    expect(await prevented(false)).toBe(false);
+    expect(await zoomOf(page)).toBe(2);
+  });
+
+  test('a pointer press interrupted by a window blur does not block keyboard focus flights', async ({ page }) => {
+    await openMap(page);
+    const z0 = await zoomOf(page);
+    const t = (await tile(page, 'routing').boundingBox())!;
+    await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2);
+    await page.mouse.down(); // Chrome focuses the link on mousedown; the pointer flag is set
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    await page.waitForTimeout(50);
+    await page.locator('[data-zoom-btn="home"]').focus();
+    await page.keyboard.press('Tab');
+    await expect.poll(() => zoomOf(page)).toBeGreaterThanOrEqual(0.6);
+    expect(z0).toBeLessThan(0.6);
+    await page.mouse.up();
+  });
+
   test('clearing the search returns the view home', async ({ page }) => {
     await openMap(page);
     const z0 = await zoomOf(page);
