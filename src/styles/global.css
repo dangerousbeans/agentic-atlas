@@ -62,7 +62,7 @@ h3 { font-family: var(--font-ui); font-weight: 700; font-size: 1.25rem; line-hei
 h1 em, h2 em, h3 em { font-style: normal; color: inherit; }
 p { text-wrap: pretty; }
 strong { font-weight: 650; color: var(--text); }
-code, kbd, samp { font-family: var(--font-mono); font-size: 0.9em; }
+code, kbd, samp { font-family: var(--font-mono); font-size: max(12px, 0.9em); } /* 12px floor: Lighthouse legible-text (the build prompt is 13px) */
 hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
 img { max-width: 100%; }
 
