@@ -20,6 +20,15 @@ describe('content', () => {
       expect(r.data.slug).toBe(slug);
       expect(existsSync(`${root}/patterns/${slug}/index.mdx`)).toBe(true);
     });
+    it(`pattern ${slug} describes every node and edge, with an example on every edge`, () => {
+      const p = patternSchema.parse(parse(readFileSync(`${root}/patterns/${slug}/pattern.yaml`, 'utf8')));
+      const missing = [
+        ...p.diagram.nodes.filter(n => !n.description).map(n => `node "${n.id}" has no description`),
+        ...p.diagram.edges.filter(e => !e.description).map(e => `edge "${e.id}" has no description`),
+        ...p.diagram.edges.filter(e => !e.example).map(e => `edge "${e.id}" has no example`),
+      ];
+      expect(missing).toEqual([]);
+    });
   }
   it('has all 21 v1 patterns', () => expect(slugs).toHaveLength(21));
   it('catalog cross-references are consistent (Review Focus 3)', () => {
