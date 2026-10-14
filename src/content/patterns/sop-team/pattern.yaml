@@ -90,7 +90,7 @@ diagram:
     - { id: sub-eng, from: pool, to: engineer, style: dashed, description: "The engineer subscribes to designs, and to QA reports when there are any.", example: "Subscribed: System design (from Architect)." }
     - { id: pub-code, from: engineer, to: pool, label: code, description: "The engineer publishes the code, file by file, to the pool.", example: "game.py: class Board: def move(self, direction): ... cli.py: while not board.is_over(): ..." }
     - { id: sub-qa, from: pool, to: qa, style: dashed, description: "QA subscribes to code, plus the PRD and design it checks the code against.", example: "Subscribed: game.py, cli.py (from Engineer); PRD; System design." }
-    - { id: bug, from: qa, to: engineer, style: loop, label: fail, description: "A failing test report goes back to the engineer, who fixes the code and publishes it again.", example: '{"passed": false, "failures": [{"test": "test_merge_row", "expected": "[4, 0, 0, 0]", "actual": "[2, 2, 0, 0]", "file": "game.py"}]}' }
+    - { id: bug, from: qa, to: engineer, style: loop, description: "A failing test report goes back to the engineer, who fixes the code and publishes it again.", example: '{"passed": false, "failures": [{"test": "test_merge_row", "expected": "[4, 0, 0, 0]", "actual": "[2, 2, 0, 0]", "file": "game.py"}]}' }
     - { id: ship, from: qa, to: out, label: pass, description: "When every test passes, the code leaves the line with its documents.", example: '{"passed": true, "failures": []} 2048 ships: game.py, cli.py, test_game.py.' }
   scenarios:
     - id: assembly-line
