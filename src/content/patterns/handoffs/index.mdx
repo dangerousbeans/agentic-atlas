@@ -1,0 +1,34 @@
+## Problem
+
+A customer chat starts as a vague complaint and turns into three different jobs: diagnose a charge, explain a plan, issue a refund. A single agent prompted for all of them is bloated and error-prone. A central manager fixes that but puts a middleman between the user and every answer, adding a hop and a place to lose context.
+
+## How it works
+
+Treat control of the conversation as a baton. Each agent has instructions, tools, and a list of other agents it may transfer to. A handoff is just a tool call, such as `transfer_to_billing`, and its effect is that the next agent takes over the same message history.
+
+The <NodeRef id="user">user</NodeRef> first reaches the <NodeRef id="triage">triage</NodeRef> agent. It works out the goal and hands off to <NodeRef id="billing">billing</NodeRef>, or to <NodeRef id="tech">tech support</NodeRef> for a crash report. From then on billing answers the user directly. When the user asks for their money back, billing hands the baton on to <NodeRef id="refunds">refunds</NodeRef>, which finishes the job.
+
+Notice what is absent: no manager sits in the middle. The agent holding the baton is the only one active, and the others wait. Because the history travels with the baton, the user never repeats themselves. This is the decentralized style described in OpenAI's agent guide and demonstrated in its Swarm example, now succeeded by the Agents SDK.
+
+## When to use
+
+- The right specialist only becomes clear during the conversation.
+- You want the user to talk directly to the expert, with low latency.
+- Each agent has distinct instructions or tools, and tasks flow naturally from one to the next.
+
+## When to avoid
+
+- You need one place to control, log or veto all work. Use a supervisor.
+- The request needs one classification and a one-shot answer. Routing is simpler.
+- Agents must work in parallel on the same task.
+
+## Trade-offs
+
+Handoffs are fast and conversational, but control is spread out, so there is no single view of what is going on. Each agent needs a clear picture of when to transfer and to whom, and the transfer graph grows quickly as agents are added.
+
+## Failure modes
+
+- **Ping-pong:** two agents keep passing the user back and forth. Add a hop limit and make boundaries explicit.
+- **Lost context:** the new agent re-asks things already said. Have the sender summarize the goal in the handoff.
+- **Premature handoff:** the agent transfers before it should. Say in the instructions what it must try first.
+- **Dead ends:** the user lands with an agent that cannot help and cannot transfer onward. Give every agent a way back to triage or a human.

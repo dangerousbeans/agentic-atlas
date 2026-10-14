@@ -1,0 +1,117 @@
+slug: debate
+name: Multi-Agent Debate
+family: multi-agent
+aliases: [Society of minds, Debate-and-judge (optional judge)]
+summary: Several agents answer independently, read and critique each other's answers over rounds, then converge by majority or an optional judge.
+badges: { autonomy: medium, cost: high, latency: high }
+sources:
+  - title: "Improving Factuality and Reasoning in Language Models through Multiagent Debate (Du et al., 2023)"
+    url: https://arxiv.org/abs/2305.14325
+related:
+  composesWith: [evaluator-optimizer]
+  confusedWith:
+    - { slug: evaluator-optimizer, difference: "Evaluator-optimizer has one generator revising against one critic; in a debate several peers answer the same question and update by reading each other." }
+code:
+  - id: debate
+    title: debate.py
+    lang: python
+    source: |
+      def debate(question, agents, judge=None, rounds=2):
+          answers = parallel(a.answer(question) for a in agents)
+          for _ in range(rounds):
+              answers = parallel(
+                  a.revise(question, own=answers[i], others=others(answers, i))  # others(): every answer but agent i's
+                  for i, a in enumerate(agents))
+          return judge.decide(question, answers) if judge else majority(answers)
+prompts:
+  - id: revise
+    title: Debater revision prompt
+    lang: markdown
+    source: |
+      You are debater {{name}}. Question: {{question}}
+
+      <your_previous_answer>{{own}}</your_previous_answer>
+      <other_answers>{{others}}</other_answers>
+
+      Reread the other answers critically. If they expose a mistake in yours,
+      fix it. If you still think you are right, defend your answer and say why
+      the others are wrong. Do not change your answer just to agree.
+      End with your current answer in one line.
+  - id: judge
+    title: Judge prompt
+    lang: markdown
+    source: |
+      You are an impartial judge. {{n}} debaters answered the question below
+      over {{rounds}} rounds.
+
+      <question>{{question}}</question>
+      <final_answers>{{answers}}</final_answers>
+
+      Pick the best-supported answer, or merge them if they are compatible.
+      Respond in JSON: {"answer": "...", "why": "two sentences on the deciding evidence"}
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Question }
+    - { id: a, kind: agent, label: Debater A }
+    - { id: b, kind: agent, label: Debater B }
+    - { id: c, kind: agent, label: Debater C }
+    - { id: judge, kind: aggregator, label: Judge }
+    - { id: out, kind: io, label: Ruling }
+  edges:
+    - { id: q-a, from: user, to: a }
+    - { id: q-b, from: user, to: b }
+    - { id: q-c, from: user, to: c }
+    - { id: x-ab, from: a, to: b, style: dashed }
+    - { id: x-bc, from: b, to: c, style: dashed }
+    - { id: x-ca, from: c, to: a, style: dashed }
+    - { id: j-a, from: a, to: judge }
+    - { id: j-b, from: b, to: judge }
+    - { id: j-c, from: c, to: judge }
+    - { id: ruling, from: judge, to: out }
+  scenarios:
+    - id: three-debaters
+      label: Three debaters, two rounds
+      steps:
+        - id: fan-out
+          caption: The same question goes to all three debaters at once.
+          duration: 1400
+          codeRef: { block: debate, lines: "1-2" }
+          events:
+            - { type: send, edge: q-a, token: { kind: prompt, label: question } }
+            - { type: send, edge: q-b, token: { kind: prompt, label: question } }
+            - { type: send, edge: q-c, token: { kind: prompt, label: question } }
+        - id: independent
+          caption: Each debater reasons alone, so the first answers disagree.
+          duration: 2000
+          codeRef: { block: debate, lines: "2" }
+          events:
+            - { type: activate, node: a, status: thinking, at: [0, 0.8] }
+            - { type: activate, node: b, status: thinking, at: [0, 0.9] }
+            - { type: activate, node: c, status: thinking, at: [0, 1] }
+        - id: round
+          caption: Every debater reads a peer's answer in parallel, then revises its own.
+          duration: 3600
+          repeat: 2
+          codeRef: { block: debate, lines: "3-6" }
+          events:
+            - { type: send, edge: x-ab, token: { kind: result, label: answer }, at: [0, 0.4] }
+            - { type: send, edge: x-bc, token: { kind: result, label: answer }, at: [0, 0.4] }
+            - { type: send, edge: x-ca, token: { kind: result, label: answer }, at: [0, 0.4] }
+            - { type: activate, node: a, status: thinking, at: [0.4, 1] }
+            - { type: activate, node: b, status: thinking, at: [0.4, 1] }
+            - { type: activate, node: c, status: thinking, at: [0.4, 1] }
+        - id: fan-in
+          caption: After the last round, all three final answers go to the optional judge.
+          duration: 1800
+          codeRef: { block: debate, lines: "7" }
+          events:
+            - { type: send, edge: j-a, token: { kind: result, label: final } }
+            - { type: send, edge: j-b, token: { kind: result, label: final } }
+            - { type: send, edge: j-c, token: { kind: result, label: final } }
+        - id: ruling
+          caption: The judge weighs the arguments and issues one ruling.
+          duration: 2200
+          codeRef: { block: debate, lines: "7" }
+          events:
+            - { type: activate, node: judge, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: ruling, token: { kind: result, label: ruling }, at: [0.5, 1] }

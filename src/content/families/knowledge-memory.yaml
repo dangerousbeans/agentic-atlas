@@ -3,5 +3,5 @@ name: "Knowledge & Memory"
 rank: 4
 accent: "#34D399"
 description: Pull in outside or stored knowledge, decide when to fetch it, and check what comes back.
-order: []
+order: [agentic-rag, corrective-rag, hierarchical-memory]
 constellation: { x: -2.6, y: 2.4, z: -2.5 }

@@ -1,0 +1,35 @@
+## Problem
+
+An agent that can call real tools can also do real damage: issue a refund, email a customer, delete a table, deploy to production. Models misread instructions and get fooled by injected text, and some actions cannot be undone. Full autonomy is a bad fit when the cost of one wrong call is high.
+
+## How it works
+
+Put a person at the points that matter. The <NodeRef id="agent">agent</NodeRef> works normally until it proposes an action. A <NodeRef id="risk">risk check</NodeRef> then looks at the call. This can be a rule (any refund over $100), a tool-level flag (all destructive tools) or a classifier. Low-risk calls go straight to the <NodeRef id="tool">tool</NodeRef>. High-risk calls go to the <NodeRef id="human">reviewer</NodeRef> instead.
+
+At that point the run pauses. The agent's state is checkpointed, which can be hours or days of waiting, and the reviewer sees the exact action, the agent's rationale and its effects. They choose one of three outcomes: approve, so the tool runs; edit, so it runs with corrected arguments; or reject with a reason, which goes back to the agent so it can replan. The run then resumes from the checkpoint and the <NodeRef id="out">result</NodeRef> is returned.
+
+Frameworks expose this as an interrupt: a call that stops the graph, saves state, and later resumes with the human's answer as its return value.
+
+## When to use
+
+- Actions are irreversible, costly or customer-visible.
+- The agent is new, or its error rate is not yet known.
+- Regulation or policy requires a human decision.
+- Failing to meet a confidence threshold, or exceeding several retries, should hand the case to a person.
+
+## When to avoid
+
+- Actions are cheap, reversible and frequent. Constant approval trains reviewers to click yes.
+- Nobody can respond within the time the task allows.
+- The reviewer lacks the context to judge, so a gate adds delay without safety.
+
+## Trade-offs
+
+Safety costs latency: a run can sit for hours waiting for a reply. You also need checkpointing so a paused run survives restarts, plus a review interface. The gain is bounded blast radius for exactly the actions you choose.
+
+## Failure modes
+
+- **Approval fatigue:** too many requests make people rubber-stamp them. Gate only genuinely risky calls and show the key facts first.
+- **Thin context:** the reviewer sees a raw tool call and cannot judge it. Show the reason, the effect and whether it is reversible.
+- **Lost state:** the run cannot resume after a long wait. Persist state outside the process.
+- **Gate bypass:** a risky call takes a path the check does not cover. Enforce the gate at the tool layer, not just in the prompt.

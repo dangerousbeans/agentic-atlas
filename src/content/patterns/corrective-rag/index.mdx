@@ -1,0 +1,36 @@
+## Problem
+
+A RAG pipeline trusts its retriever. Whatever the vector search returns, relevant or not, is stuffed into the prompt, and the model dutifully writes an answer from it. When the index has nothing useful, the result is a fluent answer built on the wrong documents, which is worse than no answer.
+
+## How it works
+
+The <NodeRef id="retriever">retriever</NodeRef> fetches candidate documents for the <NodeRef id="user">question</NodeRef> as usual. Before the generator sees them, a <NodeRef id="grader">document grader</NodeRef> scores each one for relevance. This is the correction step.
+
+If the grader keeps some documents, they go straight to the <NodeRef id="generator">generator</NodeRef>. If it rejects all of them, a <NodeRef id="rewriter">rewriter</NodeRef> turns the question into a better query and a <NodeRef id="web">web search</NodeRef> supplies fresh documents instead. Imagine asking about a library's breaking change released last week: an index built in spring returns docs about old versions, the grader rejects them, and the web query "libfoo 4.0 breaking changes" finds the release notes.
+
+The Self-RAG variant adds a second check after generation. An <NodeRef id="check">answer check</NodeRef> verifies that every claim is supported by the documents. Unsupported claims loop back to the generator as feedback, and a supported answer goes to the <NodeRef id="out">output</NodeRef>.
+
+This page shows a simplified composite of two papers. Real CRAG grades retrieval as correct, incorrect or ambiguous and refines documents by decomposing and recomposing them, and the answer check here is Self-RAG-style critique, which Self-RAG itself performs with trained reflection tokens rather than a separate prompt.
+
+## When to use
+
+- Your index is incomplete or stale, so retrieval sometimes misses entirely.
+- A confidently wrong answer costs more than a slow one.
+- You have a fallback source, such as web search or a second index.
+
+## When to avoid
+
+- The index is small and curated and retrieval nearly always hits.
+- Latency is tight. Grading each document adds calls before generation even starts.
+- You cannot write a relevance rubric the grader can follow consistently.
+
+## Trade-offs
+
+Grading adds one call per retrieved document (batch them or use a small model) and a possible extra web round trip. You pay that on every query, including the easy ones, in exchange for catching bad retrievals. The post-generation check adds another call per draft.
+
+## Failure modes
+
+- **Over-rejection:** a strict grader throws away useful documents and forces needless web searches. Test the grader against labelled examples.
+- **Under-rejection:** a lenient grader passes plausible but off-topic text. Require the grader to quote the supporting fact.
+- **Bad fallback:** the web returns noisy pages that are just as irrelevant. Grade the fallback results too.
+- **Check loops:** the answer check never passes. Cap the rounds and return the best draft with a caveat.

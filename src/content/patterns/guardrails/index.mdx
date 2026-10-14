@@ -1,0 +1,34 @@
+## Problem
+
+A deployed agent meets users who go off-topic, try to talk it out of its instructions, or paste something toxic, and it can itself produce a reply that leaks private data or breaks policy. A system prompt that says "never do that" is advice, not enforcement, and a clever message can talk the model past it.
+
+## How it works
+
+Wrap the agent in independent checks, each of which can stop the run. Input guards examine the <NodeRef id="user">message</NodeRef> before it takes effect. A cheap <NodeRef id="relevance">on-topic</NodeRef> check rejects a banking bot being asked for poetry, and a <NodeRef id="jailbreak">jailbreak</NodeRef> classifier looks for attempts like "ignore your previous instructions". These can be small models, regex rules, moderation APIs or a mix.
+
+To avoid adding latency, the guards run in parallel with the <NodeRef id="agent">agent</NodeRef> starting its work. If a guard raises its tripwire, the agent's run is cancelled and the user gets a refusal at the <NodeRef id="block">blocked</NodeRef> exit. Nothing the agent produced is shown. The riskier the tools, the more you should hold the agent back until the guards finish.
+
+After the agent drafts a reply, an <NodeRef id="output-guard">output guard</NodeRef> checks it for leaked personal data, policy text or off-limits advice. Only a passing draft reaches the <NodeRef id="out">reply</NodeRef>. Guards stack: several cheap, specialized checks beat one all-purpose filter.
+
+## When to use
+
+- The agent is public-facing or handles untrusted input.
+- You have specific, nameable risks: PII, brand safety, prompt injection, off-scope use.
+- The agent has tools with side effects, where a blocked call is far cheaper than a bad one.
+
+## When to avoid
+
+- A closed internal tool with trusted users and no sensitive actions.
+- You expect guards to be the whole security story. They reduce risk and do not remove it, so also limit permissions and approve risky actions.
+- The domain has no clear rule a classifier can apply.
+
+## Trade-offs
+
+Each guard adds a model call or rule check, and sequential output checks add latency. Every guard also has two error rates: false alarms that annoy legitimate users, and misses that let attacks through. Tuning means choosing which error is cheaper for you.
+
+## Failure modes
+
+- **False positives:** a tight filter refuses legitimate requests. Log tripwires and review them regularly.
+- **Bypass:** attackers rephrase or encode a request to slip past a classifier. Layer guards, and add tool-level permissions.
+- **Guard injection:** the content under review manipulates the guard's own model. Treat guard input as data, and prefer narrow outputs such as a boolean.
+- **Cancelled side effects:** the agent already acted before the tripwire fired. Hold tool execution until input guards clear.
