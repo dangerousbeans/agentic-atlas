@@ -17,7 +17,7 @@ related:
     - { slug: chain-of-thought, difference: "Chain-of-thought does the arithmetic in text, where the model can slip; here the reasoning is code and the computer does the arithmetic." }
 origin:
   by: Luyu Gao, Aman Madaan, Shuyan Zhou et al.
-  org: Carnegie Mellon University
+  org: Carnegie Mellon University, Inspired Cognition
   year: 2022
   url: https://arxiv.org/abs/2211.10435
   kind: introduced
@@ -30,8 +30,8 @@ build:
     - "Extract the code block from the reply. If there is none, return no answer with a status saying the model wrote no program."
     - "Run the code in a sandboxed interpreter with no network or file access, a time limit and a memory limit, and capture what it prints."
     - "Return the printed output, trimmed, as the answer, and keep the program alongside it as the working."
-    - "If the run raises an error, call the model once with the {{prompt:fix}}, passing the program and the error, and run the corrected program the same way."
-  stop: "Stop when a program runs and prints an answer, or after one repair attempt. If the repaired program also fails, return no answer with the program, the error and a status saying execution failed."
+    - "If repair is enabled and the run raises an error, call the model once with the {{prompt:fix}}, passing the program and the error, and run the corrected program the same way."
+  stop: "Stop when a program runs and prints an answer. If the run fails and repair is off, return no answer with the program and the error. With repair on, stop after one attempt; if that also fails, return no answer with a status saying execution failed."
   requirements:
     - "Never run generated code outside a sandbox; block the network and the file system, and set a time limit (default 5 s) and a memory limit."
     - "Treat empty output as a failure, the same as an exception."
@@ -108,7 +108,7 @@ diagram:
       from: interpreter
       to: answer
       label: printed
-      description: "What the program prints is the answer. The model never restates it, so it cannot get it wrong."
+      description: "What the program prints is the answer. The model never restates it, so it cannot garble the number in the retelling."
       example: "stdout: 11"
     - id: traceback
       from: interpreter
@@ -174,27 +174,30 @@ diagram:
 variants:
   - id: program-of-thoughts
     name: Program of Thoughts
-    summary: "The program is pure computation with meaningful variable names; the model can then read the result and phrase the answer."
+    summary: "The program is pure computation that stores its result in ans, which is the answer. For some tasks, the model reasons one step further from ans."
     origin:
       by: Wenhu Chen et al.
       org: University of Waterloo, Vector Institute, UC Santa Barbara, Google Research
       year: 2022
       url: https://arxiv.org/abs/2211.12588
       kind: introduced
-      note: "Published in TMLR 2023, concurrently with PAL. It separates computation (done by the interpreter) from reasoning (done by the model), aimed at numerical and financial questions."
+      note: "Published in TMLR 2023, concurrently with PAL. It separates computation (done by the interpreter) from reasoning (done by the model). For multiple-choice questions it also used ans as an intermediate step, reasoning from it to the final option."
     build:
-      goal: "Answer a numerical question by having the model write a program that binds every quantity to a named variable and computes the result, then phrase the computed value as the answer."
+      goal: "Answer a numerical question by having the model write a program that binds every quantity to a named variable and stores the result in ans, then returning ans, or reasoning one step further from it where the task needs that."
       steps:
         - "Call the model with the {{prompt:pot}} and the question. The program must bind every quantity to a meaningfully named variable and store the result in a variable called ans."
         - "Run the program in a sandboxed interpreter with time and memory limits, and read the value of ans."
-        - "If the caller wants a bare value, return ans. Otherwise call the model with the {{prompt:phrase}}, passing the question and ans, and return its sentence."
-        - "Keep the program with the answer, so a reviewer can see exactly how the number was computed."
-      stop: "Stop when ans has been read (and phrased, if requested). If the program fails or never sets ans, return no answer with the program and the error."
+        - "If the task needs no further step, return ans as the answer. This is the main path: one model call."
+        - "If the task needs a step the program does not take, such as choosing among multiple-choice options or converting units, call the model with the {{prompt:finish}}, passing the question and ans."
+        - "Parse the finishing reply's 'Answer:' line and return it, keeping the program and ans alongside it as the working."
+      stop: "Stop when ans has been read, or after the one finishing call when that step is enabled. If the program fails or never sets ans, return no answer with the program and the error."
       requirements:
         - "Never run generated code outside a sandbox; block the network and the file system, and set time and memory limits."
         - "Read the answer from the variable ans, not from printed output, and fail clearly if it is missing."
-        - "Make the phrasing call optional; when it runs, check that its sentence contains the value of ans."
-        - "Add a test with a stub LLM whose program sets ans = 5 + 2 * 3 and whose phrasing is 'Roger has 11 tennis balls.'; assert ans is exactly 11 and two model calls."
+        - "Make the finishing step a per-task setting, off by default; the paper used it only for multiple-choice questions."
+        - "Log the question, the program, ans and, when used, the finishing reply."
+        - "Add a test with a stub LLM whose program sets ans = 5 + 2 * 3, with finishing off; assert exactly one model call and that the answer is exactly 11."
+        - "Add a test with finishing on: the program sets ans = 123 / 60 and the stub finish replies 'Answer: (B)'; assert two calls, that the finish prompt contains '2.05', and the answer '(B)'."
     prompts:
       - id: pot
         title: Program of Thoughts prompt
@@ -206,27 +209,29 @@ variants:
           Return only the program, in one code block.
 
           Question: {{question}}
-      - id: phrase
-        title: Phrase the answer prompt
+      - id: finish
+        title: Finish from ans prompt
         lang: markdown
         source: |
-          A program computed the answer to the question below.
+          A program computed an intermediate result for the question below.
 
           <question>{{question}}</question>
-          <result>{{ans}}</result>
+          <ans>{{ans}}</ans>
 
-          State the answer in one sentence, using the result exactly as given.
+          Starting from ans, reason step by step to the final answer, for
+          example by converting units or matching it to one of the options.
+          End with one line that starts with "Answer:".
     diagram:
       nodes:
         - id: question
           kind: io
           label: Question
-          description: "A numerical question: 'Roger has 5 tennis balls. He buys 2 cans of 3. How many does he have now?'"
+          description: "A numerical question, such as Roger's tennis balls, or one whose options need one more step after the arithmetic."
         - id: model
           kind: llm
           label: Model
-          sublabel: code, then phrasing
-          description: "Writes a program of named variables that computes ans, then, optionally, turns the computed value into a sentence."
+          sublabel: writes the program
+          description: "Writes a program of named variables that stores its result in ans; for some tasks, it later reasons from ans to the answer."
         - id: interpreter
           kind: tool
           label: Interpreter
@@ -235,7 +240,7 @@ variants:
         - id: answer
           kind: io
           label: Answer
-          description: "The computed value, phrased as a sentence by the model: 'Roger has 11 tennis balls.'"
+          description: "Either ans itself, such as 11, or the option the model reached from it, such as (B) 1:03 PM."
       edges:
         - id: ask
           from: question
@@ -246,24 +251,30 @@ variants:
           from: model
           to: interpreter
           label: program
-          description: "The program, pure computation with meaningful variable names and no prose."
+          description: "The program: pure computation with meaningful variable names and no prose."
           example: "initial_balls = 5; cans = 2; balls_per_can = 3; ans = initial_balls + cans * balls_per_can"
         - id: result
+          from: interpreter
+          to: answer
+          label: ans
+          description: "On the main path, the value of ans is the answer, with no second model call."
+          example: "ans = 11, returned as the answer."
+        - id: handback
           from: interpreter
           to: model
           style: loop
           label: ans
-          description: "The value of ans goes back to the model, which only has to phrase it, not compute it."
-          example: "ans = 11 (int)"
-        - id: phrase
+          description: "When the task needs one more step, ans goes back to the model as an intermediate result."
+          example: "ans = 2.05 (hours of travel)"
+        - id: finish
           from: model
           to: answer
-          label: sentence
-          description: "The model states the computed value as the answer, using the number exactly as the interpreter gave it."
-          example: "Roger has 11 tennis balls."
+          label: option
+          description: "The model reasons from ans to the final answer, such as an option in a multiple-choice question."
+          example: "2.05 h is 2 h 3 min; 11:00 AM + 2 h 3 min = 1:03 PM. Answer: (B)"
       scenarios:
-        - id: compute-then-phrase
-          label: Compute, then phrase
+        - id: pot-only
+          label: ans is the answer
           steps:
             - id: ask
               caption: The tennis-ball problem arrives at the model.
@@ -275,19 +286,43 @@ variants:
               duration: 2600
               events:
                 - { type: activate, node: model, status: thinking, at: [0, 0.5] }
-                - { type: branch, node: model, taken: code, notTaken: [phrase], at: [0.45, 0.55] }
+                - { type: branch, node: model, taken: code, notTaken: [finish], at: [0.45, 0.55] }
                 - { type: send, edge: code, token: { kind: tool-call, label: program }, at: [0.55, 1] }
             - id: run
-              caption: The interpreter runs the program and sends back ans = 11.
+              caption: The interpreter runs the program; ans = 11 is returned as the answer, with no second call.
+              duration: 2600
+              events:
+                - { type: activate, node: interpreter, status: calling, at: [0, 0.35] }
+                - { type: branch, node: interpreter, taken: result, notTaken: [handback], at: [0.3, 0.4] }
+                - { type: send, edge: result, token: { kind: result, label: "11" }, at: [0.4, 0.85] }
+                - { type: activate, node: answer, status: done, at: [0.8, 1] }
+        - id: intermediate
+          label: ans as an intermediate step
+          steps:
+            - id: ask
+              caption: "A multiple-choice question arrives: a train leaves at 11:00 AM and covers 123 km at 60 km/h. When does it arrive?"
+              duration: 1600
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question } }
+            - id: write
+              caption: The model writes a program for the travel time, ans = 123 / 60.
               duration: 2400
               events:
-                - { type: activate, node: interpreter, status: calling, at: [0, 0.4] }
-                - { type: send, edge: result, token: { kind: result, label: ans = 11 }, at: [0.4, 1] }
-            - id: phrase
-              caption: The model states the computed value in a sentence, without redoing any arithmetic.
-              duration: 2400
+                - { type: activate, node: model, status: thinking, at: [0, 0.5] }
+                - { type: branch, node: model, taken: code, notTaken: [finish], at: [0.45, 0.55] }
+                - { type: send, edge: code, token: { kind: tool-call, label: program }, at: [0.55, 1] }
+            - id: run
+              caption: The interpreter computes ans = 2.05 hours, which is not yet one of the options, so it goes back to the model.
+              duration: 2600
               events:
-                - { type: activate, node: model, status: thinking, at: [0, 0.35] }
-                - { type: branch, node: model, taken: phrase, notTaken: [code], at: [0.3, 0.4] }
-                - { type: send, edge: phrase, token: { kind: result, label: 11 balls }, at: [0.4, 0.85] }
+                - { type: activate, node: interpreter, status: calling, at: [0, 0.35] }
+                - { type: branch, node: interpreter, taken: handback, notTaken: [result], at: [0.3, 0.4] }
+                - { type: send, edge: handback, token: { kind: result, label: ans = 2.05 }, at: [0.4, 1] }
+            - id: finish
+              caption: The model reasons from 2.05 hours to an arrival time of 1:03 PM and picks option (B).
+              duration: 2600
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.4] }
+                - { type: branch, node: model, taken: finish, notTaken: [code], at: [0.35, 0.45] }
+                - { type: send, edge: finish, token: { kind: result, label: "(B) 1:03 PM" }, at: [0.45, 0.85] }
                 - { type: activate, node: answer, status: done, at: [0.8, 1] }
