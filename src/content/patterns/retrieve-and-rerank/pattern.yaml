@@ -35,8 +35,8 @@ build:
   requirements:
     - "Make the candidate count (default 150), the kept count (default 20) and the relevance floor configurable."
     - "Cache the contextualizer calls, for example with prompt caching on the whole document, since every chunk of a document repeats it."
-    - "Index the context prefix together with the chunk text in both indexes, but show the generator the chunk with its prefix so it knows the source."
-    - "If the reranker fails or times out, fall back to the fused order instead of failing the request, and log that it did."
+    - "Index the prefix and chunk text together in both indexes, and pass the prefixed chunk to the generator so it knows the source."
+    - "If the reranker fails or times out, fall back to the fused order instead of failing the request, and log that it did. If the LLM reranker's reply for a candidate is not an integer from 0 to 10, score that candidate 0 and log it."
     - "Add a test with fake BM25 and vector indexes and a stub reranker that scores one chunk highest although it ranks 140th after fusion; assert that chunk is first in the 20 passed to the generator, and exactly 20 are passed."
 prompts:
   - id: contextualize
@@ -86,16 +86,15 @@ diagram:
     - { id: contextualizer, kind: llm, label: Contextualizer, sublabel: index time, description: "Reads each chunk with its whole document and writes a one-line context to prefix it, such as which company and quarter it is about." }
     - { id: bm25, kind: memory, label: BM25 index, sublabel: exact terms, description: "A keyword index over the prefixed chunks. It catches exact terms, names and codes that embeddings blur." }
     - { id: vectors, kind: memory, label: Vector index, sublabel: meaning, description: "An embedding index over the same prefixed chunks. It catches paraphrases that share no keywords." }
-    - { id: fuse, kind: aggregator, label: Fuse, description: "Merges the two candidate lists by chunk ID into one list of about 150 unique chunks." }
-    - { id: reranker, kind: evaluator, label: Reranker, description: "Scores every candidate against the question, a slower but sharper relevance judgement, and keeps the top 20." }
+    - { id: fuse, kind: aggregator, label: Hybrid search, sublabel: query both + fuse, description: "Runs the question against both indexes in parallel, then fuses the two candidate lists by chunk ID into one list of about 150 unique chunks." }
+    - { id: reranker, kind: evaluator, label: Reranker, sublabel: "150 → 20", description: "Scores every candidate against the question, a slower but sharper relevance judgement, and keeps the top 20." }
     - { id: generator, kind: llm, label: Generator, description: "Answers from the 20 reranked chunks only, citing each." }
     - { id: out, kind: io, label: Answer, description: "The answer, citing the chunks it came from." }
   edges:
     - { id: chunk, from: docs, to: contextualizer, description: "Each chunk goes to the contextualizer together with its whole document.", example: "Chunk: 'The company's revenue grew by 3% over the previous quarter.' Document: ACME Corp 10-Q, Q2 2023" }
     - { id: to-bm25, from: contextualizer, to: bm25, description: "The prefixed chunk is written to the keyword index.", example: "This chunk is from ACME Corp's Q2 2023 10-Q; the previous quarter's revenue was $314M. The company's revenue grew by 3%..." }
     - { id: to-vectors, from: contextualizer, to: vectors, description: "The same prefixed chunk, embedded, is written to the vector index.", example: "chunk-0412 -> [0.044, -0.102, 0.317, ...] with the same context prefix" }
-    - { id: q-bm25, from: user, to: bm25, description: "The question is searched by keyword.", example: "ACME Corp revenue growth Q2 2023" }
-    - { id: q-vectors, from: user, to: vectors, description: "The same question is searched by embedding, in parallel.", example: "embed('What was ACME Corp's revenue growth in Q2 2023?')" }
+    - { id: ask, from: user, to: fuse, style: dashed, label: query, description: "At query time the question goes to hybrid search, which runs it against both indexes at once.", example: "BM25: ACME Corp revenue growth Q2 2023 | vector: embed('What was ACME Corp's revenue growth in Q2 2023?')" }
     - { id: c-bm25, from: bm25, to: fuse, label: "150", description: "Up to 150 keyword candidates, ranked by BM25 score.", example: "1. chunk-0412 (18.2)  2. chunk-0977 (15.1)  3. chunk-0413 (14.8) ..." }
     - { id: c-vectors, from: vectors, to: fuse, label: "150", description: "Up to 150 vector candidates, ranked by similarity.", example: "1. chunk-0977 (0.81)  2. chunk-0412 (0.79)  3. chunk-1530 (0.77) ..." }
     - { id: candidates, from: fuse, to: reranker, label: "150", description: "One fused list of unique candidates, still in cheap-retrieval order.", example: "150 chunks: chunk-0412, chunk-0977, chunk-0413, chunk-1530, ..." }
@@ -106,13 +105,13 @@ diagram:
       label: Wide net, then narrow
       steps:
         - id: ask
-          caption: The question is searched by keyword and by meaning at the same time.
+          caption: Hybrid search runs the question by keyword and by meaning at the same time.
           duration: 2400
           events:
-            - { type: send, edge: q-bm25, token: { kind: prompt, label: question }, at: [0, 0.5] }
-            - { type: send, edge: q-vectors, token: { kind: prompt, label: question }, at: [0, 0.5] }
-            - { type: read, node: bm25, at: [0.5, 1] }
-            - { type: read, node: vectors, at: [0.5, 1] }
+            - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.5] }
+            - { type: activate, node: fuse, status: calling, at: [0.5, 0.7] }
+            - { type: read, node: bm25, at: [0.7, 1] }
+            - { type: read, node: vectors, at: [0.7, 1] }
         - id: fuse
           caption: Each index returns up to 150 candidates; they are fused into one list.
           duration: 2400
