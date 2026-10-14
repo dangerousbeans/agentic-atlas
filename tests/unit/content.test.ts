@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { parse, parseDocument, visit } from 'yaml';
 import { patternSchema, familySchema } from '../../src/lib/schema';
 import { buildCatalog } from '../../src/lib/catalog';
+import { catalogOrder } from '../catalog-fixture';
 
 const root = 'src/content';
 const families = readdirSync(`${root}/families`).map(f => familySchema.parse(parse(readFileSync(`${root}/families/${f}`, 'utf8'))));
@@ -67,7 +68,12 @@ describe('content', () => {
     }
     expect(comments).toEqual([]);
   });
-  it('has all 21 v1 patterns', () => expect(slugs.length).toBeGreaterThanOrEqual(21));
+  it('every pattern directory is in exactly one family order, and every order slug has a directory', () => {
+    const listed = families.flatMap(f => f.order);
+    expect([...listed].sort()).toEqual([...slugs].sort());
+    expect(new Set(listed).size).toBe(listed.length);
+    expect(catalogOrder().sort()).toEqual([...slugs].sort());
+  });
   it('every pattern not pending migration has build and origin', () => {
     const lacking = slugs.filter(s => !MIGRATION_PENDING.includes(s)).filter(s => {
       const p = patternSchema.parse(parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8')));
