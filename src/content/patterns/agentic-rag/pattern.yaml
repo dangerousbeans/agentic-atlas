@@ -1,0 +1,120 @@
+slug: agentic-rag
+name: Agentic RAG
+family: knowledge-memory
+aliases: [Retrieval agent, Tool-based retrieval]
+summary: The agent decides whether to retrieve, from which source, and with what rewritten query, and repeats until it has enough context.
+badges: { autonomy: medium, cost: medium, latency: medium }
+sources:
+  - title: "Agentic Retrieval-Augmented Generation: A Survey on Agentic RAG (Singh et al., 2025)"
+    url: https://arxiv.org/abs/2501.09136
+related:
+  composesWith: [routing]
+  confusedWith: []
+code:
+  - id: loop
+    title: agentic_rag.py
+    lang: python
+    source: |
+      SOURCES = {"vectordb": search_vectors, "web": search_web, "sql": run_query}
+
+      def agentic_rag(question, max_hops=4):
+          context = []
+          for hop in range(max_hops):
+              step = llm(AGENT_PROMPT, question=question, context=context)
+              if step.action == "answer":
+                  return step.answer
+              search = SOURCES[step.source]
+              context += search(step.query)
+          return llm(AGENT_PROMPT, question=question, context=context, must_answer=True)
+prompts:
+  - id: agent
+    title: Retrieval agent prompt
+    lang: markdown
+    source: |
+      You answer the user's question. You may search before answering.
+
+      <question>{{question}}</question>
+      <context_so_far>{{context}}</context_so_far>
+
+      Sources you can search: {{source_descriptions}}
+
+      Decide the next step. Respond in JSON:
+      {"action": "search" | "answer",
+       "source": "<one of the sources>",
+       "query": "a standalone search query, rewritten for that source",
+       "answer": "only when action is answer; cite the context you used"}
+      Answer as soon as the context is enough. Never invent facts that are not in the context.
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Question }
+    - { id: agent, kind: llm, label: Agent }
+    - { id: router, kind: router, label: Source router }
+    - { id: vectordb, kind: memory, label: Vector DB }
+    - { id: web, kind: tool, label: Web search }
+    - { id: sql, kind: tool, label: SQL }
+    - { id: out, kind: io, label: Answer }
+  edges:
+    - { id: ask, from: user, to: agent }
+    - { id: plan, from: agent, to: router }
+    - { id: to-vec, from: router, to: vectordb }
+    - { id: to-web, from: router, to: web }
+    - { id: to-sql, from: router, to: sql }
+    - { id: vec-back, from: vectordb, to: agent, style: dashed }
+    - { id: web-back, from: web, to: agent, style: dashed }
+    - { id: sql-back, from: sql, to: agent, style: dashed }
+    - { id: answer, from: agent, to: out }
+  scenarios:
+    - id: two-sources
+      label: Internal docs first, then the web
+      steps:
+        - id: start
+          caption: A question arrives at the agent.
+          duration: 1000
+          codeRef: { block: loop, lines: "3-4" }
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: internal
+          caption: The agent chooses internal documents and sends a rewritten query to the vector database.
+          duration: 3000
+          codeRef: { block: loop, lines: "5-10" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: plan, token: { kind: tool-call, label: query }, at: [0.25, 0.45] }
+            - { type: branch, node: router, taken: to-vec, notTaken: [to-web, to-sql], at: [0.45, 0.6] }
+            - { type: send, edge: to-vec, token: { kind: tool-call }, at: [0.6, 0.8] }
+            - { type: activate, node: vectordb, status: calling, at: [0.6, 0.8] }
+            - { type: send, edge: vec-back, token: { kind: result, label: 3 chunks }, at: [0.8, 1] }
+        - id: not-enough
+          caption: The chunks are out of date, so the agent decides it needs more and tries the web.
+          duration: 3200
+          codeRef: { block: loop, lines: "5-10" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: plan, token: { kind: tool-call, label: new query }, at: [0.25, 0.45] }
+            - { type: branch, node: router, taken: to-web, notTaken: [to-vec, to-sql], at: [0.45, 0.6] }
+            - { type: send, edge: to-web, token: { kind: tool-call }, at: [0.6, 0.8] }
+            - { type: activate, node: web, status: calling, at: [0.6, 0.8] }
+            - { type: send, edge: web-back, token: { kind: result, label: snippets }, at: [0.8, 1] }
+        - id: answer
+          caption: With enough context the agent stops searching and writes a cited answer.
+          duration: 2400
+          codeRef: { block: loop, lines: "6-8" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.5, 1] }
+    - id: no-retrieval
+      label: No retrieval needed
+      steps:
+        - id: start
+          caption: A simple question arrives at the agent.
+          duration: 1000
+          codeRef: { block: loop, lines: "3-4" }
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: answer
+          caption: The agent already knows the answer, skips every source and replies on the first hop.
+          duration: 2400
+          codeRef: { block: loop, lines: "6-8" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.5, 1] }

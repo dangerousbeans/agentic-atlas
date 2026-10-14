@@ -1,0 +1,140 @@
+slug: hierarchical-memory
+name: Hierarchical Memory
+family: knowledge-memory
+aliases: [MemGPT, Virtual context management, Tiered memory]
+summary: Treat the context window like RAM. The agent uses tool calls to page facts between core, recall and archival memory.
+badges: { autonomy: high, cost: medium, latency: medium }
+sources:
+  - title: "MemGPT: Towards LLMs as Operating Systems (Packer et al., 2023)"
+    url: https://arxiv.org/abs/2310.08560
+  - title: "Generative Agents: Interactive Simulacra of Human Behavior (Park et al., 2023)"
+    url: https://arxiv.org/abs/2304.03442
+related:
+  composesWith: [agentic-rag]
+  confusedWith: []
+code:
+  - id: turn
+    title: hierarchical_memory.py
+    lang: python
+    source: |
+      def agent_turn(msg, mem):
+          mem.queue.append(msg)
+          while True:
+              if tokens(mem.queue) > LIMIT:
+                  summary = llm(SUMMARY_PROMPT, messages=mem.queue.evict_oldest())
+                  mem.recall.store(summary)
+              call = llm(SYSTEM_PROMPT, core=mem.core, recent=mem.queue)
+              if call.tool == "archival_search":
+                  mem.queue.append(mem.archival.search(call.query))
+              elif call.tool == "core_memory_append":
+                  mem.core.append(call.text)
+              else:
+                  return call.reply
+prompts:
+  - id: system
+    title: Memory-aware system prompt
+    lang: markdown
+    source: |
+      You are {{agent_name}}, a long-running assistant with limited context.
+
+      <core_memory>{{core}}</core_memory>
+      Core memory is always visible. Keep it short: stable facts about the user and yourself.
+
+      Tools:
+      - core_memory_append(text): save a durable fact to core memory.
+      - archival_search(query): look up older facts you no longer see.
+      Older conversation is summarized into recall memory automatically.
+
+      When the user states a lasting preference, save it. When you lack a fact
+      you should know, search before you say you don't know.
+  - id: summary
+    title: Eviction summary prompt
+    lang: markdown
+    source: |
+      The context window is full. Summarize these messages for later recall.
+
+      <messages>{{messages}}</messages>
+
+      Keep names, decisions, numbers and open questions. Drop pleasantries.
+      Write at most {{max_words}} words.
+diagram:
+  nodes:
+    - { id: user, kind: io, label: User }
+    - { id: llm, kind: llm, label: Agent }
+    - { id: core, kind: memory, label: Core, sublabel: always in context }
+    - { id: recall, kind: memory, label: Recall, sublabel: summaries }
+    - { id: archival, kind: memory, label: Archival, sublabel: searchable store }
+    - { id: summarizer, kind: llm, label: Summarizer }
+  edges:
+    - { id: msg, from: user, to: llm }
+    - { id: search, from: llm, to: archival, label: search }
+    - { id: found, from: archival, to: llm, style: dashed, label: facts }
+    - { id: save, from: llm, to: core, label: save fact }
+    - { id: evict, from: llm, to: summarizer, label: evict }
+    - { id: store, from: summarizer, to: recall }
+    - { id: reply, from: llm, to: user }
+  scenarios:
+    - id: page-and-save
+      label: Recall an old fact, save a new one
+      steps:
+        - id: arrive
+          caption: The user mentions a trip planned months ago and a new dietary preference.
+          duration: 1400
+          codeRef: { block: turn, lines: "1-2" }
+          events:
+            - { type: send, edge: msg, token: { kind: prompt, label: message } }
+        - id: page-in
+          caption: The agent no longer sees the trip details, so it calls a tool that pages them in from archival memory.
+          duration: 3000
+          codeRef: { block: turn, lines: "7-9" }
+          events:
+            - { type: activate, node: llm, status: calling, at: [0, 0.25] }
+            - { type: send, edge: search, token: { kind: tool-call, label: trip dates }, at: [0.25, 0.5] }
+            - { type: read, node: archival, at: [0.5, 0.7] }
+            - { type: send, edge: found, token: { kind: result, label: facts }, at: [0.7, 1] }
+        - id: save
+          caption: The agent writes the new preference into core memory so it stays in every future prompt.
+          duration: 2600
+          codeRef: { block: turn, lines: "10-11" }
+          events:
+            - { type: activate, node: llm, status: calling, at: [0, 0.3] }
+            - { type: send, edge: save, token: { kind: tool-call, label: vegetarian }, at: [0.3, 0.65] }
+            - { type: write, node: core, at: [0.65, 1] }
+        - id: answer
+          caption: With the old fact and the new one in view, the agent replies.
+          duration: 2000
+          codeRef: { block: turn, lines: "12-13" }
+          events:
+            - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: reply, token: { kind: result, label: reply }, at: [0.5, 1] }
+    - id: overflow
+      label: The context window overflows
+      steps:
+        - id: arrive
+          caption: A long conversation pushes the context window past its token limit.
+          duration: 1400
+          codeRef: { block: turn, lines: "1-2" }
+          events:
+            - { type: send, edge: msg, token: { kind: prompt, label: message } }
+        - id: evict
+          caption: The oldest messages are evicted and handed to a summarizer.
+          duration: 2400
+          codeRef: { block: turn, lines: "4-5" }
+          events:
+            - { type: activate, node: llm, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: evict, token: { kind: tokens, label: old turns }, at: [0.3, 0.65] }
+            - { type: activate, node: summarizer, status: thinking, at: [0.65, 1] }
+        - id: store
+          caption: The summary is written to recall memory, where a later search can find it.
+          duration: 2400
+          codeRef: { block: turn, lines: "6" }
+          events:
+            - { type: send, edge: store, token: { kind: result, label: summary }, at: [0, 0.55] }
+            - { type: write, node: recall, at: [0.55, 1] }
+        - id: answer
+          caption: Context space is free again and the agent replies.
+          duration: 2000
+          codeRef: { block: turn, lines: "12-13" }
+          events:
+            - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: reply, token: { kind: result, label: reply }, at: [0.5, 1] }

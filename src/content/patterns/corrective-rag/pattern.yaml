@@ -1,0 +1,170 @@
+slug: corrective-rag
+name: Corrective RAG
+family: knowledge-memory
+aliases: [CRAG, Self-RAG (variant)]
+summary: Grade the retrieved documents. If they're irrelevant, rewrite the query and fall back to web search before generating.
+badges: { autonomy: low, cost: medium, latency: medium }
+sources:
+  - title: "Corrective Retrieval Augmented Generation (Yan et al., 2024)"
+    url: https://arxiv.org/abs/2401.15884
+  - title: "Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection (Asai et al., 2023)"
+    url: https://arxiv.org/abs/2310.11511
+related:
+  composesWith: [agentic-rag, evaluator-optimizer]
+  confusedWith: []
+code:
+  - id: crag
+    title: corrective_rag.py
+    lang: python
+    source: |
+      def corrective_rag(question, max_checks=2):
+          docs = retriever(question)
+          grades = [llm(GRADER_PROMPT, question=question, doc=d).relevant for d in docs]
+          if not any(grades):
+              query = llm(REWRITER_PROMPT, question=question)
+              docs = web_search(query)
+          else:
+              docs = [d for d, ok in zip(docs, grades) if ok]
+          feedback = None
+          for _ in range(max_checks):
+              answer = llm(GENERATOR_PROMPT, question=question, docs=docs, feedback=feedback)
+              check = llm(CHECK_PROMPT, answer=answer, docs=docs)
+              if check.supported:
+                  return answer
+              feedback = check.unsupported_claims
+          return answer
+prompts:
+  - id: grader
+    title: Document grader prompt
+    lang: markdown
+    source: |
+      You grade whether a retrieved document helps answer a question.
+
+      <question>{{question}}</question>
+      <document>{{doc}}</document>
+
+      Respond in JSON: {"relevant": true|false, "reason": "one sentence"}
+      Mark relevant only if the document contains facts needed for the answer.
+      A document on the same topic that does not answer the question is not relevant.
+  - id: rewriter
+    title: Query rewriter prompt
+    lang: markdown
+    source: |
+      The internal search returned nothing useful for this question.
+
+      <question>{{question}}</question>
+      <rejected_reasons>{{reasons}}</rejected_reasons>
+
+      Write one web search query that would find the missing facts. Use specific
+      terms and names, not the full question. Return only the query.
+  - id: check
+    title: Answer check prompt
+    lang: markdown
+    source: |
+      Check whether every claim in the answer is supported by the documents.
+
+      <documents>{{docs}}</documents>
+      <answer>{{answer}}</answer>
+
+      Respond in JSON:
+      {"supported": true|false, "unsupported_claims": ["claim", "..."]}
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Question }
+    - { id: retriever, kind: memory, label: Retriever }
+    - { id: grader, kind: evaluator, label: Doc grader }
+    - { id: rewriter, kind: llm, label: Rewriter }
+    - { id: web, kind: tool, label: Web search }
+    - { id: generator, kind: llm, label: Generator }
+    - { id: check, kind: evaluator, label: Answer check }
+    - { id: out, kind: io, label: Answer }
+  edges:
+    - { id: ask, from: user, to: retriever }
+    - { id: docs, from: retriever, to: grader }
+    - { id: reject, from: grader, to: rewriter, label: irrelevant }
+    - { id: keep, from: grader, to: generator, label: relevant }
+    - { id: rewrite, from: rewriter, to: web }
+    - { id: fetch, from: web, to: generator }
+    - { id: draft, from: generator, to: check }
+    - { id: regen, from: check, to: generator, style: loop, label: unsupported }
+    - { id: accept, from: check, to: out, label: supported }
+  scenarios:
+    - id: docs-irrelevant
+      label: Retrieved docs are irrelevant
+      steps:
+        - id: retrieve
+          caption: The question hits the internal index and the top documents come back.
+          duration: 2000
+          codeRef: { block: crag, lines: "1-2" }
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.5] }
+            - { type: read, node: retriever, at: [0.5, 0.75] }
+            - { type: send, edge: docs, token: { kind: result, label: 4 docs }, at: [0.75, 1] }
+        - id: grade
+          caption: The grader reads each document and rejects them all as off-topic.
+          duration: 2200
+          codeRef: { block: crag, lines: "3-4" }
+          events:
+            - { type: activate, node: grader, status: error, at: [0, 0.6] }
+            - { type: branch, node: grader, taken: reject, notTaken: [keep], at: [0.6, 1] }
+        - id: rewrite
+          caption: The rewriter turns the question into a sharper web query and the search runs.
+          duration: 2800
+          codeRef: { block: crag, lines: "5-6" }
+          events:
+            - { type: send, edge: reject, token: { kind: feedback, label: rejected }, at: [0, 0.25] }
+            - { type: activate, node: rewriter, status: thinking, at: [0.25, 0.5] }
+            - { type: send, edge: rewrite, token: { kind: tool-call, label: web query }, at: [0.5, 0.75] }
+            - { type: activate, node: web, status: calling, at: [0.75, 1] }
+        - id: generate
+          caption: The generator writes the answer from the fresh web results.
+          duration: 2400
+          codeRef: { block: crag, lines: "10-11" }
+          events:
+            - { type: send, edge: fetch, token: { kind: result, label: web docs }, at: [0, 0.4] }
+            - { type: activate, node: generator, status: thinking, at: [0.4, 0.7] }
+            - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.7, 1] }
+        - id: verify
+          caption: The answer check finds every claim supported and the answer is returned.
+          duration: 2000
+          codeRef: { block: crag, lines: "12-14" }
+          events:
+            - { type: branch, node: check, taken: accept, notTaken: [regen], at: [0, 0.5] }
+            - { type: send, edge: accept, token: { kind: result, label: answer }, at: [0.5, 1] }
+    - id: self-check
+      label: Good docs, but the draft fails the check
+      steps:
+        - id: retrieve
+          caption: The question hits the internal index and the top documents come back.
+          duration: 2000
+          codeRef: { block: crag, lines: "1-2" }
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.5] }
+            - { type: read, node: retriever, at: [0.5, 0.75] }
+            - { type: send, edge: docs, token: { kind: result, label: 4 docs }, at: [0.75, 1] }
+        - id: grade
+          caption: The grader keeps the relevant documents and sends them straight to the generator.
+          duration: 2200
+          codeRef: { block: crag, lines: "3-4" }
+          events:
+            - { type: activate, node: grader, status: thinking, at: [0, 0.5] }
+            - { type: branch, node: grader, taken: keep, notTaken: [reject], at: [0.5, 0.75] }
+            - { type: send, edge: keep, token: { kind: result, label: 2 kept }, at: [0.75, 1] }
+        - id: first-draft
+          caption: The first draft contains a claim no document supports, so the check sends it back.
+          duration: 3200
+          codeRef: { block: crag, lines: "10-15" }
+          events:
+            - { type: activate, node: generator, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.25, 0.5] }
+            - { type: branch, node: check, taken: regen, notTaken: [accept], at: [0.5, 0.7] }
+            - { type: send, edge: regen, token: { kind: feedback, label: bad claim }, at: [0.7, 1] }
+        - id: second-draft
+          caption: The generator drops the unsupported claim, the check passes and the answer ships.
+          duration: 2800
+          codeRef: { block: crag, lines: "10-14" }
+          events:
+            - { type: activate, node: generator, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.3, 0.55] }
+            - { type: branch, node: check, taken: accept, notTaken: [regen], at: [0.55, 0.75] }
+            - { type: send, edge: accept, token: { kind: result, label: answer }, at: [0.75, 1] }

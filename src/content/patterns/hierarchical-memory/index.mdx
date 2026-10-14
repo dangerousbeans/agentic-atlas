@@ -1,0 +1,38 @@
+## Problem
+
+A context window is finite, and long-running agents outgrow it: a personal assistant that has talked to you for months has far more history than any prompt can hold. Truncating the oldest messages makes it forget your name. Stuffing everything in is impossible, and retrieving blindly misses what matters.
+
+## How it works
+
+Borrow the operating-system idea of virtual memory. The prompt is the fast, small tier, and slower tiers sit behind it. The <NodeRef id="llm">agent</NodeRef> itself manages the paging by calling memory tools.
+
+- <NodeRef id="core">Core memory</NodeRef> is a short block that is always in the prompt: the user's name, standing preferences, the agent's persona.
+- <NodeRef id="recall">Recall memory</NodeRef> holds summaries of older conversation turns.
+- <NodeRef id="archival">Archival memory</NodeRef> is a large searchable store of facts and documents.
+
+Take a message from the <NodeRef id="user">user</NodeRef> that mentions a trip they planned months ago. The agent notices the details are missing from view and calls a search tool, and archival memory returns the dates. If the user then says they have gone vegetarian, the agent calls a save tool and the fact lands in core memory, so it appears in every later prompt.
+
+When the window fills, the oldest messages are evicted to a <NodeRef id="summarizer">summarizer</NodeRef> that compresses them into recall memory. Nothing is lost outright. It just moves down a tier where the agent can find it again.
+
+## When to use
+
+- Conversations span days or months, far beyond one context window.
+- The agent must remember user facts, decisions and commitments.
+- Personalization matters more than raw speed.
+
+## When to avoid
+
+- Sessions are short and fit comfortably in the context window.
+- Every conversation is independent and stateless by design.
+- You cannot afford extra model calls for eviction and summarization.
+
+## Trade-offs
+
+Memory management is spent from the same model budget as the task: every search, save and summary is another call, and the agent can burn turns on housekeeping. Summaries are lossy by construction, so detail you did not think to keep is gone from recall. In return, effective memory is limited by storage and not by the window size.
+
+## Failure modes
+
+- **Forgetting to look:** the agent answers "I don't know" without searching. Instruct it to search before admitting ignorance.
+- **Core bloat:** everything gets saved as a core fact until the always-on block crowds out the task. Keep it small and prune it.
+- **Lossy summaries:** a key number disappears during compression. Tell the summarizer exactly what to preserve.
+- **Stale or wrong facts:** an outdated preference lives forever in core memory. Give the agent a way to edit and delete, not only append.
