@@ -10,6 +10,8 @@ The answers return at different times. In the diagram two voters say A and one s
 
 This is the idea behind self-consistency: sample several reasoning paths and take the most common final answer, rather than trusting the first.
 
+Two variants replace the tally. When the answers are paragraphs that never match word for word, an LLM can read every candidate and pick the one most consistent with the rest. And instead of sampling one model several times, you can ask several different models, rank their answers against each other in pairs, and fuse the best ones into a single answer.
+
 ## When to use
 
 - Mistakes are costly and a wrong single answer is worse than a slower, pricier right one.

@@ -1,0 +1,211 @@
+slug: mixture-of-agents
+name: Mixture-of-Agents
+family: multi-agent
+aliases: [MoA, Layered aggregation, Proposer-aggregator layers]
+summary: Layers of different models each answer, every model in the next layer reads all the previous answers, and an aggregator writes the final one.
+badges: { autonomy: low, cost: high, latency: high }
+sources:
+  - title: "Mixture-of-Agents Enhances Large Language Model Capabilities (Wang et al., 2024)"
+    url: https://arxiv.org/abs/2406.04692
+related:
+  composesWith: [routing]
+  confusedWith:
+    - { slug: voting, difference: "Voting runs independent answers and picks the majority without any model seeing the others; in Mixture-of-Agents each layer reads every earlier answer and synthesizes a better one." }
+    - { slug: debate, difference: "In a debate the same agents revise their own answers over rounds and converge by majority or a judge; in Mixture-of-Agents each layer is a fresh set of calls, and the end is a synthesis, not a verdict." }
+    - { slug: sectioning, difference: "Sectioning splits a task into different parts for different calls; in Mixture-of-Agents every model answers the whole prompt." }
+origin:
+  by: Junlin Wang et al.
+  org: Together AI, Duke University, University of Chicago, Stanford University
+  year: 2024
+  url: https://arxiv.org/abs/2406.04692
+  kind: introduced
+  note: "The paper found that models write better answers when shown other models' answers, even weaker ones, and stacked that effect into layers."
+defaultVariantName: Three layers
+build:
+  goal: "Answer a prompt with layers of diverse models: the first layer answers independently, each later layer refines using all the previous layer's answers, and an aggregator model synthesizes the final response."
+  steps:
+    - "Configure a list of proposer models, ideally from different model families, the number of proposer layers (default 2) and one aggregator model."
+    - "Layer 1: send the user's prompt to every proposer in parallel, with no other context."
+    - "Each later layer: call every proposer again in parallel with the {{prompt:aggregate}}, containing the user's prompt and all of the previous layer's responses, numbered."
+    - "If a proposer call fails or times out, drop it from that layer and carry on with the responses that remain; see the stop rule for when too few survive."
+    - "Finally, call the aggregator model with the {{prompt:aggregate}} over the last layer's responses, and return its output."
+  stop: "The run has a fixed number of layers and no loop: it ends when the aggregator answers. If a layer ends with fewer than two responses, stop layering: with exactly one, return it with a status of degraded; with none, fail with an error naming the timed-out models. If the aggregator call fails, retry it once, then return the first response of the last layer with a status of degraded."
+  requirements:
+    - "Run each layer's calls in parallel, each with its own timeout, so one slow model does not stall the layer."
+    - "Make the model list, the layer count and the aggregator configurable, and log the cost: a run makes one call per proposer per layer, plus one."
+    - "Label earlier responses by number, never by model name, so later models judge the content rather than the brand."
+    - "Log every layer: each response, its model, its latency and its token counts."
+    - "Add a test with a stub LLM, 3 proposers and 2 layers; assert exactly 7 calls, that every layer-2 prompt contains all 3 layer-1 responses, and that the aggregator's output is returned."
+prompts:
+  - id: aggregate
+    title: Aggregate-and-synthesize prompt
+    lang: markdown
+    source: |
+      You have been given a set of responses from various models to the user's
+      latest query. Synthesize them into a single, high-quality response.
+
+      Evaluate the responses critically: some of them may be biased or wrong.
+      Do not simply copy any one answer. Write a refined, accurate and
+      comprehensive reply that keeps the best of each and fixes their mistakes.
+
+      <query>{{prompt}}</query>
+      <responses>
+      {{numbered_responses}}
+      </responses>
+diagram:
+  groups:
+    - { id: layer-1, label: Layer 1, children: [l1a, l1b, l1c] }
+    - { id: layer-2, label: Layer 2, children: [l2a, l2b, l2c] }
+  nodes:
+    - { id: user, kind: io, label: Prompt, description: "The user's prompt, such as 'Explain how HTTPS certificate pinning works'. Every layer sees it." }
+    - { id: l1a, kind: llm, label: Qwen1.5-110B, description: "A first-layer proposer. It answers the prompt alone, without seeing any other model's answer." }
+    - { id: l1b, kind: llm, label: Llama-3-70B, description: "A second first-layer proposer, from a different model family, answering independently." }
+    - { id: l1c, kind: llm, label: WizardLM 8x22B, description: "A third first-layer proposer. Its answer may be the weakest; later layers can still use what it gets right." }
+    - { id: l2a, kind: llm, label: Qwen1.5-110B, description: "The same model, called again in layer 2: it reads all three layer-1 answers and writes an improved one." }
+    - { id: l2b, kind: llm, label: Llama-3-70B, description: "A layer-2 call that reads every layer-1 answer and writes its own refined version." }
+    - { id: l2c, kind: llm, label: WizardLM 8x22B, description: "A layer-2 call that reads every layer-1 answer, keeps their strengths and fixes their mistakes." }
+    - { id: agg, kind: aggregator, label: Aggregator, sublabel: Qwen1.5-110B, description: "The final layer: one strong model that reads all the layer-2 answers and synthesizes a single response." }
+    - { id: out, kind: io, label: Answer, description: "The synthesized explanation, returned to the user." }
+  edges:
+    - { id: p-a, from: user, to: l1a, description: "The raw prompt goes to the first proposer.", example: "Explain how HTTPS certificate pinning works." }
+    - { id: p-b, from: user, to: l1b, description: "The same prompt goes to the second proposer, in parallel.", example: "Explain how HTTPS certificate pinning works." }
+    - { id: p-c, from: user, to: l1c, description: "The same prompt goes to the third proposer, in parallel.", example: "Explain how HTTPS certificate pinning works." }
+    - { id: aa, from: l1a, to: l2a, description: "Response 1 from layer 1 goes to every layer-2 model, including this one.", example: "Response 1: Pinning stores the server's expected public key in the app and rejects any other, even one a trusted CA signed." }
+    - { id: ab, from: l1a, to: l2b, description: "Response 1 also goes to the second layer-2 model.", example: "Response 1: Pinning stores the server's expected public key in the app and rejects any other, even one a trusted CA signed." }
+    - { id: ac, from: l1a, to: l2c, description: "Response 1 also goes to the third layer-2 model.", example: "Response 1: Pinning stores the server's expected public key in the app and rejects any other, even one a trusted CA signed." }
+    - { id: ba, from: l1b, to: l2a, description: "Response 2 from layer 1 goes to every layer-2 model.", example: "Response 2: Pins can be the whole certificate or the public-key hash (SPKI); key pins survive certificate renewal." }
+    - { id: bb, from: l1b, to: l2b, description: "Response 2 goes to the second layer-2 model.", example: "Response 2: Pins can be the whole certificate or the public-key hash (SPKI); key pins survive certificate renewal." }
+    - { id: bc, from: l1b, to: l2c, description: "Response 2 goes to the third layer-2 model.", example: "Response 2: Pins can be the whole certificate or the public-key hash (SPKI); key pins survive certificate renewal." }
+    - { id: ca, from: l1c, to: l2a, description: "Response 3 from layer 1 goes to every layer-2 model, mistakes included.", example: "Response 3: Pinning is set with the HPKP header, which all browsers support. (Wrong: browsers dropped HPKP.)" }
+    - { id: cb, from: l1c, to: l2b, description: "Response 3 goes to the second layer-2 model.", example: "Response 3: Pinning is set with the HPKP header, which all browsers support. (Wrong: browsers dropped HPKP.)" }
+    - { id: cc, from: l1c, to: l2c, description: "Response 3 goes to the third layer-2 model.", example: "Response 3: Pinning is set with the HPKP header, which all browsers support. (Wrong: browsers dropped HPKP.)" }
+    - { id: fa, from: l2a, to: agg, description: "Each refined layer-2 answer goes to the aggregator.", example: "Pinning: the app ships the expected SPKI hash and rejects other keys. Browsers dropped HPKP; pinning now lives in mobile apps." }
+    - { id: fb, from: l2b, to: agg, description: "The second refined answer goes to the aggregator.", example: "Pin the public key, not the certificate, and ship a backup pin so a key rotation does not lock users out." }
+    - { id: fc, from: l2c, to: agg, description: "The third refined answer goes to the aggregator.", example: "Pinning defends against a compromised or rogue CA; the cost is that a wrong pin bricks the app's connections." }
+    - { id: final, from: agg, to: out, description: "The aggregator's single synthesized response is returned.", example: "Certificate pinning makes an app trust only a specific public key for a server... Use SPKI pins with a backup pin; HPKP is obsolete." }
+  scenarios:
+    - id: three-layers
+      label: Two proposer layers and an aggregator
+      steps:
+        - id: fan-out
+          caption: The prompt goes to three different models at once.
+          duration: 1400
+          events:
+            - { type: send, edge: p-a, token: { kind: prompt, label: prompt } }
+            - { type: send, edge: p-b, token: { kind: prompt } }
+            - { type: send, edge: p-c, token: { kind: prompt } }
+        - id: layer-1
+          caption: Each layer-1 model answers alone; one of them repeats an outdated claim about HPKP.
+          duration: 1800
+          events:
+            - { type: activate, node: l1a, status: thinking, at: [0, 0.8] }
+            - { type: activate, node: l1b, status: thinking, at: [0, 0.9] }
+            - { type: activate, node: l1c, status: thinking, at: [0, 1] }
+        - id: mesh
+          caption: Every layer-1 answer goes to every layer-2 model, so each one sees all three.
+          duration: 2200
+          events:
+            - { type: send, edge: aa, token: { kind: result, label: "#1" } }
+            - { type: send, edge: ab, token: { kind: result } }
+            - { type: send, edge: ac, token: { kind: result } }
+            - { type: send, edge: ba, token: { kind: result } }
+            - { type: send, edge: bb, token: { kind: result, label: "#2" } }
+            - { type: send, edge: bc, token: { kind: result } }
+            - { type: send, edge: ca, token: { kind: result } }
+            - { type: send, edge: cb, token: { kind: result } }
+            - { type: send, edge: cc, token: { kind: result, label: "#3" } }
+        - id: layer-2
+          caption: Each layer-2 model writes a better answer from all three, dropping the HPKP mistake.
+          duration: 1800
+          events:
+            - { type: activate, node: l2a, status: thinking, at: [0, 0.8] }
+            - { type: activate, node: l2b, status: thinking, at: [0, 0.9] }
+            - { type: activate, node: l2c, status: thinking, at: [0, 1] }
+        - id: fan-in
+          caption: The three refined answers go to the aggregator.
+          duration: 1400
+          events:
+            - { type: send, edge: fa, token: { kind: result } }
+            - { type: send, edge: fb, token: { kind: result, label: refined } }
+            - { type: send, edge: fc, token: { kind: result } }
+        - id: synthesize
+          caption: The aggregator synthesizes one answer that keeps the best of each.
+          duration: 2200
+          events:
+            - { type: activate, node: agg, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: final, token: { kind: result, label: answer }, at: [0.5, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
+variants:
+  - id: moa-lite
+    name: MoA-Lite
+    summary: "One proposer layer feeds the aggregator directly: about half the calls of the full version, for a smaller gain."
+    origin:
+      by: Junlin Wang et al.
+      org: Together AI, Duke University, University of Chicago, Stanford University
+      year: 2024
+      url: https://arxiv.org/abs/2406.04692
+      kind: introduced
+      note: "The paper's cost-effective configuration: two MoA layers instead of three (proposers, then the aggregator), with Qwen1.5-72B-Chat aggregating."
+    build:
+      goal: "Answer a prompt by having several diverse models answer it independently, then having one aggregator model synthesize their answers into a single response."
+      steps:
+        - "Configure a list of proposer models, ideally from different model families, and one aggregator model."
+        - "Send the user's prompt to every proposer in parallel, with no other context."
+        - "If a proposer call fails or times out, drop it and carry on with the responses that remain; see the stop rule for when too few survive."
+        - "Call the aggregator model with the {{prompt:aggregate}}, containing the user's prompt and every proposer's response, numbered, and return its output."
+      stop: "The run ends when the aggregator answers. If only one proposer response survives, return it directly with a status of degraded; with none, fail with an error naming the timed-out models. If the aggregator call fails, retry it once, then return the first proposer response with a status of degraded."
+      requirements:
+        - "Run the proposer calls in parallel, each with its own timeout."
+        - "Label responses by number, never by model name, so the aggregator judges the content rather than the brand."
+        - "Log each response with its model, latency and token counts, and the aggregator's output."
+        - "Add a test with a stub LLM and 3 proposers; assert exactly 4 calls, that the aggregator's prompt contains all 3 responses, and that the aggregator's output is returned."
+    diagram:
+      groups:
+        - { id: proposers, label: Proposers, children: [l1a, l1b, l1c] }
+      nodes:
+        - { id: user, kind: io, label: Prompt, description: "The user's prompt, such as 'Explain how HTTPS certificate pinning works'." }
+        - { id: l1a, kind: llm, label: Qwen1.5-110B, description: "A proposer. It answers the prompt alone, without seeing any other model's answer." }
+        - { id: l1b, kind: llm, label: Llama-3-70B, description: "A second proposer, from a different model family, answering independently." }
+        - { id: l1c, kind: llm, label: WizardLM 8x22B, description: "A third proposer. Its answer may contain mistakes that the aggregator has to catch." }
+        - { id: agg, kind: aggregator, label: Aggregator, sublabel: Qwen1.5-72B, description: "One model reads every proposer's answer and synthesizes a single response, fixing what they got wrong." }
+        - { id: out, kind: io, label: Answer, description: "The synthesized explanation, returned to the user." }
+      edges:
+        - { id: p-a, from: user, to: l1a, description: "The raw prompt goes to the first proposer.", example: "Explain how HTTPS certificate pinning works." }
+        - { id: p-b, from: user, to: l1b, description: "The same prompt goes to the second proposer, in parallel.", example: "Explain how HTTPS certificate pinning works." }
+        - { id: p-c, from: user, to: l1c, description: "The same prompt goes to the third proposer, in parallel.", example: "Explain how HTTPS certificate pinning works." }
+        - { id: fa, from: l1a, to: agg, description: "Response 1 goes to the aggregator.", example: "Response 1: Pinning stores the server's expected public key in the app and rejects any other, even one a trusted CA signed." }
+        - { id: fb, from: l1b, to: agg, description: "Response 2 goes to the aggregator.", example: "Response 2: Pins can be the whole certificate or the public-key hash (SPKI); key pins survive certificate renewal." }
+        - { id: fc, from: l1c, to: agg, description: "Response 3 goes to the aggregator, mistakes included.", example: "Response 3: Pinning is set with the HPKP header, which all browsers support. (Wrong: browsers dropped HPKP.)" }
+        - { id: final, from: agg, to: out, description: "The aggregator's single synthesized response is returned.", example: "Certificate pinning makes an app trust only a specific public key for a server... Use SPKI pins; HPKP is obsolete." }
+      scenarios:
+        - id: one-layer
+          label: Proposers, then the aggregator
+          steps:
+            - id: fan-out
+              caption: The prompt goes to three different models at once.
+              duration: 1400
+              events:
+                - { type: send, edge: p-a, token: { kind: prompt, label: prompt } }
+                - { type: send, edge: p-b, token: { kind: prompt } }
+                - { type: send, edge: p-c, token: { kind: prompt } }
+            - id: propose
+              caption: Each model answers alone; one repeats an outdated claim about HPKP.
+              duration: 1800
+              events:
+                - { type: activate, node: l1a, status: thinking, at: [0, 0.8] }
+                - { type: activate, node: l1b, status: thinking, at: [0, 0.9] }
+                - { type: activate, node: l1c, status: thinking, at: [0, 1] }
+            - id: fan-in
+              caption: All three answers go straight to the aggregator.
+              duration: 1400
+              events:
+                - { type: send, edge: fa, token: { kind: result } }
+                - { type: send, edge: fb, token: { kind: result, label: answers } }
+                - { type: send, edge: fc, token: { kind: result } }
+            - id: synthesize
+              caption: The aggregator keeps the best of each, drops the HPKP mistake and returns one answer.
+              duration: 2200
+              events:
+                - { type: activate, node: agg, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: final, token: { kind: result, label: answer }, at: [0.5, 0.95] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
