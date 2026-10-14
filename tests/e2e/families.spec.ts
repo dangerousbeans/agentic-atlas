@@ -29,7 +29,7 @@ test('card link is named by its h3 and navigates', async ({ page }) => {
   await page.goto('/families/workflows/');
   const first = page.locator('a.pattern-card').first();
   await expect(first.locator('h3')).toHaveText('Prompt Chaining');
-  await expect(first).toHaveAccessibleName(/Prompt Chaining/);
+  await expect(first).toHaveAccessibleName('Prompt Chaining');
   await first.click();
   await expect(page).toHaveURL(/\/patterns\/prompt-chaining\/$/);
 });
@@ -55,7 +55,7 @@ for (const path of ['/families/', '/families/multi-agent/']) {
   });
   test(`axe clean: ${path}`, async ({ page }) => {
     await page.goto(path);
-    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa']).analyze();
+    const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa', 'best-practice']).options({ rules: { 'heading-order': { enabled: true } } }).analyze();
     expect(r.violations).toEqual([]);
   });
 }
