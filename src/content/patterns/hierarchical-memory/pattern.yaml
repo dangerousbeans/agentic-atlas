@@ -72,10 +72,10 @@ prompts:
 diagram:
   nodes:
     - { id: user, kind: io, label: User, description: "The person chatting with the long-running assistant, e.g. 'Remind me when my Lisbon trip is, and I'm vegetarian now.'" }
-    - { id: llm, kind: llm, label: Agent, description: "The memory-aware agent. Calls recall_search, archival_search and core_memory_append, and replies when it has what it needs." }
-    - { id: core, kind: memory, label: Core, sublabel: always in context, description: "Small block of stable facts about the user, always in the prompt; core_memory_append writes new facts here." }
+    - { id: llm, kind: llm, label: Agent, description: "The memory-aware agent. Searches recall and archival, edits core (core_memory_append, core_memory_replace), moves facts out with archival_insert, then replies." }
+    - { id: core, kind: memory, label: Core, sublabel: always in context, description: "Small block of stable facts about the user, always in the prompt; core_memory_append adds facts here and core_memory_replace edits them." }
     - { id: recall, kind: memory, label: Recall, sublabel: full message log, description: "Verbatim log of evicted messages, kept so old turns stay searchable via recall_search (a tool call, not drawn as an edge)." }
-    - { id: archival, kind: memory, label: Archival, sublabel: searchable store, description: "Long-term store of documents and facts, searched with archival_search and paged into context on demand." }
+    - { id: archival, kind: memory, label: Archival, sublabel: searchable store, description: "Long-term store of documents and facts, written with archival_insert, searched with archival_search and paged into context on demand." }
     - { id: summarizer, kind: llm, label: Summarizer, description: "Folds evicted messages into the running summary at the top of context, keeping names, decisions and numbers." }
   edges:
     - { id: msg, from: user, to: llm, description: "A new user message is appended to the context queue and starts the agent's turn.", example: "I'm vegetarian now. Also, when is that Lisbon trip again?" }
