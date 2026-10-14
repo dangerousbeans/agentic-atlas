@@ -90,7 +90,7 @@ diagram:
     - { id: sub-eng, from: pool, to: engineer, style: dashed, description: "The engineer subscribes to designs, and to QA reports when there are any.", example: "Subscribed: System design (from Architect)." }
     - { id: pub-code, from: engineer, to: pool, label: code, description: "The engineer publishes the code, file by file, to the pool.", example: "game.py: class Board: def move(self, direction): ... cli.py: while not board.is_over(): ..." }
     - { id: sub-qa, from: pool, to: qa, style: dashed, description: "QA subscribes to code, plus the PRD and design it checks the code against.", example: "Subscribed: game.py, cli.py (from Engineer); PRD; System design." }
-    - { id: bug, from: qa, to: engineer, style: loop, description: "A failing test report goes back to the engineer, who fixes the code and publishes it again.", example: '{"passed": false, "failures": [{"test": "test_merge_row", "expected": "[4, 0, 0, 0]", "actual": "[2, 2, 0, 0]", "file": "game.py"}]}' }
+    - { id: bug, from: qa, to: engineer, style: loop, description: "QA publishes a failing report to the pool; the engineer, subscribed to QA reports, picks it up (drawn as a shortcut), fixes the code and publishes it again.", example: '{"passed": false, "failures": [{"test": "test_merge_row", "expected": "[4, 0, 0, 0]", "actual": "[2, 2, 0, 0]", "file": "game.py"}]}' }
     - { id: ship, from: qa, to: out, label: pass, description: "When every test passes, the code leaves the line with its documents.", example: '{"passed": true, "failures": []} 2048 ships: game.py, cli.py, test_game.py.' }
   scenarios:
     - id: assembly-line
@@ -176,9 +176,9 @@ variants:
     build:
       goal: "Run a fixed chain of phases in which each phase is a short dialogue between two role agents, an instructor and an assistant, whose agreed conclusion becomes the next phase's input."
       steps:
-        - "Write the chain down as an ordered list of phases. For each phase, record the instructor role, the assistant role, the phase goal and the shape of its conclusion (a design note, code, a review)."
+        - "Write the chain down as an ordered list of phases, e.g. design, coding, review, test. For each phase, record the instructor role, the assistant role, the phase goal and the shape of its conclusion (a design note, code, a review)."
         - "For each phase, start a fresh two-agent dialogue: give the instructor the {{prompt:instructor}} and the assistant the {{prompt:assistant}}, each filled in with the phase goal and the previous phase's conclusion."
-        - "Alternate turns: the instructor gives one instruction or review comment, and the assistant replies. When the assistant's reply begins with <SOLUTION>, take it as the phase's conclusion."
+        - "Alternate turns, where a turn is one instructor message plus one assistant reply: the instructor gives one instruction or review comment, and the assistant answers. When the assistant's reply begins with <SOLUTION>, take it as the phase's conclusion."
         - "For coding phases, run the code after each assistant reply and give the instructor the compiler or test output with the next turn."
         - "Pass only the conclusion, never the whole dialogue, to the next phase. After the last phase, return the final code with every phase's conclusion."
       stop: "End a phase when the assistant replies with <SOLUTION>, after 10 turns, or when the code is unchanged for two turns in a row. End the chain after its last phase; if a phase hits its cap without a solution, carry its latest reply forward and mark that phase unresolved."
@@ -187,7 +187,7 @@ variants:
         - "Cap every phase at a configurable number of turns (default 10)."
         - "Run the code for real in the testing phase and feed the actual errors to the tester; do not let it guess at results."
         - "Log every phase with its two roles, its turn count and its conclusion."
-        - "Add a test with a stub LLM in which every assistant replies with <SOLUTION> on its second turn; assert that 4 phases ran, each took exactly 2 turns, and each phase received the previous phase's conclusion as its input."
+        - "Add a test with a stub LLM in which every assistant returns different code on each turn and replies with <SOLUTION> on its second turn; assert that 4 phases ran, each took exactly 2 turns, and each phase received the previous phase's conclusion as its input."
     prompts:
       - id: instructor
         title: Phase instructor prompt
@@ -217,34 +217,49 @@ variants:
     diagram:
       nodes:
         - { id: user, kind: io, label: Request, description: "A one-line requirement from the user, such as 'Build a command-line 2048 game'." }
-        - { id: design, kind: agent, label: Design chat, sublabel: CEO and CTO, description: "Two agents agree the product's shape and language in a short instructor and assistant dialogue." }
-        - { id: coding, kind: agent, label: Coding chat, sublabel: CTO and programmer, description: "The CTO instructs and the programmer writes and completes the code, turn by turn, until they agree it is done." }
+        - { id: design, kind: agent, label: Design chats, sublabel: "CEO, CPO and CTO", description: "Two short chats: the CEO and CPO agree what form the product takes, then the CEO and CTO pick the language." }
+        - { id: cto, kind: agent, label: CTO, sublabel: instructor, description: "In the coding phase, the CTO is the instructor: it gives the programmer one instruction at a time and never writes the code itself." }
+        - { id: programmer, kind: agent, label: Programmer, sublabel: assistant, description: "In the coding phase, the programmer is the assistant: it writes the code each instruction asks for, and starts its reply with <SOLUTION> once they agree it is done." }
         - { id: review, kind: agent, label: Review chat, sublabel: reviewer and programmer, description: "Static testing: a reviewer reads the code and raises issues, and the programmer fixes them, until no issues remain." }
         - { id: test, kind: agent, label: Test chat, sublabel: tester and programmer, description: "Dynamic testing: the tester runs the code and reports real errors, and the programmer fixes them, until it runs cleanly." }
         - { id: out, kind: io, label: Software, description: "The working code, returned with the conclusion of every phase in the chain." }
       edges:
         - { id: req, from: user, to: design, description: "The requirement opens the first phase of the chain.", example: "Build a command-line 2048 game in Python." }
-        - { id: spec, from: design, to: coding, label: design, description: "Only the design phase's agreed conclusion moves on, not its whole dialogue.", example: "<SOLUTION> A terminal app in Python, using curses for arrow keys, with a 4x4 board and a score line." }
-        - { id: draft, from: coding, to: review, label: code, description: "The code the coding phase agreed on goes to the review phase.", example: "<SOLUTION> game.py: class Board ... def move(self, d): ... main.py: curses.wrapper(run)" }
+        - { id: spec, from: design, to: cto, label: design, description: "Only the design phase's agreed conclusion moves on, not its whole dialogue; it opens the coding chat.", example: "<SOLUTION> A terminal app in Python, using curses for arrow keys, with a 4x4 board and a score line." }
+        - { id: instruct, from: cto, to: programmer, label: instruct, description: "The CTO gives the programmer one instruction, with the run output of the last version when there is one.", example: "Write the Board class: a 4x4 grid, move(direction) that slides and merges tiles, and a score counter." }
+        - { id: reply, from: programmer, to: cto, style: loop, label: reply, description: "The programmer's code goes back to the CTO, who reads it and decides the next instruction.", example: "class Board:\n    def __init__(self): self.grid = [[0] * 4 for _ in range(4)] ..." }
+        - { id: draft, from: programmer, to: review, label: code, description: "When the programmer answers with <SOLUTION>, that reply is the coding phase's conclusion and goes to the review chat.", example: "<SOLUTION> game.py: class Board ... def move(self, d): ... main.py: curses.wrapper(run)" }
         - { id: reviewed, from: review, to: test, label: reviewed, description: "The reviewed code, with the reviewer's issues fixed, goes to system testing.", example: "<SOLUTION> Fixed: merge now skips already-merged tiles; added the missing import of random." }
         - { id: ship, from: test, to: out, label: runs, description: "When the code runs without errors, the chain ends and the software is returned.", example: "<SOLUTION> main.py runs; 10 scripted moves produce the expected board and score." }
       scenarios:
         - id: chain
-          label: Four chats in a chain
+          label: Chats in a chain
           steps:
             - id: design
-              caption: The design chat settles on a Python terminal app; only its conclusion moves on.
+              caption: The design chats settle on a Python terminal app; only their conclusion moves on to the coding chat.
               duration: 2800
               events:
                 - { type: send, edge: req, token: { kind: prompt, label: requirement }, at: [0, 0.25] }
                 - { type: activate, node: design, status: thinking, at: [0.25, 0.65] }
                 - { type: send, edge: spec, token: { kind: result, label: design }, at: [0.65, 1] }
-            - id: coding
-              caption: In the coding chat, the CTO instructs and the programmer writes the code, turn by turn.
-              duration: 2800
+            - id: coding-turn
+              caption: "Inside the coding chat, the CTO gives one instruction and the programmer replies with code."
+              duration: 3000
+              repeat: 2
               events:
-                - { type: activate, node: coding, status: thinking, at: [0, 0.65] }
-                - { type: send, edge: draft, token: { kind: result, label: code }, at: [0.65, 1] }
+                - { type: activate, node: cto, status: thinking, at: [0, 0.2] }
+                - { type: send, edge: instruct, token: { kind: prompt, label: instruction }, at: [0.2, 0.45] }
+                - { type: activate, node: programmer, status: thinking, at: [0.45, 0.65] }
+                - { type: branch, node: programmer, taken: reply, notTaken: [draft], at: [0.65, 0.75] }
+                - { type: send, edge: reply, token: { kind: result, label: code }, at: [0.75, 1] }
+            - id: coding-done
+              caption: "After the last instruction they agree: the programmer answers with <SOLUTION>, and only that code leaves the chat."
+              duration: 3000
+              events:
+                - { type: send, edge: instruct, token: { kind: prompt, label: instruction }, at: [0, 0.3] }
+                - { type: activate, node: programmer, status: thinking, at: [0.3, 0.55] }
+                - { type: branch, node: programmer, taken: draft, notTaken: [reply], at: [0.55, 0.65] }
+                - { type: send, edge: draft, token: { kind: result, label: <SOLUTION> }, at: [0.65, 1] }
             - id: review
               caption: The reviewer flags a double-merge bug and a missing import; the programmer fixes both.
               duration: 2800
