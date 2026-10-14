@@ -6,3 +6,4 @@ dist/
 .claude/
 test-results/
 .lighthouseci/
+lhci-results/

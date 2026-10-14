@@ -11,3 +11,19 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      - name: JS budget (≤ 15 KB gzip per page)
+        run: npm run budget
+      - name: Lighthouse CI (mobile, 3 runs per URL)
+        run: npm run perf
+      - run: npx playwright install --with-deps chromium
+      - name: Playwright (e2e, a11y, screenshots, runtime perf)
+        run: npx playwright test
+        env: { CI: '1' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            test-results
+            lhci-results
+          retention-days: 7

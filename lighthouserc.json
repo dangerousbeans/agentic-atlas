@@ -25,7 +25,7 @@
     },
     "upload": {
       "target": "filesystem",
-      "outputDir": "./test-results/lhci"
+      "outputDir": "./lhci-results"
     }
   }
 }
