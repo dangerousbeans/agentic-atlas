@@ -2,6 +2,7 @@ import { frameAt, type FrameState, type TokenState } from '../../lib/diagram/sta
 import type { Timeline } from '../../lib/diagram/compile';
 import type { DiagramSpec } from '../../lib/diagram/types';
 import { pickLayout } from '../../lib/diagram/fit';
+import type { SoundHook } from '../../lib/sound/hook';
 
 interface Payload { spec: DiagramSpec; timelines: Timeline[] }
 interface Rect { x: number; y: number; w: number; h: number }
@@ -229,8 +230,12 @@ class FlowPlayer extends HTMLElement {
     on(this, 'click', e => {
       const b = (e.target as Element).closest<HTMLElement>('button[data-step-index]');
       if (!b) return;
-      this.t = this.tl.steps[+b.dataset.stepIndex!].end - EPS;
+      const step = this.tl.steps[+b.dataset.stepIndex!];
+      this.t = step.end - EPS;
       this.jumpHold = true; this.sync(); this.render();
+      // a manual step plays one cue: a thunk if something is rejected in it, the chord on the last step, else a tick
+      const s = globalThis.__atlasSound;
+      if (s && s.on(this)) s.cue(step.events.some(e => e.event.type === 'activate' && e.event.status === 'error') ? 'reject' : step.index === this.tl.steps.length - 1 ? 'done' : 'step');
     });
 
     const tabs = [...this.querySelectorAll<HTMLElement>('[data-scenario-tab]')];
@@ -302,11 +307,26 @@ class FlowPlayer extends HTMLElement {
     const dt = Math.max(0, Math.min(now - this.last, 100));
     this.last = now;
     let t = this.t + dt;
+    // Sound (opt-in): the hook exists only while sound is on, and only the focused player scans for cues.
+    const s = globalThis.__atlasSound;
+    if (s && s.on(this)) this.cues(s, this.t, t);
     if (t >= this.tl.duration + HOLD_MS) t = 0;
     this.t = t;
     this.render();
     this.raf = requestAnimationFrame(this.tick);
   };
+
+  /** Sound cues for timeline events starting in [a, b): token sends, rejections (a node activated as `error`), and
+   *  the scenario's end. Autoplay only, so reduced motion (which never autoplays) never plays the token stream. */
+  private cues(s: SoundHook, a: number, b: number) {
+    for (const { start, event: ev } of this.tl.events) {
+      if (start >= b) break;
+      if (start < a) continue;
+      if (ev.type === 'send') s.cue(ev.token.kind);
+      else if (ev.type === 'activate' && ev.status === 'error') s.cue('reject');
+    }
+    if (a < this.tl.duration && b >= this.tl.duration) s.cue('done');
+  }
 
   private shownT(): number {
     if (!this.reduced) return this.t;

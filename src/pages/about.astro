@@ -28,6 +28,7 @@ const desc: Record<string, string> = {
       <li><strong>Dashed arc with a red label:</strong> a loop back to an earlier step.</li>
       <li><strong>Comet tokens:</strong> messages in flight, with a short label for what they carry. The edge they travel turns red while it is active.</li>
       <li><strong>Hover or focus</strong> any node or edge for what it does; edges also show an example payload.</li>
+      <li><strong>Sound</strong> is off unless you turn it on with the speaker button in the header. Then the diagram you are looking at plays a soft tone for each kind of token, a chord when a run finishes and a low thunk when something is rejected. Only that one diagram makes sound, and nothing plays while the tab is hidden. The same button stops all sound at once.</li>
     </ul>
     <h2>Methodology</h2>
     <p>Patterns are curated from Anthropic's <a href="https://www.anthropic.com/engineering/building-effective-agents">Building effective agents</a>, OpenAI's <a href="https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf">A practical guide to building agents</a>, and the original papers cited on each page. Diagrams play scripted traces that illustrate control flow; they are not live model runs. Each build prompt is provider- and language-neutral on purpose: paste it into your own AI coding assistant and it uses the stack you already have.</p>

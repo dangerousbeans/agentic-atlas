@@ -25,10 +25,18 @@ const current = (l: (typeof links)[number]) => (!l.active ? undefined : path ===
         ))}
       </ul>
       <Search />
+      <button type="button" class="btn btn-sm btn-icon sound-btn" data-sound aria-pressed="false" aria-label="Sound" title="Sound" hidden>
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+          <path class="spk" d="M3 7.5h3l4-3.5v12l-4-3.5H3z" />
+          <path class="waves" d="M13 7.2a4 4 0 0 1 0 5.6M15.3 5a7 7 0 0 1 0 10" />
+          <path class="mute" d="M13 7.5l5 5m0-5l-5 5" />
+        </svg>
+      </button>
       <slot name="actions" />
     </nav>
   </div>
 </header>
+<script>import './sound-toggle.ts';</script>
 <style>
   .site-header {
     position: sticky; top: 0; z-index: 20;
@@ -58,6 +66,13 @@ const current = (l: (typeof links)[number]) => (!l.active ? undefined : path ===
   ul a.active::after {
     content: ""; position: absolute; left: 0; right: 0; bottom: 10px; height: 2px; background: var(--accent);
   }
+  /* Sound toggle: an outline speaker; pressed, the waves show in red and the frame takes a red hairline. */
+  .sound-btn[hidden] { display: none; }
+  .sound-btn svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: miter; stroke-linecap: square; }
+  .sound-btn .waves { display: none; stroke: var(--accent); }
+  .sound-btn[aria-pressed='true'] { color: var(--text); border-color: var(--accent); }
+  .sound-btn[aria-pressed='true'] .waves { display: inline; }
+  .sound-btn[aria-pressed='true'] .mute { display: none; }
   @media (max-width: 720px) {
     .bar { flex-wrap: wrap; row-gap: 0; padding-top: 14px; }
     .brand { min-height: 28px; }
