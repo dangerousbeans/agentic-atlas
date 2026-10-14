@@ -1,0 +1,199 @@
+---
+/**
+ * The atlas map (addendum §2.1): family islands of live pattern tiles on a
+ * pannable, zoomable plane. Tiles are real links in DOM order (family, then
+ * pattern). Without JS (no `data-enhanced`), the plane is a plain wrapped list.
+ * Behaviour lives in atlas-map.ts.
+ */
+import Diagram from '../diagram/Diagram.astro';
+import { getCatalog } from '../../lib/catalog';
+import { atlasLayout } from '../../lib/atlas-layout';
+import { patternStats } from '../../lib/pattern-stats';
+import { href } from '../../lib/url';
+import type { DiagramSpec } from '../../lib/diagram/types';
+
+const cat = await getCatalog();
+const L = atlasLayout(cat.families.map(f => ({ slug: f.slug, name: f.name, rank: f.rank, patterns: f.order })));
+const tileOf = new Map(L.tiles.map(t => [t.slug, t]));
+const islandOf = new Map(L.islands.map(i => [i.slug, i]));
+const tileLine = (spec: DiagramSpec) => {
+  const s = patternStats(spec);
+  return [`${s.nodes} nodes`, `${s.llmCalls} LLM`, s.loop && 'loop', s.parallel && 'parallel', s.branch && 'branch', s.humanInLoop && 'human'].filter(Boolean).slice(0, 3).join(' · ');
+};
+const px = (n: number) => `${n}px`;
+---
+<div class="atlas-map" style={`--plane-w:${px(L.width)};--plane-h:${px(L.height)}`}>
+  <div class="atlas-ctl atlas-bar">
+    <label class="sr-only" for="atlas-search">Find a pattern</label>
+    <input id="atlas-search" class="atlas-search" type="search" placeholder="Find a pattern" autocomplete="off" spellcheck="false" />
+    <span class="atlas-status mono" role="status" aria-live="polite"></span>
+    <button type="button" class="btn btn-sm atlas-new" data-somewhere>Somewhere new</button>
+  </div>
+  <div class="atlas-ctl atlas-zoom" role="group" aria-label="Zoom">
+    <button type="button" class="btn btn-sm btn-icon" data-zoom-btn="in" aria-label="Zoom in">+</button>
+    <button type="button" class="btn btn-sm btn-icon" data-zoom-btn="out" aria-label="Zoom out">−</button>
+    <button type="button" class="btn btn-sm btn-icon" data-zoom-btn="home" aria-label="Show the whole map">⌂</button>
+  </div>
+  <div class="atlas-viewport" role="region" aria-label={`Atlas map: ${cat.patterns.length} patterns in ${cat.families.length} families. Arrow keys move between patterns, Enter opens one.`}>
+    <div class="atlas-plane">
+      {cat.families.map(f => {
+        const isl = islandOf.get(f.slug)!;
+        return (
+          <section class="atlas-island" data-family={f.slug} aria-labelledby={`isl-${f.slug}`} style={`--x:${px(isl.x)};--y:${px(isl.y)};--w:${px(isl.w)};--h:${px(isl.h)}`}>
+            <h3 class="atlas-island-label" id={`isl-${f.slug}`}><span class="mark" aria-hidden="true"></span>{f.name}<span class="isl-count">{String(f.order.length).padStart(2, '0')}</span></h3>
+            <ul>
+              {cat.patternsOf(f.slug).map(p => {
+                const t = tileOf.get(p.slug)!;
+                return (
+                  <li style={`--rx:${px(t.rx)};--ry:${px(t.ry)}`}>
+                    <a class="atlas-tile" href={href(`/patterns/${p.slug}/`)} draggable="false" data-slug={p.slug} data-cx={t.x + t.w / 2} data-cy={t.y + t.h / 2} data-q={[p.name, ...p.aliases, f.name].join(' | ').toLowerCase()}>
+                      <span class="tile-dia" aria-hidden="true"><Diagram uid={`map-${p.slug}`} spec={p.diagram as DiagramSpec} title={p.name} compact /></span>
+                      <span class="tile-name">{p.name}</span>
+                      <span class="tile-stats">{tileLine(p.diagram as DiagramSpec)}</span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  </div>
+  <svg class="atlas-ctl atlas-minimap" viewBox={`0 0 ${L.width} ${L.height}`} aria-hidden="true">
+    {L.islands.map(i => <rect class="mm-island" x={i.x} y={i.y} width={i.w} height={i.h} />)}
+    {L.tiles.map(t => <rect class="mm-tile" x={t.x} y={t.y} width={t.w} height={t.h} />)}
+    <rect class="mm-view" x="0" y="0" width={L.width} height={L.height} />
+  </svg>
+  <p class="atlas-ctl atlas-touch-hint" aria-hidden="true">Use two fingers to move the map</p>
+</div>
+<script>import './atlas-map.ts';</script>
+<style>
+  /* ---------- Shared tile look (both modes) ---------- */
+  .atlas-map ul { list-style: none; margin: 0; padding: 0; }
+  .atlas-tile {
+    display: flex; flex-direction: column; width: 220px; height: 170px; padding: 8px 12px 10px;
+    background: var(--bg-1); border: 1px solid var(--line); text-decoration: none; color: var(--text);
+    position: relative;
+  }
+  .atlas-tile:hover { border-color: var(--line-strong); color: var(--text); }
+  .atlas-tile:hover .tile-name { color: var(--text); }
+  .atlas-tile:focus-visible { outline: calc(2px / var(--z, 1)) solid var(--accent); outline-offset: calc(3px / var(--z, 1)); border-color: var(--accent); }
+  .tile-dia { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  .tile-dia :global(flow-player) { width: 100%; }
+  .tile-dia :global(.diagram-stage) { border: 0; border-radius: 0; background: none; padding: 0; overflow: hidden; }
+  .tile-dia :global(.diagram-svg[data-layout="wide"]) { display: block; max-height: 104px; }
+  .tile-name { font: 650 15px/1.2 var(--font-ui); letter-spacing: -0.005em; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile-stats { font: 400 10px/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .atlas-island-label {
+    display: block; margin: 0;
+    font: 800 13px/1 var(--font-display); font-stretch: 125%; letter-spacing: .12em; text-transform: uppercase; color: var(--text);
+  }
+  .atlas-island-label .mark { margin: -2px 10px 0 0; }
+  .isl-count { margin-left: 10px; font: 400 11px/1 var(--font-mono); letter-spacing: .04em; color: var(--text-3); white-space: nowrap; }
+
+  /* ---------- No JS: a plain wrapped list, grouped by family ---------- */
+  .atlas-map:not([data-enhanced]) .atlas-ctl { display: none; }
+  .atlas-map:not([data-enhanced]) .atlas-viewport { max-width: var(--max); margin: 0 auto; padding: 0 var(--gutter); }
+  .atlas-map:not([data-enhanced]) .atlas-island { margin: 0 0 40px; }
+  .atlas-map:not([data-enhanced]) .atlas-island-label { margin-bottom: 16px; }
+  .atlas-map:not([data-enhanced]) ul { display: flex; flex-wrap: wrap; gap: 16px; }
+
+  /* ---------- Enhanced: the pannable plane ---------- */
+  .atlas-map[data-enhanced] {
+    position: relative; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+  .atlas-viewport { position: relative; }
+  [data-enhanced] .atlas-viewport {
+    height: clamp(480px, 76vh, 820px); overflow: hidden; touch-action: pan-y; cursor: grab;
+    user-select: none; -webkit-user-select: none; outline: none;
+    /* A faint survey grid; atlas-map.ts moves and scales it with the plane. */
+    background-image:
+      linear-gradient(color-mix(in oklab, var(--line) 42%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in oklab, var(--line) 42%, transparent) 1px, transparent 1px);
+    background-size: 120px 120px;
+  }
+  [data-enhanced] .atlas-viewport.is-dragging { cursor: grabbing; }
+  [data-enhanced] .atlas-plane {
+    position: absolute; left: 0; top: 0; width: var(--plane-w); height: var(--plane-h); transform-origin: 0 0;
+  }
+  [data-enhanced] .atlas-plane.is-flying { will-change: transform; }
+  [data-enhanced] .atlas-island {
+    position: absolute; left: var(--x); top: var(--y); width: var(--w); height: var(--h);
+    border: 1px solid var(--line);
+    background-color: color-mix(in oklab, var(--bg-1) 55%, var(--bg));
+    background-image: radial-gradient(color-mix(in oklab, var(--text-3) 38%, transparent) 1px, transparent 1.3px);
+    background-size: 14px 14px; background-position: 7px 7px;
+    transition: opacity .2s;
+  }
+  [data-enhanced] .atlas-island::before {
+    content: ""; position: absolute; top: -4px; left: -4px; width: 7px; height: 7px; background: var(--accent);
+  }
+  [data-enhanced] .atlas-island-label {
+    position: absolute; z-index: 1; left: 22px; bottom: calc(100% - 38px); transform-origin: 0 100%;
+    transform: scale(max(1, calc(1 / var(--z, 1))));
+    /* Wrap rather than spill over neighbouring islands when zoomed far out. */
+    width: max-content; max-width: calc((var(--w) + 76px) * min(1, var(--z, 1))); line-height: 1.15;
+  }
+  /* Far out (phones), the label sits centred over its cluster, as on a chart. */
+  [data-far] .atlas-island-label {
+    left: 50%; top: 50%; bottom: auto; transform-origin: 50% 50%; text-align: center;
+    transform: translate(-50%, -50%) scale(calc(1 / var(--z, 1)));
+    padding: 3px 6px; background: color-mix(in oklab, var(--bg) 80%, transparent);
+  }
+  [data-far] .atlas-island-label .mark { display: none; }
+  /* Count on its own line keeps the narrowest label inside its island (and the plane) on phones. */
+  [data-far] .isl-count { display: block; margin: 3px 0 0; }
+  [data-far] .atlas-island li { opacity: .5; }
+  [data-far] .tile-name, [data-far] .tile-stats { visibility: hidden; }
+  [data-enhanced] .atlas-island li { position: absolute; left: var(--rx); top: var(--ry); }
+  [data-enhanced] .atlas-tile { transition: opacity .2s, border-color .15s; }
+  [data-enhanced] .atlas-tile[data-dim], [data-enhanced] .atlas-island[data-dim] .atlas-island-label { opacity: .22; }
+  [data-enhanced] .atlas-island[data-dim] { opacity: .6; }
+  [data-enhanced] .atlas-tile[data-spot] { border-color: var(--accent); box-shadow: 0 0 0 calc(4px / var(--z, 1)) var(--accent-soft); }
+
+  /* Controls overlay */
+  .atlas-bar {
+    position: absolute; z-index: 3; top: 16px; left: var(--gutter); right: var(--gutter);
+    display: flex; align-items: center; gap: 12px; pointer-events: none;
+  }
+  .atlas-bar > * { pointer-events: auto; }
+  .atlas-search {
+    width: min(340px, 100%); min-height: 40px; padding: 8px 14px;
+    font: 400 15px/1.2 var(--font-ui); color: var(--text);
+    background: color-mix(in oklab, var(--bg) 88%, transparent); border: 1px solid var(--line-strong); border-radius: 0;
+  }
+  .atlas-search::placeholder { color: var(--text-3); }
+  .atlas-search:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+  .atlas-status { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); white-space: nowrap; }
+  .atlas-new { margin-left: auto; min-height: 40px; background: color-mix(in oklab, var(--bg) 88%, transparent); }
+  .atlas-zoom { position: absolute; z-index: 3; right: var(--gutter); bottom: 156px; display: flex; gap: 8px; }
+  .atlas-zoom .btn { font: 400 18px/1 var(--font-mono); background: color-mix(in oklab, var(--bg) 88%, transparent); }
+  .atlas-minimap {
+    position: absolute; z-index: 3; right: var(--gutter); bottom: 16px; width: 180px; height: auto; aspect-ratio: var(--plane-w) / var(--plane-h);
+    background: color-mix(in oklab, var(--bg) 90%, transparent); border: 1px solid var(--line-strong); cursor: pointer;
+  }
+  .mm-island { fill: color-mix(in oklab, var(--text-3) 18%, transparent); stroke: var(--line-strong); stroke-width: 8; }
+  .mm-tile { fill: color-mix(in oklab, var(--text-2) 55%, transparent); }
+  .mm-view { fill: color-mix(in oklab, var(--accent) 12%, transparent); stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+
+  .atlas-touch-hint {
+    position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    margin: 0; padding: 10px 16px; pointer-events: none; opacity: 0; transition: opacity .2s;
+    font: 500 14px/1.3 var(--font-ui); color: var(--text); white-space: nowrap;
+    background: color-mix(in oklab, var(--bg) 88%, transparent); border: 1px solid var(--line-strong); border-top: 2px solid var(--accent);
+  }
+  .atlas-touch-hint[data-show] { opacity: 1; }
+  @media (max-width: 600px) {
+    .atlas-bar { top: 12px; gap: 8px; }
+    .atlas-search { flex: 1; min-width: 0; font-size: 16px; }
+    .atlas-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .atlas-new { padding: 6px 12px; }
+    .atlas-zoom { bottom: 12px; right: auto; left: var(--gutter); }
+    .atlas-minimap { width: 104px; bottom: 12px; }
+    [data-enhanced] .atlas-viewport { height: clamp(400px, 60vh, 560px); }
+    .atlas-island-label { font-size: 11px; letter-spacing: .08em; }
+    .atlas-island-label .mark { margin-right: 7px; }
+  }
+</style>

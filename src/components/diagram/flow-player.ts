@@ -54,6 +54,10 @@ class FlowPlayer extends HTMLElement {
 
   get compact() { return this.hasAttribute('compact'); }
 
+  /** External pause hook: while `data-suspended` is present the player stays paused (e.g. the atlas map below its zoom threshold). */
+  static observedAttributes = ['data-suspended'];
+  attributeChangedCallback() { if (this.inited) this.sync(); }
+
   connectedCallback() {
     if (this.inited) { this.attachGlobal(); this.observe(); this.render(); return; }
     const json = this.querySelector('script[data-diagram]');
@@ -129,9 +133,9 @@ class FlowPlayer extends HTMLElement {
 
   private get held() { return this.hover || this.focused || this.jumpHold; }
 
-  /** Autoplay-loop whenever visible and not held by the pointer or keyboard focus. Reduced motion never autoplays. */
+  /** Autoplay-loop whenever visible, not held by the pointer or keyboard focus, and not suspended. Reduced motion never autoplays. */
   private sync() {
-    const run = !this.reduced && this.visible && !this.held;
+    const run = !this.reduced && this.visible && !this.held && !this.hasAttribute('data-suspended');
     if (run !== this.playing) { this.playing = run; this.setAttribute('data-playing', String(run)); }
     this.ensureLoop();
   }

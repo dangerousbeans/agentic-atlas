@@ -1,45 +1,81 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
-import Constellation from '../components/atlas/Constellation.astro';
-import FamilyCard from '../components/site/FamilyCard.astro';
+import HeroStage from '../components/home/HeroStage.astro';
+import AtlasMap from '../components/atlas/AtlasMap.astro';
 import { getCatalog } from '../lib/catalog';
-import { buildConstellation } from '../lib/constellation';
 import { href } from '../lib/url';
 const cat = await getCatalog();
-const data = buildConstellation(cat.families, cat.patternsOf);
-const start = ['augmented-llm', 'prompt-chaining', 'routing', 'react', 'orchestrator-workers'].map(s => cat.bySlug.get(s)!);
+const n = cat.patterns.length, nf = cat.families.length;
 ---
-<BaseLayout title="Agentic Atlas" description="A visual field guide to agentic AI patterns: 21 patterns in 6 families, each with an animated diagram, pseudocode and prompt templates.">
-  <section class="hero">
-    <Constellation data={data} height={680}>
-      <div class="copy">
-        <p class="eyebrow">An atlas · {cat.patterns.length} patterns · {cat.families.length} families</p>
-        <h1>The night sky of <em>agentic</em> patterns</h1>
-        <p>Every star is a pattern for building with LLMs; every constellation, a family. Hover a star to name it, click to see it run.</p>
+<BaseLayout title="Agentic Atlas" description={`A visual field guide to agentic AI patterns: ${n} patterns in ${nf} families, each with a live diagram, pseudocode and prompt templates.`}>
+  <section class="hero" aria-labelledby="hero-h">
+    <div class="hero-copy">
+      <h1 id="hero-h">An atlas of agentic patterns.</h1>
+      <p class="lede">
+        {n} ways to build with LLMs, from one augmented call to teams of agents. Each pattern runs live:
+        watch prompts, tool calls and loops move through it, then open it for the <strong>pseudocode and prompts</strong>.
+      </p>
+      <div class="cta">
+        <a class="btn btn-primary" href="#atlas">Open the atlas</a>
+        <a class="btn" href={href('/families/')}>Browse families</a>
+        <a class="btn" href={href('/patterns/augmented-llm/')} data-random-pattern>Show me a random pattern</a>
       </div>
-      <ul class="legend" aria-hidden="true">{cat.families.map(f => <li>{f.name}</li>)}</ul>
-    </Constellation>
+    </div>
+    <div class="hero-visual">
+      <HeroStage />
+    </div>
   </section>
-  <section class="wrap start-here" aria-labelledby="start-h">
-    <h2 id="start-h">Start <em>here</em></h2>
-    <ol>{start.map((p, i) => <li><a href={href(`/patterns/${p.slug}/`)}><span class="n">0{i + 1}</span><span class="name">{p.name}</span><span class="sum">{p.summary}</span></a></li>)}</ol>
+
+  <section class="atlas" id="atlas" aria-labelledby="atlas-h">
+    <div class="wrap atlas-head">
+      <p class="eyebrow">{n} patterns · {nf} families</p>
+      <h2 id="atlas-h">The atlas</h2>
+      <p class="lede">
+        Every pattern sits on an island with its family. Far out, the map reads as clusters; close up, each diagram runs live.
+        <span class="hint hint-fine">Scroll over the map to zoom, drag to move, click a pattern to open it. With the map focused, the arrow keys walk from pattern to pattern and Enter opens one.</span>
+        <span class="hint hint-touch">Pinch to zoom, drag to move, tap a pattern to open it.</span>
+      </p>
+    </div>
+    <AtlasMap />
   </section>
-  <section class="wrap" id="families" aria-labelledby="fam-h">
-    <h2 id="fam-h">The six <em>families</em></h2>
-    <div class="grid">{cat.families.map(f => <FamilyCard family={f} patterns={cat.patternsOf(f.slug)} />)}</div>
+
+  <section class="wrap browse" aria-label="Families">
+    <a class="btn" href={href('/families/')}><span class="mark" aria-hidden="true"></span>Browse all families</a>
   </section>
 </BaseLayout>
 <style>
-  .hero { position: relative; }
-  .copy { position: absolute; left: max(var(--gutter), calc((100vw - var(--max)) / 2 + var(--gutter))); top: 56px; max-width: 460px; z-index: 2; pointer-events: none; }
-  .copy p:last-child { color: var(--text-2); font-size: 17px; }
-  .legend { position: absolute; left: max(var(--gutter), calc((100vw - var(--max)) / 2 + var(--gutter))); bottom: 32px; display: flex; gap: 18px; flex-wrap: wrap; list-style: none; padding: 0; margin: 0; font-size: 12px; color: var(--text-2); z-index: 2; pointer-events: none; }
-  .legend li::before { content: ""; display: inline-block; width: var(--mark); height: var(--mark); margin-right: 8px; background: var(--accent); vertical-align: middle; }
-  .start-here ol { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
-  .start-here a { display: flex; flex-direction: column; gap: 6px; height: 100%; padding: 18px; border: 1px solid var(--line); border-radius: 0; text-decoration: none; background: var(--bg-1); }
-  .start-here a:hover { border-color: var(--accent); }
-  .n { font: 12px var(--font-mono); color: var(--family-accent); } .name { font: 700 19px/1.25 var(--font-ui); } .sum { font-size: 13px; color: var(--text-2); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
-  @media (max-width: 960px) { .start-here ol { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 720px) { .hero :global(.constellation) { height: auto; display: flex; flex-direction: column; } .hero :global(.constellation .fallback) { position: relative; inset: auto; height: 300px; order: 2; } .hero :global(.constellation-svg) { transform: scale(1.2); transform-origin: 50% 50%; } .copy { order: 1; position: relative; left: auto; top: auto; padding: 32px 24px 0; } .legend { display: none; } .start-here ol { grid-template-columns: 1fr; } }
+  .hero {
+    display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    max-width: var(--max); margin: 0 auto; min-height: calc(100svh - var(--header-h));
+  }
+  .hero-copy { padding: clamp(40px, 7vh, 88px) clamp(28px, 3.5vw, 56px) 64px var(--gutter); display: flex; flex-direction: column; justify-content: center; }
+  .hero-copy h1 { margin: 0 0 28px; font-size: clamp(2.6rem, 5.4vw, 4.6rem); line-height: 0.98; }
+  .lede { color: var(--text-2); font-size: 18px; line-height: 1.55; max-width: 34rem; margin: 0; }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; }
+  .hero-visual {
+    border-left: 1px solid var(--line);
+    padding: clamp(40px, 7vh, 88px) var(--gutter) 56px clamp(28px, 4vw, 64px);
+    display: flex; flex-direction: column; justify-content: center; min-width: 0;
+  }
+
+  .atlas { border-top: 1px solid var(--line); scroll-margin-top: var(--header-h); }
+  .atlas-head { padding-top: 64px; padding-bottom: 32px; }
+  .atlas-head h2 { margin: 14px 0 16px; }
+  .atlas-head .lede { max-width: 46rem; }
+  .hint { display: block; margin-top: 8px; color: var(--text-3); font-size: 15px; }
+  .hint-touch { display: none; }
+  @media (hover: none) and (pointer: coarse) { .hint-fine { display: none; } .hint-touch { display: block; } }
+
+  .browse { display: flex; justify-content: center; padding-top: 56px; padding-bottom: 88px; }
+
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+    .hero-visual { order: -1; border-left: 0; padding: 28px var(--gutter) 8px; }
+    .hero-copy { padding: 28px var(--gutter) 56px; }
+  }
+  @media (max-width: 600px) {
+    .lede { font-size: 16px; }
+    .cta .btn { flex: 1 1 auto; }
+    .atlas-head { padding-top: 44px; }
+  }
 </style>

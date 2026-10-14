@@ -1,0 +1,69 @@
+---
+/**
+ * Home hero stage: a hero-size live player (Diagram draws its own viewfinder Frame) plus a mono caption bar.
+ * The build-time pick is `evaluator-optimizer`; "Another" (hero-swap.ts) swaps
+ * in another pattern's player fetched from its page, without a reload.
+ */
+import Diagram from '../diagram/Diagram.astro';
+import { getCatalog } from '../../lib/catalog';
+import { patternStats, statsLine } from '../../lib/pattern-stats';
+import { href } from '../../lib/url';
+import type { DiagramSpec } from '../../lib/diagram/types';
+
+const DEFAULT = 'evaluator-optimizer';
+const cat = await getCatalog();
+const p = cat.bySlug.get(DEFAULT)!;
+const list = cat.patterns.map(x => ({ slug: x.slug, name: x.name, stats: statsLine(patternStats(x.diagram as DiagramSpec)) }));
+const cur = list.find(x => x.slug === DEFAULT)!;
+const json = JSON.stringify(list).replace(/</g, '\\u003c');
+---
+<div class="hero-live" data-hero data-slug={p.slug}>
+  <div class="hero-stage">
+    <Diagram uid="hero" spec={p.diagram as DiagramSpec} title={p.name} />
+  </div>
+  <p class="hero-caption">
+    <span class="hero-id"><span class="hero-name" aria-live="polite">{cur.name}</span><span class="hero-stats">{cur.stats}</span></span>
+    <span class="hero-actions">
+      <a class="hero-open" href={href(`/patterns/${p.slug}/`)}>Open this pattern</a>
+      <button type="button" class="hero-another" data-another hidden>Another</button>
+    </span>
+  </p>
+  <script type="application/json" data-hero-list set:html={json} />
+</div>
+<script>import './hero-swap.ts';</script>
+<style>
+  .hero-live { min-width: 0; }
+  .hero-stage :global(.diagram-frame) { --frame-bracket: 34px; }
+  /* Hero size: a tall, centred stage inside Diagram's own frame. */
+  .hero-stage :global(.diagram-stage) {
+    display: flex; flex-direction: column; justify-content: center;
+    min-height: clamp(300px, 42vw, 540px); padding: clamp(16px, 3vw, 40px);
+  }
+  .hero-stage :global(.diagram-svg) { max-height: min(56vh, 520px); }
+  /* Step captions stay available to screen readers (the SVG desc points to them) and appear when focused. */
+  .hero-stage :global(.fp-steps:not(:focus-within)) {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .hero-stage :global(.fp-steps:focus-within) { margin-top: 16px; font-size: 14px; }
+  .hero-stage :global(.fp-parts),
+  .hero-stage :global(.fp-tabs),
+  .hero-stage :global(.fp-caption) { display: none; }
+
+  .hero-caption { display: flex; flex-direction: column; gap: 8px; margin: 18px 0 0; font-size: 15px; }
+  .hero-id { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; }
+  .hero-name { font-weight: 700; color: var(--text); }
+  .hero-stats { font: 400 12.5px/1.4 var(--font-mono); color: var(--text-2); letter-spacing: .02em; }
+  .hero-actions { display: flex; gap: 22px; }
+  .hero-open { font-weight: 600; color: color-mix(in oklab, var(--accent) 35%, var(--text)); text-decoration: none; }
+  .hero-open:hover { color: var(--text); text-decoration: underline; text-decoration-color: var(--accent); }
+  .hero-another {
+    font: inherit; color: var(--text-2); background: none; border: 0; padding: 0; cursor: pointer;
+  }
+  .hero-another:hover { color: var(--text); }
+  .hero-another[hidden] { display: none; }
+  [data-hero][aria-busy='true'] .hero-stage { opacity: .55; transition: opacity .2s; }
+  @media (max-width: 600px) {
+    .hero-stage :global(.diagram-stage) { min-height: 0; padding: 28px 16px; }
+    .hero-stage :global(.diagram-svg) { max-height: 46vh; }
+  }
+</style>
