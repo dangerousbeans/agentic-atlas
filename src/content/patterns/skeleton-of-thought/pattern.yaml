@@ -1,0 +1,317 @@
+slug: skeleton-of-thought
+name: Skeleton-of-Thought
+family: efficiency-cost
+aliases: [SoT, Outline-then-expand, Parallel point expansion]
+summary: Write a short outline first, then expand every outline point in parallel and join the results, cutting time to a complete answer.
+badges: { autonomy: low, cost: medium, latency: low }
+sources:
+  - title: "Skeleton-of-Thought: Prompting LLMs for Efficient Parallel Generation (Ning et al., 2023)"
+    url: https://arxiv.org/abs/2307.15337
+related:
+  composesWith: [routing, prompt-chaining]
+  confusedWith:
+    - slug: orchestrator-workers
+      difference: "Orchestrator-workers ends with an LLM that synthesizes the workers' results. Skeleton-of-thought just concatenates them, and each worker only elaborates its own outline point."
+    - slug: sectioning
+      difference: "Sectioning splits a task along lines fixed in code. Skeleton-of-thought takes its split from the model's own outline, written at run time for each question."
+origin:
+  by: Xuefei Ning, Zinan Lin, Zixuan Zhou et al.
+  org: Tsinghua University, Microsoft Research, KU Leuven, Infinigence-AI
+  year: 2023
+  url: https://arxiv.org/abs/2307.15337
+  kind: introduced
+  note: "Published at ICLR 2024. Framed as a latency technique: decoding is sequential, so generating the points in parallel finishes long answers sooner."
+build:
+  goal: "Answer a question with a long, list-shaped answer faster by generating a short outline, expanding each point in parallel calls, and joining the expansions in outline order."
+  steps:
+    - "Call the model with the {{prompt:skeleton}} to get a numbered outline of 3 to 10 points, each only a few words."
+    - "Parse the outline into a list of points; if it cannot be parsed, answer the question with one ordinary call instead."
+    - "For every point at once, call the model with the {{prompt:expand}}, passing the question, the whole skeleton and the point's number, so each expansion knows what the others cover."
+    - "Wait for all the expansions, then join them in outline order, each under its point's title. No model call is needed for this step."
+  stop: "Stop when every expansion has returned. If one fails after a retry, keep its one-line skeleton point in its place and mark the answer as partial."
+  requirements:
+    - "Run the expansions concurrently, with a concurrency cap (default 10) and a per-call timeout."
+    - "Cap the number of points (default 10) and the length of each expansion (default 2 sentences)."
+    - "Keep the join step as plain code; do not add a synthesis call, which would put back the latency the pattern removes."
+    - "Log the skeleton, each expansion's latency, and the total time to the full answer."
+    - "Add a test with a stub LLM returning a 3-point skeleton and a fixed expansion per point, with point 1's stub delayed longest; assert three expansion calls are in flight at once and the joined answer lists the points in order 1, 2, 3."
+prompts:
+  - id: skeleton
+    title: Skeleton prompt
+    lang: markdown
+    source: |
+      You are an organizer. Do not answer the question yet. Write only the skeleton
+      of a good answer: a numbered list of 3 to 10 points, each 3 to 5 words.
+
+      <question>{{question}}</question>
+
+      Skeleton:
+      1.
+  - id: expand
+    title: Point-expanding prompt
+    lang: markdown
+    source: |
+      You are writing one part of an answer. The full skeleton is below so you
+      know what the other parts cover; do not repeat them.
+
+      <question>{{question}}</question>
+      <skeleton>{{skeleton}}</skeleton>
+
+      Write point {{point_index}} only, "{{point}}", in 1 to 2 concise sentences.
+      Do not restate the point's title.
+diagram:
+  nodes:
+    - id: user
+      kind: io
+      label: Question
+      description: "A question whose answer breaks into independent points: 'What are the most effective ways to improve sleep quality?'"
+    - id: skeleton
+      kind: llm
+      label: Skeleton
+      description: "One quick call that writes only the outline: a numbered list of short points, a few words each."
+    - id: p1
+      kind: llm
+      label: Point 1
+      description: "Expands point 1, 'Fixed sleep schedule', into a sentence or two, knowing the whole skeleton."
+    - id: p2
+      kind: llm
+      label: Point 2
+      description: "Expands point 2, 'Cool, dark bedroom', at the same time as the other points."
+    - id: p3
+      kind: llm
+      label: Point 3
+      description: "Expands point 3, 'Cut afternoon caffeine', in parallel with the others."
+    - id: concat
+      kind: aggregator
+      label: Join
+      model: false
+      description: "Plain code, not a model: places the expansions under their points in outline order."
+    - id: out
+      kind: io
+      label: Answer
+      description: "The full answer, finished in roughly the time of the skeleton plus the slowest single point."
+  edges:
+    - id: in
+      from: user
+      to: skeleton
+      description: "The question goes to the skeleton prompt first."
+      example: "What are the most effective ways to improve sleep quality?"
+    - id: e1
+      from: skeleton
+      to: p1
+      description: "Point 1 goes to its own call, with the question and the whole skeleton."
+      example: "Skeleton: 1. Fixed sleep schedule 2. Cool, dark bedroom 3. Cut afternoon caffeine. Write point 1 only."
+    - id: e2
+      from: skeleton
+      to: p2
+      description: "Point 2 goes out at the same moment, to a separate call."
+      example: "Skeleton: 1. Fixed sleep schedule 2. Cool, dark bedroom 3. Cut afternoon caffeine. Write point 2 only."
+    - id: e3
+      from: skeleton
+      to: p3
+      description: "Point 3 goes out at the same moment too."
+      example: "Skeleton: 1. Fixed sleep schedule 2. Cool, dark bedroom 3. Cut afternoon caffeine. Write point 3 only."
+    - id: c1
+      from: p1
+      to: concat
+      description: "Point 1's expansion is held until the others arrive."
+      example: "Go to bed and get up at the same times every day, weekends included, so your body clock stays steady."
+    - id: c2
+      from: p2
+      to: concat
+      description: "Point 2's expansion arrives whenever its call finishes."
+      example: "Keep the bedroom around 18 °C and fully dark; blackout curtains or an eye mask help."
+    - id: c3
+      from: p3
+      to: concat
+      description: "Point 3's expansion completes the set."
+      example: "Avoid coffee, tea and energy drinks after about 14:00; caffeine lingers for hours."
+    - id: done
+      from: concat
+      to: out
+      description: "The joined answer is returned: the skeleton's points, each with its expansion, in order."
+      example: "1. Fixed sleep schedule: go to bed and get up at the same times... 2. Cool, dark bedroom: keep it around 18 °C... 3. Cut afternoon caffeine: avoid coffee after 14:00..."
+  scenarios:
+    - id: outline-then-expand
+      label: Outline, then expand
+      steps:
+        - id: skeleton
+          caption: "The skeleton call writes a three-point outline in a moment: schedule, bedroom, caffeine."
+          duration: 2000
+          events:
+            - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.4] }
+            - { type: activate, node: skeleton, status: thinking, at: [0.4, 1] }
+        - id: fan-out
+          caption: All three points go out at once, each to its own call with the full skeleton.
+          duration: 1400
+          events:
+            - { type: send, edge: e1, token: { kind: prompt, label: point 1 } }
+            - { type: send, edge: e2, token: { kind: prompt, label: point 2 } }
+            - { type: send, edge: e3, token: { kind: prompt, label: point 3 } }
+        - id: expand
+          caption: The three expansions are written side by side; the answer waits only for the slowest one.
+          duration: 3000
+          events:
+            - { type: activate, node: p1, status: thinking, at: [0, 0.8] }
+            - { type: activate, node: p2, status: thinking, at: [0, 0.55] }
+            - { type: activate, node: p3, status: thinking, at: [0, 0.65] }
+            - { type: send, edge: c2, token: { kind: result, label: text }, at: [0.55, 0.75] }
+            - { type: send, edge: c3, token: { kind: result, label: text }, at: [0.65, 0.85] }
+            - { type: send, edge: c1, token: { kind: result, label: text }, at: [0.8, 1] }
+        - id: join
+          caption: Plain code joins the points in outline order. No synthesis call, so no extra wait.
+          duration: 1600
+          events:
+            - { type: activate, node: concat, status: done, at: [0, 0.3] }
+            - { type: send, edge: done, token: { kind: result, label: answer }, at: [0.3, 0.9] }
+            - { type: activate, node: out, status: done, at: [0.85, 1] }
+variants:
+  - id: with-router
+    name: With router (SoT-R)
+    summary: "A router first decides whether the question suits an outline; sequential questions such as maths or code get one ordinary call instead."
+    build:
+      goal: "Use skeleton-of-thought only for questions whose answers split into independent points, and answer every other question with one ordinary call."
+      steps:
+        - "Call a small model with the {{prompt:router}} to decide whether the question suits skeleton-of-thought (or use a small classifier trained on labelled questions)."
+        - "If the router says no, answer the question with a single ordinary call and return that."
+        - "If it says yes, call the model with the {{prompt:skeleton}} to get a numbered outline."
+        - "Expand every point in parallel with the {{prompt:expand}}, passing the question, the skeleton and the point number."
+        - "Join the expansions in outline order with plain code and return the result."
+      stop: "Stop when the single answer, or every expansion, has returned. If the router's reply cannot be parsed, take the ordinary path."
+      requirements:
+        - "Keep the router cheap: a short prompt on a small model, or a small trained classifier."
+        - "Log the router's decision per question, and sample both paths for quality review."
+        - "Cap the points (default 10) and run the expansions concurrently with a timeout."
+        - "Add a test with a stub router that answers no for 'What is 17 × 23?' and yes for a list question; assert the first makes exactly one answer call and the second makes one skeleton call plus one call per point."
+    prompts:
+      - id: router
+        title: Router prompt
+        lang: markdown
+        source: |
+          Can a good answer to this question be written as several independent points,
+          each of which could be written without seeing the others?
+
+          <question>{{question}}</question>
+
+          Answer "no" for maths, code, step-by-step reasoning, or very short answers.
+          Reply with exactly one word: yes or no.
+      - id: skeleton
+        title: Skeleton prompt
+        lang: markdown
+        source: |
+          You are an organizer. Do not answer the question yet. Write only the skeleton
+          of a good answer: a numbered list of 3 to 10 points, each 3 to 5 words.
+
+          <question>{{question}}</question>
+
+          Skeleton:
+          1.
+      - id: expand
+        title: Point-expanding prompt
+        lang: markdown
+        source: |
+          You are writing one part of an answer. The full skeleton is below so you
+          know what the other parts cover; do not repeat them.
+
+          <question>{{question}}</question>
+          <skeleton>{{skeleton}}</skeleton>
+
+          Write point {{point_index}} only, "{{point}}", in 1 to 2 concise sentences.
+          Do not restate the point's title.
+    diagram:
+      nodes:
+        - id: user
+          kind: io
+          label: Question
+          description: "Any question: some split into independent points, others need one line of reasoning from start to finish."
+        - id: router
+          kind: router
+          label: Router
+          description: "A cheap call that decides whether the answer can be written as independent points."
+        - id: skeleton
+          kind: llm
+          label: Skeleton
+          description: "Writes the outline for questions the router sent down the parallel path."
+        - id: expand
+          kind: llm
+          label: Expand points
+          sublabel: one call per point
+          description: "The point expansions, run as parallel calls (drawn as one node here), one per outline point."
+        - id: plain
+          kind: llm
+          label: Direct answer
+          description: "One ordinary call, used for maths, code and other questions whose steps depend on each other."
+        - id: out
+          kind: io
+          label: Answer
+          description: "Either the joined points or the direct answer."
+      edges:
+        - id: in
+          from: user
+          to: router
+          description: "Every question goes to the router first."
+          example: "What are the most effective ways to improve sleep quality?"
+        - id: sot
+          from: router
+          to: skeleton
+          label: "yes"
+          description: "Questions whose answer splits into independent points take the skeleton path."
+          example: "router: yes (a list of independent tips)"
+        - id: direct
+          from: router
+          to: plain
+          label: "no"
+          description: "Questions that need sequential reasoning go to one ordinary call."
+          example: "'A train leaves at 14:05 at 80 km/h... when does it arrive?' router: no (step-by-step arithmetic)"
+        - id: points
+          from: skeleton
+          to: expand
+          description: "Each outline point goes out to its own expansion call, all at once."
+          example: "1. Fixed sleep schedule 2. Cool, dark bedroom 3. Cut afternoon caffeine"
+        - id: joined
+          from: expand
+          to: out
+          description: "The expansions are joined in outline order by plain code and returned."
+          example: "1. Fixed sleep schedule: go to bed and get up at the same times... 2. Cool, dark bedroom: ..."
+        - id: answer
+          from: plain
+          to: out
+          description: "The direct answer is returned as is."
+          example: "It arrives at 16:50: 220 km at 80 km/h takes 2 h 45 min."
+      scenarios:
+        - id: list-question
+          label: List question
+          steps:
+            - id: route
+              caption: The router sees a list of independent tips and picks the skeleton path.
+              duration: 2200
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.35] }
+                - { type: branch, node: router, taken: sot, notTaken: [direct], at: [0.35, 0.5] }
+                - { type: send, edge: sot, token: { kind: prompt, label: "yes" }, at: [0.5, 1] }
+            - id: expand
+              caption: The outline is written, then its points are expanded in parallel and joined.
+              duration: 3000
+              events:
+                - { type: activate, node: skeleton, status: thinking, at: [0, 0.25] }
+                - { type: send, edge: points, token: { kind: prompt, label: 3 points }, at: [0.25, 0.45] }
+                - { type: activate, node: expand, status: thinking, at: [0.45, 0.7] }
+                - { type: send, edge: joined, token: { kind: result, label: answer }, at: [0.7, 0.95] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
+        - id: maths-question
+          label: Maths question
+          steps:
+            - id: route
+              caption: A train-timetable sum needs step-by-step reasoning, so the router sends it to one ordinary call.
+              duration: 2200
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.35] }
+                - { type: branch, node: router, taken: direct, notTaken: [sot], at: [0.35, 0.5] }
+                - { type: send, edge: direct, token: { kind: prompt, label: "no" }, at: [0.5, 1] }
+            - id: answer
+              caption: The direct answer is written in one pass and returned.
+              duration: 2200
+              events:
+                - { type: activate, node: plain, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.5, 0.95] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }

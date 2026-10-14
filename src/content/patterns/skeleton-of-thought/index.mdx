@@ -1,0 +1,38 @@
+## Problem
+
+Models write one token at a time, so a long answer takes a long time no matter how simple it is. Ask "What are the most effective ways to improve sleep quality?" and the user watches tip one, then tip two, then tip three appear, although no tip depends on another. A person writing the same answer would jot down an outline first and could hand each point to a different writer. A single model call cannot do that.
+
+## How it works
+
+Skeleton-of-thought splits the answer into two stages. First, a <NodeRef id="skeleton">skeleton</NodeRef> call writes only an outline: a numbered list of short points, a few words each. That is quick, because the outline is short. In the example it is "1. Fixed sleep schedule 2. Cool, dark bedroom 3. Cut afternoon caffeine".
+
+Then every point is expanded at the same time, in separate calls: <NodeRef id="p1">point 1</NodeRef>, <NodeRef id="p2">point 2</NodeRef> and <NodeRef id="p3">point 3</NodeRef>. Each expansion call sees the question and the whole skeleton, so it knows what the other points cover and does not repeat them, but it writes only its own point. The calls run side by side, so the answer waits only for the slowest one.
+
+Finally, a <NodeRef id="concat">join</NodeRef> step places the expansions under their points in outline order. It is plain code, not another model call; adding a synthesis call would put back the wait the pattern removes. The full <NodeRef id="out">answer</NodeRef> arrives in roughly the time of the skeleton plus one point, instead of all the points in a row. The paper reports considerable speed-ups across the 12 models it tested.
+
+## Variants
+
+- **With router (SoT-R):** a cheap router first decides whether the question suits an outline at all. Questions about maths, code or step-by-step reasoning go to one ordinary call; only list-shaped questions take the parallel path. The same paper proposes it.
+
+## When to use
+
+- Answers are long and split naturally into independent points: tips, pros and cons, comparisons, checklists.
+- Time to a complete answer matters more than token cost.
+- You can run several model calls concurrently.
+
+## When to avoid
+
+- Reasoning is sequential, as in maths, code or arguments where each step builds on the last. Points written in isolation will not connect.
+- The points must refer to each other, or the answer needs a flowing narrative.
+- Answers are short; the extra skeleton call adds latency rather than saving it.
+
+## Trade-offs
+
+Skeleton-of-thought trades tokens for time. Every expansion call repeats the question and the skeleton in its input, and the skeleton is an extra call, so the total cost is higher than one long answer. The answer is also more list-like and less connected, which suits some questions and hurts others. The router variant limits both costs to the questions where the speed-up is worth it.
+
+## Failure modes
+
+- **Wrong question shape:** a maths problem split into independent points produces confident fragments that do not add up. Route sequential questions to an ordinary call.
+- **Repetition:** expansions overlap because each call writes in isolation. Pass the whole skeleton to every call and tell it to cover its own point only.
+- **Uneven depth:** one point gets a paragraph and another a line. Fix the expansion length in the prompt.
+- **Slowest-call bound:** one stalled expansion holds up the whole answer. Set a timeout and fall back to the skeleton line for that point.
