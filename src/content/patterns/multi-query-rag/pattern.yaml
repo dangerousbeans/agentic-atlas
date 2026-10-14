@@ -48,7 +48,7 @@ build:
     - "Run the retrievals concurrently with a per-query timeout; a failed or timed-out query drops out of the fusion instead of failing the request."
     - "If the rewriter's reply cannot be parsed, fall back to searching with the original question alone."
     - "Log each query with its ranked IDs and the fused scores, so a surprising answer can be traced to the query that pulled its document in."
-    - "Add a test with a stub LLM returning 3 fixed queries and a fake retriever with fixed lists in which D3 tops list 1 and D7 ranks 2, 1 and 3 across the lists; assert D7 is first after fusion with score 1/62 + 1/61 + 1/63."
+    - "Add a test with a stub LLM returning 3 queries and a fake retriever keyed by query: D7 ranks 2, 1 and 3 in their lists, and the original question gets an empty list. Assert 4 retrieval calls and D7 first with score exactly 1/62 + 1/61 + 1/63."
 defaultVariantName: RAG-Fusion
 prompts:
   - id: rewrite
@@ -82,12 +82,12 @@ diagram:
     - { id: r1, kind: memory, label: Search 1, sublabel: EV cost per mile, description: "The retriever, run with the first query; it returns its own ranked list of document IDs." }
     - { id: r2, kind: memory, label: Search 2, sublabel: Camry fuel economy, description: "The same retriever, run in parallel with the second query, returning a second ranked list." }
     - { id: r3, kind: memory, label: Search 3, sublabel: insurance + upkeep, description: "The same retriever with the third query, returning a third ranked list." }
-    - { id: fuse, kind: aggregator, label: Fuse, sublabel: Reciprocal Rank Fusion, description: "Merges the three lists: each document scores the sum of 1/(60 + rank) over every list it appears in." }
+    - { id: fuse, kind: aggregator, label: Fuse, sublabel: Reciprocal Rank Fusion, description: "Merges the ranked lists, one per rewrite plus one for the original question: each document scores the sum of 1/(60 + rank) over every list it appears in." }
     - { id: generator, kind: llm, label: Generator, description: "Answers the original question from the top fused documents, citing each one." }
     - { id: out, kind: io, label: Answer, description: "An answer covering every facet the queries reached, with citations." }
   edges:
     - { id: ask, from: user, to: rewriter, description: "The question goes to the rewriter before any search runs.", example: "Is a Model Y cheaper to run than a Camry?" }
-    - { id: q1, from: rewriter, to: r1, description: "The first rewritten query.", example: "Tesla Model Y electricity cost per mile at home charging rates" }
+    - { id: q1, from: rewriter, to: r1, description: "The first rewritten query. The original question is searched too, as a fourth query, so a drifting rewrite cannot crowd it out.", example: "Tesla Model Y electricity cost per mile at home charging rates" }
     - { id: q2, from: rewriter, to: r2, description: "The second rewritten query, searched at the same time.", example: "Toyota Camry 2.5L real-world fuel economy mpg" }
     - { id: q3, from: rewriter, to: r3, description: "The third rewritten query, for a facet the question only implied.", example: "EV versus petrol car insurance and maintenance costs per year" }
     - { id: l1, from: r1, to: fuse, description: "The first ranked list of document IDs.", example: "1. D3 (EV charging costs)  2. D7 (5-year cost of ownership)  3. D1" }
@@ -137,6 +137,14 @@ variants:
   - id: sub-question
     name: Sub-questions
     summary: "Split the question into sub-questions, retrieve and answer each one separately, then combine the sub-answers into the final answer."
+    origin:
+      by: Simon Suo (LlamaIndex)
+      org: LlamaIndex
+      year: 2023
+      url: https://developers.llamaindex.ai/python/examples/query_engine/sub_question_query_engine/
+      kind: popularized
+      uncertain: true
+      note: "LlamaIndex shipped its SubQuestionQueryEngine in May 2023. Decomposing a question into sub-questions predates it in prompting research (least-to-most, Zhou et al. 2022; Self-Ask, Press et al. 2022); LlamaIndex packaged it for retrieval."
     build:
       goal: "Answer a multi-part question by splitting it into independent sub-questions, answering each from its own retrieval, and combining the sub-answers into one final answer."
       steps:
@@ -150,7 +158,7 @@ variants:
         - "Cap the sub-questions (default 4); if the decomposer returns more, keep the first four and log the rest."
         - "Run the retrieve-and-answer branches concurrently, each with its own timeout."
         - "Give each sub-answer call only its own documents, so one branch's sources cannot leak into another's answer."
-        - "Reject sub-questions that refer to another sub-question's answer; such dependent questions need a loop, as in agentic RAG."
+        - "Reject sub-questions that depend on another's answer (that needs a loop, as in agentic RAG). If the decomposer's reply cannot be parsed or yields fewer than 2 sub-questions, answer the original question with a single retrieval."
         - "Add a test with a stub LLM that splits a question into 3 sub-questions; assert 3 retrievals, 3 sub-answer calls each holding only its own documents, and one combiner call holding all 3 sub-answers."
     prompts:
       - id: decompose
@@ -268,7 +276,7 @@ variants:
         - "Label the two document sets separately in the generator prompt, so the model knows which documents are background."
         - "If the step-back call fails, fall back to the original retrieval alone instead of failing the request."
         - "Log the step-back question next to both result lists."
-        - "Add a test with a stub LLM that returns a fixed step-back question and a fake retriever; assert the retriever was called twice, once with each question, and the generator prompt holds both document sets."
+        - "Add a test with a stub LLM returning a fixed step-back question and a fake retriever; assert the retriever was called twice, once with each question, and the generator prompt holds the step-back documents inside <background_documents> and the original-question documents inside <specific_documents>."
     prompts:
       - id: step-back
         title: Step-back prompt
