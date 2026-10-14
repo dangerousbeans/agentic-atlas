@@ -1,0 +1,50 @@
+---
+/**
+ * Viewfinder frame for live visuals: a hairline box, heavier corner brackets
+ * and one red corner square. Purely decorative chrome; the slot content keeps
+ * its own semantics. An optional `label` is shown as a mono caption on the top edge.
+ */
+interface Props { label?: string; class?: string }
+const { label, class: cls } = Astro.props;
+---
+<div class:list={['frame', cls]}>
+  <span class="frame-corner tl" aria-hidden="true"></span>
+  <span class="frame-corner tr" aria-hidden="true"></span>
+  <span class="frame-corner bl" aria-hidden="true"></span>
+  <span class="frame-corner br" aria-hidden="true"></span>
+  <span class="frame-dot" aria-hidden="true"></span>
+  {label && <span class="frame-label">{label}</span>}
+  <div class="frame-body"><slot /></div>
+</div>
+<style>
+  .frame {
+    --frame-bracket: 28px;
+    --frame-weight: 1.5px;
+    --frame-line: color-mix(in oklab, var(--line) 80%, transparent);
+    --frame-ink: var(--text-2);
+    position: relative;
+    border: 1px solid var(--frame-line);
+    padding: var(--frame-pad, 0);
+    min-width: 0;
+  }
+  .frame-corner {
+    position: absolute; width: var(--frame-bracket); height: var(--frame-bracket);
+    border: 0 solid var(--frame-ink); pointer-events: none; z-index: 1;
+  }
+  /* Brackets sit on top of the hairline (offset by its 1px). */
+  .tl { top: -1px; left: -1px; border-top-width: var(--frame-weight); border-left-width: var(--frame-weight); }
+  .tr { top: -1px; right: -1px; border-top-width: var(--frame-weight); border-right-width: var(--frame-weight); }
+  .bl { bottom: -1px; left: -1px; border-bottom-width: var(--frame-weight); border-left-width: var(--frame-weight); }
+  .br { bottom: -1px; right: -1px; border-bottom-width: var(--frame-weight); border-right-width: var(--frame-weight); }
+  .frame-dot {
+    position: absolute; top: -4px; left: -4px; width: 7px; height: 7px;
+    background: var(--accent); z-index: 2; pointer-events: none;
+  }
+  .frame-label {
+    position: absolute; top: 0; left: 18px; transform: translateY(-50%); z-index: 2;
+    padding: 0 8px; background: var(--bg);
+    font: 500 11px/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-2);
+  }
+  .frame-body { position: relative; min-width: 0; }
+  @media (max-width: 600px) { .frame { --frame-bracket: 20px; } }
+</style>

@@ -21,7 +21,7 @@ const confused = p.related.confusedWith.map(c => ({ ...c, p: catalog.bySlug.get(
   {composes.length > 0 && <ul class="related">{composes.map(r => <li><a href={href(`/patterns/${r.slug}/`)}>{r.name}</a><span> {r.summary}</span></li>)}</ul>}
 </section>
 <style>
-  .callout { border: 1px solid var(--line); border-left: 3px solid var(--family-accent); border-radius: 10px; padding: 16px 20px; margin: 32px 0; background: var(--bg-1); }
+  .callout { border: 1px solid var(--line); border-left: 2px solid var(--accent); border-radius: 0; padding: 16px 20px; margin: 32px 0; background: var(--bg-1); }
   .callout h3 { margin: 6px 0; }
   .callout p:last-child { margin: 0; color: var(--text-2); }
   .related { list-style: none; padding: 0; } .related li { margin: 10px 0; } .related span { color: var(--text-2); }

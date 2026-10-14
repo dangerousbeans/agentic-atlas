@@ -17,20 +17,20 @@ const items = [
 </dl>
 <style>
   .badges { position: relative; display: flex; gap: 22px; margin: 18px 0 28px; flex-wrap: wrap; }
-  .badge { display: flex; flex-direction: column; gap: 4px; cursor: help; border-radius: 6px; }
+  .badge { display: flex; flex-direction: column; gap: 4px; cursor: help; border-radius: 0; }
   .badge:focus-visible { outline: 2px solid var(--family-accent); outline-offset: 4px; }
   /* CSS-only tooltip, styled like the diagram tooltip (diagram.css .fp-tip). It is anchored to the row (.badges),
      not the badge, and removed from layout until shown, so it can never push the page wider than the viewport. */
-  .badge::after { display: none; content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 8px); z-index: 20; width: max-content; max-width: min(260px, calc(100vw - 32px)); box-sizing: border-box; padding: 10px 12px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--family-accent) 40%, var(--line)); background: color-mix(in oklab, var(--bg-1) 96%, transparent); box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55), 0 0 24px -6px var(--family-accent); font: 400 13px/1.45 var(--font-ui); color: var(--text-2); text-transform: none; letter-spacing: 0; cursor: default; }
+  .badge::after { display: none; content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 8px); z-index: 20; width: max-content; max-width: min(260px, calc(100vw - 32px)); box-sizing: border-box; padding: 10px 12px; border-radius: 0; border: 1px solid var(--line-strong); border-top: 2px solid var(--accent); background: var(--bg-1); box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55); font: 400 13px/1.45 var(--font-ui); color: var(--text-2); text-transform: none; letter-spacing: 0; cursor: default; }
   /* Invisible bridge so the pointer can travel from the badge onto the tooltip (WCAG 1.4.13: hoverable). */
   .badge::before { display: none; content: ''; position: absolute; left: 0; top: 100%; width: min(260px, calc(100vw - 32px)); height: 10px; }
   .badge:not([data-dismissed]):hover::after, .badge:not([data-dismissed]):hover::before,
   .badge:not([data-dismissed]):focus-visible::after { display: block; }
-  dt { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
+  dt { font: 500 11px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
   dd { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); text-transform: capitalize; }
   .dots { display: inline-flex; gap: 4px; }
-  .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
-  .dots i.on { background: var(--family-accent); box-shadow: 0 0 8px var(--family-accent); }
+  .dots i { width: 6px; height: 6px; border-radius: 0; background: var(--line-strong); }
+  .dots i.on { background: var(--accent); }
 </style>
 <script>
   // WCAG 1.4.13: Escape dismisses the badge tooltip; it comes back on the next hover or focus.

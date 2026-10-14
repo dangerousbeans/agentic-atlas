@@ -13,7 +13,7 @@ const { pattern: p, family: f } = Astro.props;
   <Badges badges={p.badges} />
 </header>
 <style>
-  .chip { display: inline-block; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; text-decoration: none; color: var(--family-accent); border: 1px solid color-mix(in oklab, var(--family-accent) 40%, transparent); padding: 5px 12px; border-radius: 99px; margin-top: 40px; }
+  .chip { display: inline-block; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; text-decoration: none; color: var(--family-accent); border: 1px solid var(--line-strong); padding: 6px 12px; border-radius: 0; font-weight: 600; margin-top: 40px; }
   .aliases { color: var(--text-3); font-size: 14px; margin: -6px 0 10px; }
   .summary { font: 400 clamp(1.15rem, 2.2vw, 1.4rem)/1.5 var(--font-ui); color: var(--text-2); max-width: 46rem; margin: 0; }
 </style>

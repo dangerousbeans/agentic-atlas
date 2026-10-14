@@ -2,10 +2,31 @@
 import { href } from '../../lib/url';
 ---
 <footer class="site-footer">
-  <div class="wrap">
-    <p>Agentic Atlas: a visual field guide to agentic AI patterns. <a href={href('/about')}>About &amp; sources</a></p>
+  <div class="inner">
+    <p class="brand"><span class="mark" aria-hidden="true"></span>Agentic Atlas</p>
+    <p class="tag">A visual field guide to agentic AI patterns. Scripted traces, not live model runs.</p>
+    <nav aria-label="Footer">
+      <a href={href('/')}>Atlas</a>
+      <a href={href('/#families')}>Families</a>
+      <a href={href('/about/')}>About &amp; sources</a>
+    </nav>
   </div>
 </footer>
 <style>
-  .site-footer { border-top: 1px solid var(--line); margin-top: 96px; padding: 32px 0 48px; color: var(--text-2); font-size: 14px; }
+  .site-footer { border-top: 1px solid var(--line); margin-top: 120px; color: var(--text-2); font-size: 14px; }
+  .inner {
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px 40px;
+    padding: 32px var(--gutter) 40px;
+    max-width: var(--max); margin: 0 auto;
+  }
+  p { margin: 0; }
+  .brand {
+    display: inline-flex; align-items: center; gap: 12px; color: var(--text);
+    font: 800 12px/1 var(--font-display); font-stretch: 125%; letter-spacing: .12em; text-transform: uppercase;
+  }
+  .tag { font: 400 12px/1.5 var(--font-mono); color: var(--text-3); }
+  nav { display: flex; gap: 24px; }
+  nav a { text-decoration: none; color: var(--text-2); }
+  nav a:hover { color: var(--text); text-decoration: underline; text-decoration-color: var(--accent); }
+  @media (max-width: 860px) { .inner { grid-template-columns: 1fr; } }
 </style>
