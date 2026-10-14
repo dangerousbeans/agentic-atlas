@@ -1,18 +1,10 @@
 import type { Build, Pattern, Prompt } from './schema';
-import type { DiagramSpec } from './diagram/types';
 
 /** `{{prompt:<id>}}` in a build step: replaced by that prompt's title in the composed text. */
 export const PROMPT_REF_ALL = /\{\{prompt:([a-z0-9][a-z0-9-]*)\}\}/g;
 
 /** What composeBuildPrompt needs from a variant (a schema Variant or a ResolvedVariant both fit). */
-export interface BuildVariant { name: string; isDefault?: boolean; build?: Build; prompts?: Prompt[]; diagram?: DiagramSpec }
-
-/** Used only while a pattern has no `build` yet (the expansion migration): the steps come from the first scenario. */
-const FALLBACK_REQUIREMENTS = [
-  'Cap every loop and retry, and return the best result so far with a clear status when a cap is hit.',
-  'Log each LLM and tool call with its inputs, outputs and latency.',
-  'Add a test that swaps the LLM client for a stub returning canned responses.',
-];
+export interface BuildVariant { name: string; isDefault?: boolean; build?: Build; prompts?: Prompt[] }
 
 function fenced(source: string, lang: string): string {
   const body = source.replace(/\n+$/, '');
@@ -36,12 +28,10 @@ export function composeBuildPrompt(pattern: Pattern, variant?: BuildVariant): st
   const suffix = own ? ` (${own.name} variant)` : '';
   const out: string[] = [`Implement the ${pattern.name} pattern${suffix} in this codebase, using the LLM client and language we already use.`];
 
-  const diagram = (own?.diagram ?? pattern.diagram) as DiagramSpec;
-  const steps = build?.steps ?? [...new Set(diagram.scenarios[0].steps.map(s => s.caption))];
-  out.push('## Goal', expand(build?.goal ?? pattern.summary));
-  out.push('## How it works', steps.map((s, i) => `${i + 1}. ${expand(s)}`).join('\n'));
+  out.push('## Goal', expand(build.goal));
+  out.push('## How it works', build.steps.map((s, i) => `${i + 1}. ${expand(s)}`).join('\n'));
   out.push('## Prompts', ...prompts.flatMap(p => [`### ${p.title}`, fenced(p.source, p.lang)]));
-  if (build) out.push('## Stop rule', expand(build.stop));
-  out.push('## Requirements', (build?.requirements ?? FALLBACK_REQUIREMENTS).map(r => `- ${expand(r)}`).join('\n'));
+  out.push('## Stop rule', expand(build.stop));
+  out.push('## Requirements', build.requirements.map(r => `- ${expand(r)}`).join('\n'));
   return out.join('\n\n') + '\n';
 }

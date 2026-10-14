@@ -145,17 +145,15 @@ export const patternSchema = z.object({
   }).default({ composesWith: [], confusedWith: [] }),
   prompts: z.array(promptSchema).min(1),
   diagram: diagramSchema,
-  // Optional during the expansion migration; tests/unit/content.test.ts tracks which patterns still lack them.
-  build: buildSchema.optional(),
-  origin: originSchema.optional(),
+  build: buildSchema,
+  origin: originSchema,
   defaultVariantName: z.string().min(1).max(40).optional(),
   variants: z.array(variantSchema).min(1).max(3).optional(),
 }).superRefine((p, ctx) => {
   const issue = (message: string, path: (string | number)[]) => ctx.addIssue({ code: 'custom', message: `[${p.slug}] ${message}`, path });
   for (const msg of diagramIssues(p.diagram as DiagramSpec)) issue(msg, ['diagram']);
   // composeBuildPrompt expands {{prompt:<id>}} in every build field, so every field is checked.
-  const promptIssues = (build: { goal: string; steps: string[]; stop: string; requirements: string[] } | undefined, prompts: { id: string }[], where: string, path: (string | number)[]) => {
-    if (!build) return;
+  const promptIssues = (build: { goal: string; steps: string[]; stop: string; requirements: string[] }, prompts: { id: string }[], where: string, path: (string | number)[]) => {
     const ids = new Set(prompts.map(x => x.id));
     const fields: [string, string[]][] = [['goal', [build.goal]], ['step', build.steps], ['stop', [build.stop]], ['requirement', build.requirements]];
     for (const [field, texts] of fields) for (const t of texts) for (const [, ref] of t.matchAll(PROMPT_REF_ALL))

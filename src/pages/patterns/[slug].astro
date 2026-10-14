@@ -36,13 +36,12 @@ const uidOf = (v: (typeof variants)[number]) => (v.isDefault ? p.slug : `${p.slu
 // One header line per distinct origin; variants without their own share the pattern's.
 const origins: { origin: Origin; ids: string[]; names: string[]; isDefault: boolean }[] = [];
 for (const v of variants) {
-  if (!v.origin) continue;
   const g = origins.find(o => o.origin === v.origin);
   if (g) { g.ids.push(v.id); g.names.push(v.name); g.isDefault ||= v.isDefault; }
   else origins.push({ origin: v.origin, ids: [v.id], names: [v.name], isDefault: v.isDefault });
 }
 const tables = variants.map(v => ({ id: v.id, name: v.name, isDefault: v.isDefault, stats: patternStats(v.diagram) }));
-const ld = origins.length ? { '@context': 'https://schema.org', '@type': 'TechArticle', headline: p.name, description: p.summary, citation: origins.map(o => originCitation(o.origin)) } : undefined;
+const ld = { '@context': 'https://schema.org', '@type': 'TechArticle', headline: p.name, description: p.summary, citation: origins.map(o => originCitation(o.origin)) };
 ---
 <BaseLayout title={p.name} description={p.summary} pagefind ld={ld}>
   <article class="wrap pattern" data-variants={multi ? '' : undefined}>

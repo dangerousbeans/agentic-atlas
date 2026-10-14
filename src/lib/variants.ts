@@ -13,9 +13,9 @@ export interface ResolvedVariant {
   summary?: string;
   isDefault: boolean;
   diagram: DiagramSpec;
-  build?: Build;
+  build: Build;
   prompts: Prompt[];
-  origin?: Origin;
+  origin: Origin;
 }
 
 /** The default variant first, then each declared variant with the parent's build, prompts and origin filled in. */

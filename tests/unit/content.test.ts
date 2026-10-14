@@ -9,13 +9,6 @@ const root = 'src/content';
 const families = readdirSync(`${root}/families`).map(f => familySchema.parse(parse(readFileSync(`${root}/families/${f}`, 'utf8'))));
 const slugs = readdirSync(`${root}/patterns`);
 
-/**
- * Patterns that still lack `build` or `origin` during the expansion migration (plan Task X2/X3). Each content task
- * removes the slugs it completes; once this list is empty, `build` and `origin` become required in the schema.
- */
-export const MIGRATION_PENDING: readonly string[] = [
-];
-
 describe('content', () => {
   it('has 9 families ranked 1 to 9 (expansion addendum §4)', () => {
     expect(families).toHaveLength(9);
@@ -68,19 +61,12 @@ describe('content', () => {
     expect(new Set(listed).size).toBe(listed.length);
     expect(catalogOrder().sort()).toEqual([...slugs].sort());
   });
-  it('every pattern not pending migration has build and origin', () => {
-    const lacking = slugs.filter(s => !MIGRATION_PENDING.includes(s)).filter(s => {
-      const p = patternSchema.parse(parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8')));
-      return !p.build || !p.origin;
+  it('every pattern has build and origin', () => {
+    const lacking = slugs.filter(s => {
+      const raw = parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8'));
+      return !raw.build || !raw.origin;
     });
     expect(lacking).toEqual([]);
-  });
-  it('lists the patterns still missing build or origin (informational until the migration ends)', () => {
-    const report = slugs.map(s => patternSchema.parse(parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8'))))
-      .map(p => [p.slug, [!p.build && 'build', !p.origin && 'origin'].filter(Boolean)] as const)
-      .filter(([, gaps]) => gaps.length);
-    if (report.length) console.info(`Expansion migration: ${report.length} pattern(s) still missing fields:\n${report.map(([s, g]) => `  ${s}: ${g.join(', ')}`).join('\n')}`);
-    expect(MIGRATION_PENDING.filter(s => !slugs.includes(s))).toEqual([]);
   });
   it('hides families with no patterns from the catalog until they have content', () => {
     const patterns = slugs.map(s => patternSchema.parse(parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8'))));

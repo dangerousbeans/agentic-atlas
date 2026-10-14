@@ -11,7 +11,7 @@ const spec = p.diagram as DiagramSpec;
 const stats = statsLine(patternStats(spec));
 // The default variant is the one drawn; the rest are counted, beside a short credit (addendum §2, §3).
 const nv = p.variants?.length ?? 0;
-const meta = [nv && `+${nv} variant${nv === 1 ? '' : 's'}`, p.origin && originShort(p.origin)].filter(Boolean).join(' · ');
+const meta = [nv && `+${nv} variant${nv === 1 ? '' : 's'}`, originShort(p.origin)].filter(Boolean).join(' · ');
 ---
 <a class="pattern-card" href={href(`/patterns/${p.slug}/`)} aria-labelledby={`pc-${f.slug}-${p.slug}-h`} aria-describedby={`pc-${f.slug}-${p.slug}-d`}>
   <div class="visual" aria-hidden="true">

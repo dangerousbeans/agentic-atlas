@@ -31,6 +31,7 @@ const pattern = (): Pattern => ({
     stop: 'Stop when the judge passes the draft or after 3 rounds; return the last draft and the open critique.',
     requirements: ['Cap rounds at 3.', 'Log every call.', 'Test with a stub LLM.'],
   },
+  origin: { by: 'A. Person', year: 2023, url: 'https://example.com', kind: 'introduced' },
 });
 
 const variant = (over: Partial<Variant> = {}): Variant => ({ id: 'self', name: 'Same model', summary: 'One model plays both roles.', diagram: diagram(), ...over });
@@ -88,15 +89,6 @@ describe('composeBuildPrompt', () => {
     expect(md).not.toContain('### Generator prompt');
   });
 
-  it('without a build (during migration), uses the summary and the first scenario captions, and has no stop rule', () => {
-    const p = pattern(); delete p.build;
-    const md = composeBuildPrompt(p);
-    expect(md).toContain('## Goal\n\nA pattern used only by these tests.');
-    expect(md).toContain('1. The task goes in.\n2. The model answers.');
-    expect(md).not.toContain('## Stop rule');
-    expect(md).toContain('## Requirements');
-  });
-
   it('is provider-neutral', () => {
     expect(composeBuildPrompt(pattern())).not.toMatch(/OpenAI|Anthropic|Claude|GPT|python/i);
   });
@@ -104,7 +96,7 @@ describe('composeBuildPrompt', () => {
 
 describe('resolveVariants', () => {
   it('puts the default first, named by defaultVariantName, and fills fallbacks', () => {
-    const p = { ...pattern(), defaultVariantName: 'Separate judge', origin: { by: 'A. Person', year: 2023, url: 'https://example.com', kind: 'introduced' as const }, variants: [variant()] };
+    const p = { ...pattern(), defaultVariantName: 'Separate judge', variants: [variant()] };
     const [std, self] = resolveVariants(p);
     expect([std.name, std.isDefault, self.name, self.isDefault]).toEqual(['Separate judge', true, 'Same model', false]);
     expect(self.build).toBe(p.build);

@@ -41,10 +41,12 @@ describe('diagramIssues', () => {
 });
 
 const fam = (slug: string, order: string[]): Family => familySchema.parse({ slug, name: slug, rank: 1, accent: '#F5B14C', description: 'A family of things.', order });
+const fixtureBuild = { goal: 'Draft and judge until it passes.', steps: ['Draft with the {{prompt:gen}}.', 'Judge the draft.', 'Loop back with the critique.'], stop: 'Stop after three rounds.', requirements: ['Cap the rounds.', 'Log every call.', 'Test with a stub LLM.'] };
+const fixtureOrigin = { by: 'Aman Madaan et al.', year: 2023, url: 'https://arxiv.org/abs/2303.17651', kind: 'introduced' as const };
 const pat = (slug: string, family: string, related: Partial<Pattern['related']> = {}): Pattern => ({
   slug, name: slug, family, aliases: [], summary: 'A summary of the pattern.', badges: { autonomy: 'low', cost: 'low', latency: 'low' },
   sources: [{ title: 't', url: 'https://example.com' }], related: { composesWith: [], confusedWith: [], ...related },
-  prompts, diagram: base(),
+  prompts, diagram: base(), build: fixtureBuild, origin: fixtureOrigin,
 });
 
 describe('validateCatalog', () => {
@@ -70,14 +72,18 @@ describe('patternSchema', () => {
 });
 
 describe('build, origin and variants', () => {
-  const build = { goal: 'Draft and judge until it passes.', steps: ['Draft with the {{prompt:gen}}.', 'Judge the draft.', 'Loop back with the critique.'], stop: 'Stop after three rounds.', requirements: ['Cap the rounds.', 'Log every call.', 'Test with a stub LLM.'] };
-  const origin = { by: 'Aman Madaan et al.', year: 2023, url: 'https://arxiv.org/abs/2303.17651', kind: 'introduced' };
+  const build = fixtureBuild;
+  const origin = fixtureOrigin;
   const variant = (id = 'self') => ({ id, name: 'Same model', summary: 'One model plays both roles.', diagram: base() });
   const parse = (extra: Record<string, unknown>) => patternSchema.safeParse({ ...pat('a', 'f'), ...extra });
   const messages = (r: ReturnType<typeof parse>) => (r.success ? '' : r.error.issues.map(i => i.message).join('\n'));
 
   it('accepts a pattern with build, origin and variants', () => expect(messages(parse({ build, origin, defaultVariantName: 'Separate judge', variants: [variant(), variant('tools')] }))).toBe(''));
-  it('keeps build and origin optional during the migration', () => expect(parse({}).success).toBe(true));
+  it('requires build and origin on every pattern', () => {
+    expect(parse({ build: undefined }).success).toBe(false);
+    expect(parse({ origin: undefined }).success).toBe(false);
+  });
+  it('keeps build and origin optional on variants', () => expect(messages(parse({ variants: [variant()] }))).toBe(''));
   it('requires 3 to 8 build steps', () => {
     expect(parse({ build: { ...build, steps: build.steps.slice(0, 2) } }).success).toBe(false);
     expect(parse({ build: { ...build, steps: Array(9).fill('Do the next thing.') } }).success).toBe(false);

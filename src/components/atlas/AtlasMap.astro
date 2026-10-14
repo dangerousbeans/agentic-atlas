@@ -35,7 +35,7 @@ const tileLine = (p: Pattern) => {
   const facts = [`${s.nodes} nodes`, `${s.llmCalls} LLM`, s.loop && 'loop', s.parallel && 'parallel', s.branch && 'branch', s.humanInLoop && 'human'].filter(Boolean);
   return [...facts.slice(0, n ? 2 : 3), n && `+${n} variant${n === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
 };
-const tileTitle = (p: Pattern) => (p.origin ? `${p.name} · ${p.origin.uncertain ? 'no single inventor' : `${p.origin.kind} by ${originShort(p.origin)}`}` : undefined);
+const tileTitle = (p: Pattern) => `${p.name} · ${p.origin.uncertain ? 'no single inventor' : `${p.origin.kind} by ${originShort(p.origin)}`}`;
 const Heading = fill ? 'h2' : 'h3';
 const px = (n: number) => `${n}px`;
 ---
