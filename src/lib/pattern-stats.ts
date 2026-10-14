@@ -57,11 +57,12 @@ export function patternStats(d: DiagramSpec): PatternStats {
 }
 
 export function statsLine(s: PatternStats): string {
-  const parts = [`${s.nodes} nodes`, `${s.llmCalls} LLM calls`];
+  const n = (c: number, one: string, many: string) => `${c} ${c === 1 ? one : many}`;
+  const parts = [n(s.nodes, 'node', 'nodes'), n(s.llmCalls, 'LLM call', 'LLM calls')];
   if (s.loop) parts.push('loop');
   if (s.parallel) parts.push('parallel');
   if (s.branch) parts.push('branch');
   if (s.humanInLoop) parts.push('human');
-  parts.push(`${s.scenarios} scenarios`);
+  parts.push(n(s.scenarios, 'scenario', 'scenarios'));
   return parts.join(' · ');
 }

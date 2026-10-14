@@ -83,6 +83,10 @@ describe('statsLine', () => {
     expect(statsLine({ ...base, humanInLoop: true, branch: true, parallel: true, loop: true })).toBe('4 nodes · 3 LLM calls · loop · parallel · branch · human · 2 scenarios');
     expect(statsLine(base)).toBe('4 nodes · 3 LLM calls · 2 scenarios');
   });
+  it('uses singular for counts of one', () => {
+    expect(statsLine({ ...base, nodes: 1, llmCalls: 1, scenarios: 1 })).toBe('1 node · 1 LLM call · 1 scenario');
+    expect(statsLine({ ...base, nodes: 0, llmCalls: 0 })).toBe('0 nodes · 0 LLM calls · 2 scenarios');
+  });
 });
 
 const load = (slug: string) => parse(readFileSync(`src/content/patterns/${slug}/pattern.yaml`, 'utf8')).diagram as DiagramSpec;
