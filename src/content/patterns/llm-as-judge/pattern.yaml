@@ -21,8 +21,8 @@ origin:
   org: UC Berkeley, UC San Diego, CMU, Stanford, MBZUAI
   year: 2023
   url: https://arxiv.org/abs/2306.05685
-  kind: introduced
-  note: "Zheng et al. named and measured the practice: strong judges agreed with human preferences over 80% of the time, about as often as humans agree with each other, and they catalogued its position, verbosity and self-enhancement biases."
+  kind: popularized
+  note: "Earlier 2023 work such as G-Eval already used GPT-4 as an evaluator; Zheng et al. named and measured the practice: strong judges agreed with human preferences over 80% of the time, about as often as humans agree with each other, and they catalogued its position, verbosity and self-enhancement biases."
 build:
   goal: "Score a system's outputs on a fixed test set with a separate judge model and a written rubric, and block a change from shipping when the aggregate score falls below a threshold."
   steps:
@@ -34,11 +34,11 @@ build:
     - "Every so often, have a person score a sample of cases, and report how often the judge agrees with them."
   stop: "Stop after every case is scored once. If more than 5% of judge replies fail to parse after one retry each, stop and report the run as invalid instead of passing or failing it."
   requirements:
-    - "Use a different model, or at least a different prompt and temperature 0, for the judge than for the system under test."
+    - "Use a judge from a different model family than the system under test, at temperature 0; if you cannot, say so in the report."
     - "Make the judge write its reasoning before its score, and validate that the score is an integer on the rubric's scale."
     - "Keep the test set, rubric and judge prompt under version control, and record their versions in every report."
     - "Report the judge's agreement with the latest human-scored sample, and refuse to gate releases if it drops below a set level."
-    - "Add a test with a stub judge that returns scores 4, 5, 2 and 5 for four cases and a threshold of 3.5; assert the report's mean is exactly 4.0 and the gate passes."
+    - "Add a test with a stub judge that returns scores 4, 5, 2 and 5 for four cases, a threshold of 3.5 and a previous release mean of 3.9; assert the report's mean is exactly 4.0 and the gate passes."
 defaultVariantName: Pointwise
 prompts:
   - id: judge
@@ -76,11 +76,16 @@ diagram:
       label: Judge
       sublabel: separate model
       description: "A separate model that reads each message and reply, reasons against the rubric, then gives a score."
-    - id: gate
+    - id: report
       kind: aggregator
-      label: Report + gate
-      sublabel: mean vs threshold
-      description: "Averages the scores into a report with the worst cases, compares the mean with the threshold and the current release, then ships or blocks."
+      label: Report
+      sublabel: mean + histogram
+      description: "Collects the scores into a mean, a histogram and the worst cases with the judge's reasons. It ranks candidates even with no gate."
+    - id: gate
+      kind: router
+      label: Release gate
+      sublabel: vs 3.5 and last release
+      description: "Compares the report's mean with the 3.5 threshold and with the current release's mean, then lets the change ship or blocks it."
     - id: out
       kind: io
       label: Ship
@@ -107,10 +112,16 @@ diagram:
       example: "Policy: 5 = follows refund policy exactly; 3 = right action, missing a required step; 1 = promises something the policy forbids."
     - id: score
       from: judge
-      to: gate
+      to: report
       label: score
       description: "The judge's reasoning and score for one case are added to the report."
       example: '{"reasoning": "Refunds without confirming the duplicate in billing, which the policy requires.", "score": 2}'
+    - id: summary
+      from: report
+      to: gate
+      label: mean
+      description: "The report's summary goes to the release gate: the mean, the change from the last release, and the worst cases."
+      example: "Mean 4.0 over 200 cases (current release 3.9). Lowest: case 17 (2), case 88 (2)."
     - id: pass
       from: gate
       to: out
@@ -122,7 +133,7 @@ diagram:
       to: system
       style: dashed
       label: block
-      description: "A failing mean blocks the change and sends the report back to whoever made it."
+      description: "A failing mean blocks the candidate prompt from shipping and returns the report to its author."
       example: "BLOCKED: mean 3.1 < 3.5. Policy scores fell on refund cases 12, 17, 40 and 88."
   scenarios:
     - id: pointwise
@@ -147,10 +158,11 @@ diagram:
             - { type: send, edge: score, token: { kind: result, label: "2" }, at: [0.6, 0.75] }
             - { type: send, edge: score, token: { kind: result, label: "5" }, at: [0.75, 0.9] }
         - id: gate
-          caption: The scores average 4.0, above the 3.5 threshold and the current 3.9, so the change ships.
-          duration: 3000
+          caption: The report averages the scores to 4.0, above the 3.5 threshold and the current 3.9, so the gate ships the change.
+          duration: 3200
           events:
-            - { type: activate, node: gate, status: thinking, at: [0, 0.35] }
+            - { type: activate, node: report, status: thinking, at: [0, 0.2] }
+            - { type: send, edge: summary, token: { kind: result, label: mean 4.0 }, at: [0.15, 0.35] }
             - { type: branch, node: gate, taken: pass, notTaken: [block], at: [0.35, 0.5] }
             - { type: send, edge: pass, token: { kind: result, label: ship }, at: [0.5, 0.85] }
             - { type: activate, node: out, status: done, at: [0.8, 1] }
@@ -172,10 +184,11 @@ diagram:
             - { type: send, edge: score, token: { kind: result, label: "3" }, at: [0.4, 0.6] }
             - { type: send, edge: score, token: { kind: result, label: "2" }, at: [0.6, 0.8] }
         - id: block
-          caption: The mean drops to 3.1, under the threshold. The gate blocks the change and sends the report back.
-          duration: 3000
+          caption: The report's mean drops to 3.1, under the threshold. The gate blocks the change and returns the report to its author.
+          duration: 3200
           events:
-            - { type: activate, node: gate, status: thinking, at: [0, 0.35] }
+            - { type: activate, node: report, status: thinking, at: [0, 0.2] }
+            - { type: send, edge: summary, token: { kind: result, label: mean 3.1 }, at: [0.15, 0.35] }
             - { type: branch, node: gate, taken: block, notTaken: [pass], at: [0.35, 0.5] }
             - { type: activate, node: gate, status: error, at: [0.45, 0.65] }
             - { type: send, edge: block, token: { kind: feedback, label: blocked }, at: [0.6, 1] }
@@ -302,7 +315,7 @@ variants:
                 - { type: activate, node: judge, status: thinking, at: [0, 0.5] }
                 - { type: send, edge: verdict, token: { kind: result, label: B wins }, at: [0.5, 1] }
             - id: count
-              caption: Both orders agree, so the case counts as a win for v2. Over all 200 cases, v2 wins 67%.
+              caption: Both orders agree, so the case counts as a win for v2. Over all 200 cases, v2 wins 67% of the decided cases (ties excluded).
               duration: 2400
               events:
                 - { type: activate, node: tally, status: thinking, at: [0, 0.4] }
@@ -341,7 +354,7 @@ variants:
       year: 2024
       url: https://arxiv.org/abs/2404.18796
       kind: introduced
-      note: "A Panel of LLm evaluators (PoLL) of smaller models from disjoint families outperformed a single large judge, showed less intra-model bias, and cost over seven times less."
+      note: "A Panel of LLM evaluators (PoLL) of smaller models from disjoint families outperformed a single large judge, showed less intra-model bias, and cost over seven times less."
     build:
       goal: "Score each output with a panel of smaller judges from different model families and pool their verdicts, so no single model's bias decides the result."
       steps:
@@ -350,7 +363,7 @@ variants:
         - "Pool the verdicts: a majority vote for pass or fail, or the mean for numeric scores."
         - "Record each judge's verdict next to the pooled one, so a judge that keeps disagreeing with the panel stands out."
         - "Aggregate the pooled verdicts across the test set into a report, as for a single judge."
-      stop: "Stop after every output has a pooled verdict. If a judge fails to answer after one retry, pool the rest; if fewer than three answered, mark that case as unjudged."
+      stop: "Stop after every output has a pooled verdict. If a judge fails to answer after one retry, pool the rest; if fewer than three answered, or the remaining votes tie, mark that case as unjudged."
       requirements:
         - "Draw the judges from different model families, and never include the family of the system under test."
         - "Give every judge the identical prompt and rubric."
