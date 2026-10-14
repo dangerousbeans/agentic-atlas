@@ -19,8 +19,9 @@ if (btn) {
   const hook: SoundHook = { on: p => isSoundFocus(p, hoverTile ?? focusTile), cue: c => synth?.cue(c) };
   const onOver = (e: PointerEvent) => { hoverTile = tileOf(e.target); };
   const onOut = (e: PointerEvent) => { if (!e.relatedTarget) hoverTile = null; };
-  const onFocusIn = (e: FocusEvent) => { focusTile = tileOf(e.target); };
-  const onFocusOut = (e: FocusEvent) => { focusTile = tileOf(e.relatedTarget); };
+  // keyboard focus only: a map drag that starts on a tile focuses its link, which must not keep that tile sounding
+  const onFocusIn = (e: FocusEvent) => { focusTile = (e.target as Element).matches?.(':focus-visible') ? tileOf(e.target) : null; };
+  const onFocusOut = () => { focusTile = null; };
   const onVis = () => { if (synth) void (document.hidden ? synth.suspend() : synth.resume()); };
   const page: [string, EventListener][] = [['pointerover', onOver as EventListener], ['pointerout', onOut as EventListener], ['focusin', onFocusIn as EventListener], ['focusout', onFocusOut as EventListener], ['visibilitychange', onVis]];
 
