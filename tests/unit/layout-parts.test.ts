@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { layoutDiagram, returnEdges, backEdges, labelLines, shownLabelIds, snapToGlyph, glyphCentre, labelBox, boxesOverlap, SHAPE_CY } from '../../src/lib/diagram/layout';
 import { offsetPath } from '../../src/lib/diagram/geometry';
 import type { DiagramSpec, DiagramNode, DiagramEdge } from '../../src/lib/diagram/types';
-import { first, last } from './diagram-helpers';
+import { first, last, attached } from './diagram-helpers';
 
 const scenarios: DiagramSpec['scenarios'] = [{ id: 's', label: 'S', steps: [{ id: 'a', caption: 'A step', events: [{ type: 'activate', node: 'a', status: 'thinking' }] }] }];
 const spec = (nodes: DiagramNode[], edges: DiagramEdge[], extra: Partial<DiagramSpec> = {}): DiagramSpec => ({ nodes, edges, scenarios, ...extra });
@@ -150,6 +150,18 @@ describe('layoutDiagram behaviour', () => {
     expect(gr('c').x - gr('a').x).toBeCloseTo(400); expect(gr('c').y - gr('a').y).toBeCloseTo(0);
     expect(gd('b').x - gd('a').x).toBeCloseTo(80); expect(gd('b').y - gd('a').y).toBeCloseTo(200);
     expect(gd('c').y - gd('a').y).toBeCloseTo(400);
+  });
+  it('a two-way pair between pinned nodes stays attached at both ends in the phone (DOWN) layout', async () => {
+    // pinned diagonally: the lane offset slides each straight end sideways, off the glyph or the box bottom
+    const s = spec([{ ...llm('a'), pos: { x: 0, y: 0 } }, { ...llm('b'), pos: { x: 250, y: 120 } }], [e('ab', 'a', 'b'), e('ba', 'b', 'a')]);
+    for (const v of ['wide', 'narrow'] as const) {
+      const L = await layoutDiagram(s, 'DOWN', v);
+      for (const id of ['ab', 'ba']) {
+        const { from, to } = s.edges.find(x => x.id === id)!;
+        expect(attached('llm', L.nodes[from], first(L.edges[id].d), 'DOWN'), `${id} start ${v}`).toBe(true);
+        expect(attached('llm', L.nodes[to], last(L.edges[id].d), 'DOWN'), `${id} end ${v}`).toBe(true);
+      }
+    }
   });
   it('narrow layouts are slimmer than wide ones and grow boxes for wrapped labels', async () => {
     const s = spec([llm('a', 'Source router'), llm('b', 'Planner')], [e('ab', 'a', 'b')]);

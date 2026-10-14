@@ -406,7 +406,14 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
       raw[e.id] = loopRaw(e.from, e.to); continue;
     }
     let side = 0;
-    if (pairs.has(e.id) || forwards.has(e.id)) { pts = offsetPath(pts, LANE); side = 1; }
+    if (pairs.has(e.id) || forwards.has(e.id)) {
+      const before = pts;
+      pts = offsetPath(pts, LANE); side = 1;
+      // a straight line between pinned glyphs: the lane offset slid its ends sideways, off the glyph (or off the box
+      // bottom); carry each back along its own lane onto the node
+      if ((moved.has(e.from) || moved.has(e.to)) && pts.length === 2)
+        pts = [reattach(nodes[e.from], reach(e.from), pts[0], pts[1], before[0]), reattach(nodes[e.to], reach(e.to), pts[1], pts[0], before[1])];
+    }
     raw[e.id] = { kind: 'poly', pts, side };
   }
 
@@ -563,6 +570,22 @@ function lineEnd(box: Box, g: Pt, t: Pt, r: number): Pt {
     if (Math.abs(x - g.x) < box.w / 2 - 4) return { x, y: bottom };
   }
   return { x: g.x + dx / len * r, y: g.y + dy / len * r };
+}
+
+/** End p of a lane-offset straight edge heading to q, moved along the line p-q back onto its node: onto the box
+ *  bottom if the unshifted end `was` there (an edge leaving downwards under the label), else onto the reach circle,
+ *  on the side facing q. */
+function reattach(box: Box, r: number, p: Pt, q: Pt, was: Pt): Pt {
+  const g = glyphCentre(box), bottom = box.y + box.h, dx = q.x - p.x, dy = q.y - p.y;
+  if (Math.abs(was.y - bottom) < 0.5 && dy > 0) {
+    const x = p.x + dx * (bottom - p.y) / dy;
+    if (Math.abs(x - g.x) < box.w / 2 - 4) return { x, y: bottom };
+  }
+  const len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len, fx = p.x - g.x, fy = p.y - g.y;
+  const b = fx * ux + fy * uy, disc = b * b - (fx * fx + fy * fy - r * r);
+  if (disc < 0) return p;
+  const t = -b + Math.sqrt(disc);
+  return { x: p.x + ux * t, y: p.y + uy * t };
 }
 
 /** Shorten an axis-aligned run so neither end lies inside one of the boxes. */
