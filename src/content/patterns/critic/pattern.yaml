@@ -311,7 +311,7 @@ variants:
           style: loop
           label: explanation
           description: "The line-by-line explanation goes back to the model, which writes a fix aimed at exactly the line it names."
-          example: "Line 1 sorts xs to [1, 2, 3, 4]. Line 2 returns s[2], the upper middle. For an even length the median is the mean of s[1] and s[2], 2.5, so line 2 is wrong when len(s) is even."
+          example: "sorted(xs) gives [1, 2, 3, 4]; s[len(s) // 2] returns s[2] = 3, the upper middle. For an even length the median is the mean of s[1] and s[2], 2.5, so the return is wrong when len(s) is even."
         - id: pass
           from: tests
           to: out
