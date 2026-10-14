@@ -24,18 +24,18 @@ build:
   goal: "Run every command an agent issues inside an isolated environment whose filesystem is limited to a working directory and whose network goes through an allowlisting proxy, so the agent can act without approvals inside the boundary."
   steps:
     - "Start an isolated environment for the run (a container, microVM or OS-level sandbox) with the working directory read-write, the toolchain read-only, and everything else, including the home directory, absent: reads outside an explicit list are denied."
-    - "Remove direct network access from the environment. Route all outbound traffic through a proxy that runs outside it and holds a domain allowlist."
+    - "Remove direct network access from the environment. Route all outbound traffic through a proxy that runs outside it and holds a domain allowlist. DNS also resolves only through the proxy."
     - "Run the agent with the {{prompt:agent}}. Execute every shell command or code block it emits inside the environment, with a time and memory limit."
-    - "Return each command's output, exit code and any permission error to the agent as its next observation."
+    - "Return each command's output, exit code and any file or network error to the agent as its next observation."
     - "When the proxy sees a request to a domain not on the allowlist, hold it and ask a person with the {{prompt:egress}}. Allow it for this run only if they approve; a denial, a timeout (default 10 minutes) or no person attached fails the request."
     - "When the agent finishes, copy out only the files the task asked for, then destroy the environment."
   stop: "Stop when the agent returns a final answer or reaches its step cap, or when a command exceeds its time limit twice in a row. Always destroy the environment afterwards, whatever the outcome."
   requirements:
     - "Enforce both boundaries: without network isolation the agent can send out what it reads, and without filesystem isolation it can rewrite the proxy settings."
-    - "Fail closed on reads: credential paths such as ~/.ssh, ~/.aws and cloud CLI configs must be unreadable from inside, not just unmounted. Inject only the scoped secrets the task needs."
+    - "Fail closed on reads: credential paths such as ~/.ssh, ~/.aws and cloud CLI configs must be unreadable from inside, not just unmounted. Inject only short-lived, scoped secrets."
     - "Keep the proxy and its allowlist outside the environment, where nothing the agent runs can change them."
     - "Give every command a timeout and a memory cap, and report a hit limit to the agent as an error."
-    - "Add a test with a stub LLM that emits 'echo hi > /etc/x', then 'curl https://evil.example' with a stub approver that denies, then a final answer; assert /etc/x does not exist, no connection left the proxy, and both observations report the denial."
+    - "Test with a stub LLM that runs 'cat ~/.ssh/id_rsa' (a fake key planted on the host), 'echo hi > /etc/x', and 'curl https://evil.example' with a denying stub approver: assert all three fail, /etc/x does not exist, nothing left the proxy, and each observation reports it."
 prompts:
   - id: agent
     title: Agent prompt for a sandboxed environment
@@ -46,8 +46,8 @@ prompts:
 
       You run inside an isolated sandbox:
       - You can read and write freely under {{workdir}}. The toolchain is
-        read-only, and every other path, including your home directory, is
-        unreadable; trying fails with a permission error.
+        read-only, and no other path exists, including your home directory:
+        reading one fails with "No such file or directory".
       - Network access goes through a proxy. These domains work: {{allowed_domains}}.
         A request to any other domain fails unless a person approves it in time.
       - Commands time out after {{timeout}}.
@@ -123,7 +123,7 @@ diagram:
       to: agent
       style: loop
       label: output
-      description: "Each command's output, exit code and any permission error come back to the agent as its next observation."
+      description: "Each command's output, exit code and any file or network error come back to the agent as its next observation."
       example: "Tests: 87 passed, 87 total. Exit code 0."
     - id: files
       from: agent
@@ -205,7 +205,7 @@ diagram:
           events:
             - { type: send, edge: task, token: { kind: prompt, label: task }, at: [0, 0.4] }
             - { type: activate, node: agent, status: thinking, at: [0.4, 1] }
-        - id: write-blocked
+        - id: read-blocked
           caption: The agent follows the README and reads ~/.ssh/id_rsa. Only the workdir and toolchain exist inside, so the read fails.
           duration: 3000
           events:

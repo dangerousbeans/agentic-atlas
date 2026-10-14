@@ -38,7 +38,7 @@ build:
     - "Evaluate deny before ask before allow, so a broad allow rule can never override a specific deny."
     - "Fail closed: deny any tool not declared in the policy, send a declared tool with unmatched arguments to ask, and turn an ask that times out or has no person to answer into a deny. Never fall through to allow."
     - "Match rules on the parsed tool name and arguments, not on the raw text, so that 'git status; rm -rf ~' does not match an allow rule for 'git status'."
-    - "Add a test with a stub LLM that proposes 'git status', then 'rm -rf /', then the unlisted tool http_post, then a final answer; with rules allow 'git status' and deny 'rm *', assert the shell ran once, no one was asked, and the agent got exactly two denial errors."
+    - "Test with no approver attached and rules allow 'git status', deny 'rm *', npm declared with no rule: a stub LLM proposes 'git status', 'rm -rf /', 'npm install x' and the unlisted http_post. Assert the shell ran once, three denials came back, and 4 steps were counted."
 prompts:
   - id: agent
     title: Agent prompt with a permission policy

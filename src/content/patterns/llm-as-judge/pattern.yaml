@@ -32,12 +32,12 @@ build:
     - "Aggregate the scores into a report: the mean per criterion, the score histogram, and the lowest-scoring cases with the judge's reasons."
     - "Compare the mean with the threshold and with the last released version. Pass if it clears both; otherwise block the release and attach the report."
     - "Every so often, have a person score a sample of cases, and report how often the judge agrees with them."
-  stop: "Stop after every case is scored once. If more than 5% of judge replies fail to parse after one retry each, stop and report the run as invalid instead of passing or failing it."
+  stop: "Stop after every case is scored once. If more than 5% of judge replies fail to parse after one retry each, stop and report the run as invalid; an invalid run blocks the release."
   requirements:
     - "Use a judge from a different model family than the system under test, at temperature 0; if you cannot, say so in the report."
     - "Make the judge write its reasoning before its score, and validate that the score is an integer on the rubric's scale."
     - "Keep the test set, rubric and judge prompt under version control, and record their versions in every report."
-    - "Report the judge's agreement with the latest human-scored sample, and refuse to gate releases if it drops below a set level."
+    - "Report the judge's agreement with the latest human-scored sample; if agreement drops below a set level, block releases until the judge is recalibrated."
     - "Add a test with a stub judge that returns scores 4, 5, 2 and 5 for four cases, a threshold of 3.5 and a previous release mean of 3.9; assert the report's mean is exactly 4.0 and the gate passes."
 defaultVariantName: Pointwise
 prompts:
