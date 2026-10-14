@@ -62,6 +62,11 @@ export function diagramIssues(d: DiagramSpec, code: CodeBlock[]): string[] {
     if (grouped.has(c)) issues.push(`node "${c}" is in more than one group`);
     grouped.add(c);
   }
+  for (const n of d.nodes) {
+    if (!n.pos) continue;
+    const g = (d.groups ?? []).find(x => x.children.includes(n.id));
+    if (g) issues.push(`node "${n.id}" is pinned but inside group "${g.id}"; pins are only supported for ungrouped nodes`);
+  }
   const blocks = new Map(code.map(b => [b.id, b.source.replace(/\n$/, '').split('\n').length]));
   const needNode = (s: string, nodeId: string) => { if (!nodes.has(nodeId)) { issues.push(`scenario "${s}" references unknown node "${nodeId}"`); return false; } return true; };
   for (const sc of d.scenarios) {
@@ -133,8 +138,15 @@ export function validateCatalog(families: Family[], patterns: Pattern[]): string
   const issues: string[] = [];
   const famBySlug = new Map(families.map(f => [f.slug, f]));
   const patBySlug = new Map(patterns.map(p => [p.slug, p]));
-  if (famBySlug.size !== families.length) issues.push('duplicate family slug');
-  if (patBySlug.size !== patterns.length) issues.push('duplicate pattern slug');
+  const dupSlugs = (kind: string, slugs: string[]) => {
+    const seen = new Set<string>(), reported = new Set<string>();
+    for (const x of slugs) {
+      if (seen.has(x) && !reported.has(x)) { issues.push(`duplicate ${kind} slug "${x}"`); reported.add(x); }
+      seen.add(x);
+    }
+  };
+  dupSlugs('family', families.map(f => f.slug));
+  dupSlugs('pattern', patterns.map(p => p.slug));
   for (const f of families) for (const s of f.order) {
     const p = patBySlug.get(s);
     if (!p) issues.push(`family "${f.slug}" order lists unknown pattern "${s}"`);

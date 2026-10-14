@@ -37,6 +37,7 @@ describe('diagramIssues', () => {
   it('flags hidden node that never appears', () => { const d = base(); d.nodes.push({ id: 'w', kind: 'llm', label: 'W', hidden: true }); expect(diagramIssues(d, code).join()).toMatch(/hidden node "w" never appears in scenario "s"/); });
   it('flags read/write on a non-memory node', () => { const d = base(); d.scenarios[0].steps[0].events.push({ type: 'write', node: 'gen' }); expect(diagramIssues(d, code).join()).toMatch(/write on "gen" which is not a memory node/); });
   it('flags duplicate step ids within a scenario', () => { const d = base(); d.scenarios[0].steps[1].id = 'a'; expect(diagramIssues(d, code).join()).toMatch(/duplicate step id "a"/); });
+  it('flags a pinned node inside a group', () => { const d = base(); d.nodes[1].pos = { x: 0, y: 0 }; d.groups = [{ id: 'g', label: 'G', children: ['gen'] }]; expect(diagramIssues(d, code).join()).toMatch(/node "gen" is pinned but inside group "g"; pins are only supported for ungrouped nodes/); });
   it('flags group child that does not exist', () => { const d = base(); d.groups = [{ id: 'g', label: 'G', children: ['zz'] }]; expect(diagramIssues(d, code).join()).toMatch(/group "g" .*unknown node "zz"/); });
 });
 
@@ -54,6 +55,8 @@ describe('validateCatalog', () => {
   it('flags unknown family', () => expect(validateCatalog([fam('f', ['a'])], [pat('a', 'f'), pat('b', 'nope')]).join()).toMatch(/pattern "b" has unknown family "nope"/));
   it('flags pattern listed in two families', () => expect(validateCatalog([fam('f', ['a']), fam('g', ['a'])], [pat('a', 'f')]).join()).toMatch(/pattern "a" is listed in family "g" but belongs to "f"/));
   it('flags unknown related slug', () => expect(validateCatalog([fam('f', ['a'])], [pat('a', 'f', { composesWith: ['zz'] })]).join()).toMatch(/pattern "a" relates to unknown pattern "zz"/));
+  it('flags duplicate family slugs once each', () => { const r = validateCatalog([fam('f', ['a']), fam('f', ['a'])], [pat('a', 'f')]); expect(r.filter(i => i === 'duplicate family slug "f"')).toHaveLength(1); });
+  it('flags duplicate pattern slugs once each', () => { const r = validateCatalog([fam('f', ['a'])], [pat('a', 'f'), pat('a', 'f'), pat('a', 'f')]); expect(r.filter(i => i === 'duplicate pattern slug "a"')).toHaveLength(1); });
   it('flags self relation', () => expect(validateCatalog([fam('f', ['a'])], [pat('a', 'f', { composesWith: ['a'] })]).join()).toMatch(/pattern "a" relates to itself/));
 });
 
@@ -62,6 +65,7 @@ describe('patternSchema', () => {
     const p = pat('a', 'f'); p.diagram.edges[0].to = 'nope';
     const r = patternSchema.safeParse(p);
     expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues.map(i => i.message).join('\n')).toMatch(/\[a\].*unknown node "nope"/);
   });
   it('rejects bad accent', () => expect(familySchema.safeParse({ slug: 'f', name: 'F', rank: 1, accent: 'orange', description: 'x', order: [], constellation: { x: 0, y: 0, z: 0 } }).success).toBe(false));
 });
