@@ -1,0 +1,121 @@
+slug: rewoo
+name: ReWOO
+family: planning-search
+aliases: [Reasoning WithOut Observation, Planner-worker-solver]
+summary: Plan every tool call upfront using placeholders (#E1, #E2), run them, then a solver writes the answer in one pass.
+badges: { autonomy: medium, cost: medium, latency: medium }
+sources:
+  - title: "ReWOO: Decoupling Reasoning from Observations for Efficient Augmented Language Models (Xu et al., 2023)"
+    url: https://arxiv.org/abs/2305.18323
+  - title: Plan-and-Execute Agents (LangChain, 2024)
+    url: https://www.langchain.com/blog/planning-agents
+related:
+  composesWith: [llm-compiler]
+  confusedWith:
+    - { slug: react, difference: "ReAct calls the model again after every observation to choose the next action; ReWOO writes the whole plan once, runs it with no model calls in between, and never revisits the planner." }
+    - { slug: plan-and-execute, difference: "Plan-and-Execute has a replanner that revises the plan after each step; ReWOO's plan is final and the tools run blind." }
+code:
+  - id: rewoo
+    title: rewoo.py
+    lang: python
+    source: |
+      def rewoo(question, tools):
+          plan = llm(PLANNER_PROMPT, question=question)    # every call, with #E placeholders
+          evidence = {}
+          for step in plan.steps:                          # no LLM call in this loop
+              args = substitute(step.args, evidence)       # fill in #E1, #E2 ...
+              evidence[step.var] = tools[step.tool](args)
+          return llm(SOLVER_PROMPT, question=question, plan=plan, evidence=evidence)
+prompts:
+  - id: planner
+    title: Planner prompt
+    lang: markdown
+    source: |
+      For the question below, make a plan of tool calls that will gather
+      everything needed. Write the whole plan now. You will not see any
+      tool output before the plan is executed.
+
+      Tools:
+      {{tool_descriptions}}
+
+      Format, one pair per step:
+      Plan: a short reason for this step
+      #E1 = Tool[input]
+
+      A later step may use the output of an earlier one by writing its
+      variable (#E1, #E2, ...) inside its input.
+
+      Question: {{question}}
+  - id: solver
+    title: Solver prompt
+    lang: markdown
+    source: |
+      Solve the question using only the plan and the evidence below. If the
+      evidence is missing or contradictory, say so instead of guessing.
+
+      Question: {{question}}
+
+      Plan and evidence:
+      {{plan_with_evidence}}
+
+      Give the final answer with one sentence of justification.
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Question }
+    - { id: planner, kind: llm, label: Planner }
+    - { id: search, kind: tool, label: Search }
+    - { id: calculator, kind: tool, label: Calculator }
+    - { id: evidence, kind: memory, label: Evidence }
+    - { id: solver, kind: llm, label: Solver }
+    - { id: out, kind: io, label: Answer }
+  edges:
+    - { id: ask, from: user, to: planner }
+    - { id: plan, from: planner, to: search, label: "#E1 #E2 #E3" }
+    - { id: hand-off, from: search, to: calculator, label: "#E1, #E2" }
+    - { id: log-search, from: search, to: evidence, style: dashed }
+    - { id: log-calc, from: calculator, to: evidence, style: dashed }
+    - { id: gather, from: evidence, to: solver }
+    - { id: answer, from: solver, to: out }
+  scenarios:
+    - id: population-density
+      label: '"What is Iceland''s population density?"'
+      steps:
+        - id: ask
+          caption: The question reaches the planner, which will be called exactly once.
+          duration: 1000
+          codeRef: { block: rewoo, lines: "1" }
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: "density?" } }
+        - id: plan
+          caption: The planner writes every tool call at once, using placeholders for results it has not seen yet.
+          duration: 2800
+          codeRef: { block: rewoo, lines: "2" }
+          events:
+            - { type: activate, node: planner, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: plan, token: { kind: tokens, label: "#E1 #E2 #E3" }, at: [0.5, 1] }
+        - id: search
+          caption: Search runs the first two calls, population as #E1 and area as #E2, and logs each to the evidence store.
+          duration: 3000
+          codeRef: { block: rewoo, lines: "4-6" }
+          events:
+            - { type: activate, node: search, status: calling, at: [0, 0.5] }
+            - { type: send, edge: log-search, token: { kind: result, label: "#E1 #E2" }, at: [0.5, 0.8] }
+            - { type: write, node: evidence, at: [0.8, 1] }
+        - id: calculate
+          caption: The calculator runs the third call with #E1 and #E2 substituted in, with no model call in between.
+          duration: 3000
+          codeRef: { block: rewoo, lines: "5-6" }
+          events:
+            - { type: send, edge: hand-off, token: { kind: result, label: "#E1, #E2" }, at: [0, 0.3] }
+            - { type: activate, node: calculator, status: calling, at: [0.3, 0.6] }
+            - { type: send, edge: log-calc, token: { kind: result, label: "#E3" }, at: [0.6, 0.85] }
+            - { type: write, node: evidence, at: [0.85, 1] }
+        - id: solve
+          caption: The solver reads the plan and all the evidence once and writes the answer, and the planner is never revisited.
+          duration: 2800
+          codeRef: { block: rewoo, lines: "7" }
+          events:
+            - { type: read, node: evidence, at: [0, 0.2] }
+            - { type: send, edge: gather, token: { kind: tokens, label: evidence }, at: [0.2, 0.5] }
+            - { type: activate, node: solver, status: thinking, at: [0.5, 0.75] }
+            - { type: send, edge: answer, token: { kind: result, label: 3.7 per km2 }, at: [0.75, 1] }

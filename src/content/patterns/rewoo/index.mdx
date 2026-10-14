@@ -1,0 +1,38 @@
+## Problem
+
+A ReAct-style agent calls the model after every tool result, and each call re-sends the whole growing transcript, including the instructions and every earlier observation. For a question that needs four lookups, that means four or five long prompts, each one mostly repeating the last. Tokens, time and money go to re-reading, not to thinking.
+
+## How it works
+
+ReWOO, short for Reasoning WithOut Observation, separates thinking from doing. It has three roles.
+
+The <NodeRef id="planner">planner</NodeRef> sees the <NodeRef id="user">question</NodeRef> and writes the whole plan in one go. It cannot know the tool outputs yet, so it names them with placeholders: "#E1 = Search[Iceland population]", "#E2 = Search[Iceland area]" and "#E3 = Calculator[#E1 / #E2]".
+
+The workers, here <NodeRef id="search">search</NodeRef> and <NodeRef id="calculator">calculator</NodeRef>, then run the plan step by step. Plain code does the work: it substitutes earlier results into later inputs and calls each tool. No model is involved, and every result is saved to the <NodeRef id="evidence">evidence</NodeRef> store.
+
+Finally the <NodeRef id="solver">solver</NodeRef> receives the question, the plan and all the evidence together, and writes the <NodeRef id="out">answer</NodeRef> in a single call. The model is invoked exactly twice, no matter how many tools run. The authors report substantial token savings on multi-hop question answering compared with ReAct-style prompting.
+
+What makes ReWOO distinctive is what is missing from the diagram: there is no edge back to the planner. Once the plan is written, it is final.
+
+## When to use
+
+- The steps can be named before seeing any results, as in multi-hop lookups or standard report assembly.
+- Token cost matters, or the same model runs many similar jobs.
+- You want a plan you can inspect or cache before any tool executes.
+
+## When to avoid
+
+- Later steps depend heavily on what earlier tools return, for example "open whichever result looks most relevant".
+- Tools fail often, so the plan needs adjusting mid-run. Plan-and-Execute or ReAct recover better.
+- The task is a single lookup.
+
+## Trade-offs
+
+You save calls and tokens, and gain a plan that can be validated or logged first. You lose adaptivity: the planner is committing to a path with incomplete information. If step one returns something surprising, steps two and three still run as written.
+
+## Failure modes
+
+- **Wrong plan, confidently executed:** an early mistake propagates through every placeholder. Validate plans against tool schemas before running them.
+- **Missing dependencies:** a step references #E4 that does not exist. Check placeholders before execution.
+- **Tool errors:** one failure leaves a hole in the evidence. Pass the error to the solver so it can say what it could not determine.
+- **Solver overreach:** with thin evidence it answers from memory. Tell it to admit gaps.

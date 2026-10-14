@@ -1,0 +1,32 @@
+## Problem
+
+A bare language model only knows what was in its training data and can only emit text. It cannot look up today's refund policy, do exact arithmetic on a $240 invoice, or remember that this customer upgraded last month. Asked anyway, it guesses fluently, and a fluent guess about money or policy is worse than no answer.
+
+## How it works
+
+The <NodeRef id="llm">LLM</NodeRef> receives the <NodeRef id="user">question</NodeRef> together with a list of capabilities it may use. Anthropic calls this the augmented LLM: a model enhanced with retrieval, tools and memory, where the model itself generates its search queries, selects its tools and decides what to retain.
+
+When a question needs facts, the model emits a structured call to the <NodeRef id="retrieval">retrieval</NodeRef> tool and receives matching passages. When it needs exact numbers, it calls the <NodeRef id="calculator">calculator</NodeRef>. Each result is appended to the conversation, and the model is called again. It can call several tools in a row, or none. Once a reply contains no tool calls, that reply is the <NodeRef id="out">answer</NodeRef>. Anything worth keeping, such as the customer's plan, is written to <NodeRef id="memory">memory</NodeRef> through a save_note tool call, so it is available next time.
+
+Your code only executes the tools the model asks for, including save_note, and feeds back what they return. The model never runs anything itself.
+
+## When to use
+
+- A single request needs facts, calculations or actions the model cannot produce from its weights.
+- You want the simplest thing that could work, and the task is bounded: a few tool calls, then an answer.
+- You are starting a new system. Build this first, make the tool descriptions excellent, and only add pattern machinery when measurements demand it.
+
+## When to avoid
+
+- The task has an open-ended number of steps whose order cannot be foreseen. That is the territory of a full agent loop such as ReAct.
+- The tools are destructive and nothing stands between the model and the action.
+
+## Trade-offs
+
+One call plus a handful of tool round trips keeps cost and latency low and behavior easy to debug. What you give up is planning: the model reacts to each result but has no persistent strategy. The main design effort moves into the tool interface. Clear names, narrow parameters and well-written descriptions matter more than any prompt trick, because the model decides which tool to call from those descriptions alone.
+
+## Failure modes
+
+- **Wrong tool, wrong arguments:** the model calls search when it should calculate, or passes a malformed expression. Return readable error messages so it can correct itself.
+- **Skipping the lookup:** the model answers a policy question from memory and sounds confident. Instruct it to search before asserting, and cite the source it used.
+- **Polluted memory:** a one-off remark gets stored as a lasting fact. Be deliberate about what the write tool accepts.

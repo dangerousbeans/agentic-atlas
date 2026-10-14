@@ -1,0 +1,38 @@
+## Problem
+
+Left-to-right generation commits to every token as it writes. For problems that need exploration, such as puzzles, planning or creative constraints, the first idea is often a dead end, and a model that has already written three confident steps down the wrong path has no way to retreat. Chain-of-thought gives the model room to reason but still only one path. Take the Game of 24: from 4, 9, 10 and 13, making 24 requires trying several first moves, and most of them fail.
+
+## How it works
+
+Tree of Thoughts, from Yao et al., treats reasoning as search over a tree whose nodes are partial solutions. A "thought" is a coherent chunk of progress, such as one equation, one paragraph plan or one move.
+
+From the <NodeRef id="problem">problem</NodeRef>, the model proposes several candidate thoughts: <NodeRef id="t1">Thought 1</NodeRef>, <NodeRef id="t2">Thought 2</NodeRef> and <NodeRef id="t3">Thought 3</NodeRef>. The <NodeRef id="evaluator">evaluator</NodeRef>, usually the same model under a different prompt, rates each one, for example sure, maybe or impossible. Hopeless branches are pruned and never expanded, which is why thoughts 1 and 3 turn red in the diagram.
+
+The search then expands the promising branch, here producing <NodeRef id="t2a">Thought 2a</NodeRef> and <NodeRef id="t2b">Thought 2b</NodeRef>. These get rated too, and both look possible, so the search tries 2a first. Nothing it proposes from there works, so the call for 2a returns nothing and the search backtracks to the parent and tries 2b. The path through 2b reaches the <NodeRef id="out">solution</NodeRef>.
+
+Pruning and backtracking are different. Pruning discards a candidate the evaluator already rates impossible, before spending anything on it. Backtracking happens after a branch looked fine and then failed.
+
+The paper explores breadth-first and depth-first variants. The pseudocode uses depth-first, with backtracking falling out of the recursion.
+
+## When to use
+
+- The problem needs exploration or lookahead, and early mistakes are costly.
+- Partial progress can be judged: a half-built equation, a plan with a clear conflict.
+- Single-pass or chain-of-thought attempts fail often enough to justify the cost.
+
+## When to avoid
+
+- Most inputs are easy. Paying for a search on every request is wasteful.
+- Partial states cannot be evaluated, so the scores would be noise.
+- You need a low-latency or low-cost answer.
+
+## Trade-offs
+
+Search multiplies model calls: each level proposes several thoughts and rates each of them. The quality gain on hard problems can be large. In the paper's Game of 24 experiments, a tree search solved far more problems than chain-of-thought prompting, but at many times the tokens. Tune breadth and depth to your budget, and cache or deduplicate states.
+
+## Failure modes
+
+- **Unreliable evaluator:** it prunes the right branch or keeps a doomed one. Use a deterministic check wherever one exists.
+- **Duplicate thoughts:** the proposer repeats itself and wastes breadth. Ask for distinct options and deduplicate.
+- **Budget blowout:** branching grows exponentially. Cap breadth, depth and total calls.
+- **Premature pruning:** a "maybe" gets discarded. Prune only on confident negatives.
