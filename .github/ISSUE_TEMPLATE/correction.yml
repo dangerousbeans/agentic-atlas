@@ -1,0 +1,31 @@
+name: Suggest a correction
+description: Report something wrong or unclear on a pattern or page.
+title: "Correction: "
+labels: ["correction"]
+body:
+  - type: input
+    id: url
+    attributes:
+      label: Pattern or page URL
+      placeholder: https://dangerousbeans.github.io/agentic-atlas/patterns/...
+    validations:
+      required: true
+  - type: textarea
+    id: wrong
+    attributes:
+      label: What is wrong
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: Suggested fix
+    validations:
+      required: false
+  - type: textarea
+    id: source
+    attributes:
+      label: Source
+      description: A link that backs the fix.
+    validations:
+      required: false

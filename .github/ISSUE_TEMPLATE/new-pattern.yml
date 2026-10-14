@@ -1,0 +1,52 @@
+name: Propose a pattern
+description: Suggest a new agentic pattern for the Atlas.
+title: "New pattern: "
+labels: ["new pattern"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Pattern name
+      placeholder: e.g. Reflection
+    validations:
+      required: true
+  - type: dropdown
+    id: family
+    attributes:
+      label: Family
+      options:
+        - Workflows
+        - Agent Loops
+        - Planning & Search
+        - Knowledge & Memory
+        - Multi-Agent
+        - Safety & Oversight
+    validations:
+      required: true
+  - type: input
+    id: summary
+    attributes:
+      label: One-line summary
+      description: Up to 160 characters.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: How it works
+      description: The steps, the components (LLM calls, tools, memory, humans) and where control flow loops or branches.
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Sources
+      description: Papers, engineering posts or docs that describe the pattern. Links please.
+    validations:
+      required: true
+  - type: textarea
+    id: when
+    attributes:
+      label: When to use or avoid
+    validations:
+      required: false

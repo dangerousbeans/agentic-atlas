@@ -3,6 +3,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro';
 import PatternCard from '../../components/site/PatternCard.astro';
 import { getCatalog } from '../../lib/catalog';
 import { href } from '../../lib/url';
+import { newPatternUrl } from '../../lib/contribute';
 const cat = await getCatalog();
 ---
 <BaseLayout title="Families" description={`${cat.patterns.length} agentic patterns in ${cat.families.length} families, each with a live diagram.`}>
@@ -21,6 +22,7 @@ const cat = await getCatalog();
         </section>
       );
     })}
+    <p class="propose mono">Missing a pattern? <a href={newPatternUrl()}>Propose one →</a></p>
   </div>
 </BaseLayout>
 <style>
@@ -32,5 +34,8 @@ const cat = await getCatalog();
   h2 a { text-decoration: none; color: var(--text); }
   h2 a:hover { color: var(--accent); }
   .desc { color: var(--text-2); max-width: 44rem; margin: 0 0 24px; }
+  .propose { margin: 64px 0 0; font-size: 12px; letter-spacing: .04em; color: var(--text-3); }
+  .propose a { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  .propose a:hover { color: var(--text); text-decoration-color: var(--accent); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 16px; }
 </style>
