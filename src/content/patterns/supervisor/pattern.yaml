@@ -135,7 +135,7 @@ diagram:
           duration: 1400
           codeRef: { block: manager, lines: "1-4" }
           events:
-            - { type: send, edge: task, token: { kind: prompt, label: fix bug } }
+            - { type: send, edge: task, token: { kind: prompt, label: plot script } }
             - { type: activate, node: supervisor, status: thinking, at: [0.5, 1] }
         - id: delegate
           caption: The supervisor hands the whole job to the coder, who leads a small team of its own.
@@ -158,5 +158,5 @@ diagram:
           duration: 2400
           codeRef: { block: manager, lines: "9" }
           events:
-            - { type: send, edge: r-code, token: { kind: result, label: patch }, at: [0, 0.6] }
-            - { type: send, edge: finish, token: { kind: result, label: fix }, at: [0.6, 1] }
+            - { type: send, edge: r-code, token: { kind: result, label: chart + tests }, at: [0, 0.6] }
+            - { type: send, edge: finish, token: { kind: result, label: report }, at: [0.6, 1] }
