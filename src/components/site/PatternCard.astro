@@ -1,0 +1,43 @@
+---
+import Diagram from '../diagram/Diagram.astro';
+import { href } from '../../lib/url';
+import { patternStats, statsLine } from '../../lib/pattern-stats';
+import type { DiagramSpec } from '../../lib/diagram/types';
+import type { Family, Pattern } from '../../lib/schema';
+interface Props { pattern: Pattern; family: Family }
+const { pattern: p, family: f } = Astro.props;
+const spec = p.diagram as DiagramSpec;
+const stats = statsLine(patternStats(spec));
+---
+<a class="pattern-card" href={href(`/patterns/${p.slug}/`)}>
+  <div class="visual" aria-hidden="true">
+    <Diagram uid={`thumb-${p.slug}`} spec={spec} title={p.name} compact />
+  </div>
+  <div class="body">
+    <h3>{p.name}</h3>
+    <p class="stats">{f.name} · {stats}</p>
+    <p class="summary">{p.summary}</p>
+  </div>
+</a>
+<style>
+  .pattern-card {
+    display: flex; flex-direction: column; height: 100%; min-width: 0;
+    border: 1px solid var(--line); background: var(--bg-1); color: var(--text); text-decoration: none;
+    transition: border-color .15s;
+  }
+  .pattern-card:hover { border-color: var(--accent); color: var(--text); }
+  .pattern-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .visual {
+    aspect-ratio: 4 / 3; display: grid; place-items: center; overflow: hidden;
+    border-bottom: 1px solid var(--line); background: var(--bg); padding: 10px;
+  }
+  .visual :global(.diagram) { width: 100%; }
+  .visual :global(.diagram-stage) { border: 0; background: none; padding: 0; overflow: hidden; }
+  .visual :global(.diagram-svg) { width: 100%; max-height: 100%; height: auto; }
+  /* Compact has no DOWN variant; the stage's container query would hide the wide layout in a card, so keep it shown (it scales to fit). */
+  .visual :global(.diagram-svg[data-layout="wide"]) { display: block; }
+  .body { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  h3 { margin: 0; font: 700 17px/1.25 var(--font-ui); letter-spacing: -.005em; }
+  .stats { margin: 0; font: 500 11.5px/1.5 var(--font-mono); color: var(--text-2); letter-spacing: .02em; }
+  .summary { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-2); }
+</style>
