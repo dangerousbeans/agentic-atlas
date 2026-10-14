@@ -10,6 +10,7 @@ flow-player {
   --dg-edge: color-mix(in oklab, var(--text) 42%, var(--bg));    /* idle edges: cream at low opacity, still >= 3:1 (WCAG 1.4.11) */
   --dg-edge-trav: color-mix(in oklab, var(--text) 66%, var(--bg)); /* traversed edges: cream at medium opacity */
   --dg-hot: var(--accent);                                        /* active / thinking: red */
+  --dg-hot-deep: color-mix(in oklab, var(--accent) 82%, var(--bg)); /* active edges: a touch deeper, still >= 3:1 */
   --dg-glow-c: rgb(255 59 48 / 0.6);
   --dg-glow: drop-shadow(0 0 2px var(--dg-glow-c)) drop-shadow(0 0 7px rgb(255 59 48 / 0.35));
   --dg-glow-ink: drop-shadow(0 0 1.5px rgb(244 237 231 / 0.35));
@@ -61,7 +62,7 @@ flow-player {
 .node[data-state="done"] .label { fill: var(--text); }
 .node[data-state="error"] .shape { stroke: var(--dg-hot); stroke-dasharray: 3 3; fill: color-mix(in oklab, var(--dg-hot) 12%, var(--bg)); }
 .node[data-state="error"] .halo { opacity: 0; }
-.node[data-state="dim"] { opacity: 0.28; }
+.node[data-state="dim"] { opacity: 0.42; } /* off the current path, but its label still reads */
 .node[data-state="hidden"] { opacity: 0; }
 .node.is-ref .halo { opacity: 0.7; }
 .node.is-ref .shape { stroke: var(--dg-hot); filter: var(--dg-glow); }
@@ -72,10 +73,13 @@ flow-player {
 .edge { fill: none; stroke: var(--dg-edge); stroke-width: 1; transition: stroke 0.3s, opacity 0.3s, stroke-width 0.3s; }
 .edge--dashed, .edge--loop { stroke-dasharray: 3 4; }
 .edge--dashed[data-state="idle"], .edge--loop[data-state="idle"] { stroke: color-mix(in oklab, var(--text) 50%, var(--bg)); }
-.edge[data-state="active"] { stroke: var(--dg-hot); stroke-width: 1.5; filter: var(--dg-glow); }
+/* the active edge is a slightly deeper red so the bright comet reads on top of it */
+.edge[data-state="active"] { stroke: var(--dg-hot-deep); stroke-width: 1.5; filter: var(--dg-glow); }
 .edge[data-state="traversed"] { stroke: var(--dg-edge-trav); }
-.edge[data-state="dim"] { opacity: 0.2; }
-.edge--pending[data-state="idle"], .edge-label.edge--pending[data-state="idle"] { opacity: 0.12; }
+.edge[data-state="dim"] { opacity: 0.3; }
+/* "not reached yet": faded, but labels stay legible */
+.edge--pending[data-state="idle"] { opacity: 0.3; }
+.edge-label.edge--pending[data-state="idle"] { opacity: 0.45; }
 .arrow { fill: var(--dg-edge-trav); fill: context-stroke; } /* arrowheads follow their edge's state colour */
 /* labels: mono uppercase small caps (replaces italic) */
 .edge-label { font: 500 10.5px var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; fill: var(--text-2); transition: fill 0.3s; }
@@ -86,11 +90,12 @@ flow-player {
 
 /* --- tokens: cream comet heads with red trails --- */
 .token .head { fill: #FFF8F2; filter: drop-shadow(0 0 2px rgb(255 59 48 / 0.95)) drop-shadow(0 0 7px rgb(255 59 48 / 0.6)); }
-.token .trail { fill: color-mix(in oklab, var(--dg-hot) 75%, #FFF8F2); filter: blur(0.8px) drop-shadow(0 0 3px rgb(255 59 48 / 0.9)); }
-/* the trail swells toward the head so it reads as a comet over a red (active) edge */
-.token .trail:nth-child(1) { r: 1.6px; }
-.token .trail:nth-child(2) { r: 2.4px; }
-.token .trail:nth-child(3) { r: 3.2px; }
+.token .trail { fill: #FFD9D2; filter: drop-shadow(0 0 2px rgb(255 59 48 / 0.95)) drop-shadow(0 0 5px rgb(255 59 48 / 0.5)); }
+/* trail circles 1..3 lag progressively further behind the head: they shrink and fade like a comet tail
+   (CSS r / opacity override the player's presentation attributes) */
+.token .trail:nth-child(1) { r: 3px; opacity: 0.8; }
+.token .trail:nth-child(2) { r: 2.2px; opacity: 0.5; }
+.token .trail:nth-child(3) { r: 1.5px; opacity: 0.28; }
 .token text { font: 500 10px var(--font-mono); letter-spacing: 0.02em; fill: var(--text); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
 .diagram--compact .token .head { filter: drop-shadow(0 0 3px rgb(255 59 48 / 0.9)); }
 
