@@ -3,6 +3,7 @@ export const author = {
   name: 'Joran Kikke',
   github: 'https://github.com/dangerousbeans',
   repo: 'https://github.com/dangerousbeans/agentic-atlas',
+  site: 'https://dangerousbeans.github.io/agentic-atlas/',
 } as const;
 
 /** The GitHub URL for a pattern's source file. */

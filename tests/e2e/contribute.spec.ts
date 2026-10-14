@@ -23,6 +23,7 @@ test('pattern page has a correction link with the encoded name', async ({ page }
   const href = await link.getAttribute('href');
   expect(href).toContain('issues/new?template=correction.yml');
   expect(href).toContain('title=Correction%3A%20Agentic%20RAG');
+  expect(new URL(href!).searchParams.get('url')).toMatch(/\/patterns\/agentic-rag\/$/);
 });
 
 test('families index links to the new-pattern form', async ({ page }) => {

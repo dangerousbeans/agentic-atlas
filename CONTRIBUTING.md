@@ -19,12 +19,15 @@ Each pattern lives in `src/content/patterns/<slug>/` as two files:
 `pattern.yaml` contains:
 
 - **Metadata:** `slug`, `name`, `family`, `aliases`, `summary` (10-160 characters), `badges` (autonomy, cost, latency), `sources` (at least one) and `related`.
-- **Code and prompts:** `code` and `prompts` blocks, each with an `id`, `title`, `lang` and `source`. Keep pseudocode framework-agnostic.
-- **Diagram nodes:** `id`, `kind`, `label` and a required `description` (10-180 characters).
+- **Code and prompts:** at least one block in each of `code` and `prompts`. Each has an `id`, `title`, `lang` (`python`, `markdown` or `text`) and `source`. Keep pseudocode framework-agnostic.
+- **Diagram nodes:** `id`, `kind`, `label` and a required `description` (10-180 characters). Label length depends on node `size`: `sm` 10, `md` 16, `lg` 22 characters. A `sublabel` is at most 24.
 - **Diagram edges:** `from`, `to`, a required `description` (10-180) and a required `example` payload (10-280). An edge `label` is at most 14 characters, as is a token label.
-- **Scenarios:** ordered steps that play the trace. A step's `codeRef` (`block` plus `lines`, e.g. `3` or `3-7`) must stay within the block's line count.
+- **Scenarios:** ordered steps that play the trace. A step's `codeRef` (`block` plus `lines`, e.g. `3` or `3-7`) must stay within the block's line count. A `hidden` node must `appear` in every scenario.
+- **Ids** (slug, nodes, edges, blocks, steps) are lowercase kebab-case.
 
-`src/lib/schema.ts` is the source of truth, and the build fails on violations. Then add the slug to its family's `order` in `src/content/families/<family>.yaml`, or the pattern will not appear.
+`src/lib/schema.ts` is the source of truth, and the build fails on violations.
+
+Finally, as its own step, add the slug to its family's `order` in `src/content/families/<family>.yaml`. Without it the pattern will not appear.
 
 ## Quality bar
 
@@ -41,7 +44,8 @@ npm run dev            # dev server
 npm test               # unit tests (vitest)
 npm run check          # astro check, expect 0 errors
 npx playwright test    # e2e
-npm run budget         # bundle size budget (after a build)
+npm run build          # static build, required before the budget check
+npm run budget         # JS size budget (needs the build)
 ```
 
 ## Pull requests
