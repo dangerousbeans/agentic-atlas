@@ -1,6 +1,6 @@
 slug: knowledge-memory
 name: "Knowledge & Memory"
-rank: 4
+rank: 5
 accent: "#34D399"
 description: Pull in outside or stored knowledge, decide when to fetch it, and check what comes back.
 order: [agentic-rag, corrective-rag, hierarchical-memory]

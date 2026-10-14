@@ -16,11 +16,14 @@ body:
       label: Family
       options:
         - Workflows
+        - Reasoning & Prompting
         - Agent Loops
         - Planning & Search
         - Knowledge & Memory
         - Multi-Agent
         - Safety & Oversight
+        - Reliability & Runtime
+        - Efficiency & Cost
     validations:
       required: true
   - type: input

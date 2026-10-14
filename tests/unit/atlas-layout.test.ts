@@ -5,16 +5,20 @@ import { atlasLayout, TILE_W, TILE_H, type AtlasFamily, type Rect } from '../../
 
 const real: AtlasFamily[] = readdirSync('src/content/families')
   .map(f => parse(readFileSync(`src/content/families/${f}`, 'utf8')))
-  .map((f: { slug: string; name: string; rank: number; order: string[] }) => ({ slug: f.slug, name: f.name, rank: f.rank, patterns: f.order }));
+  .map((f: { slug: string; name: string; rank: number; order: string[] }) => ({ slug: f.slug, name: f.name, rank: f.rank, patterns: f.order }))
+  // the site never lays out an empty family (catalog.ts hides it until it has patterns)
+  .filter(f => f.patterns.length > 0);
 
 const overlap = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const inside = (inner: Rect, outer: Rect) => inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h;
 
 const synthetic = (sizes: number[]): AtlasFamily[] =>
   sizes.map((n, i) => ({ slug: `f${i}`, name: `F${i}`, rank: sizes.length - i, patterns: Array.from({ length: n }, (_, j) => `f${i}-p${j}`) }));
+/** The expansion catalog (addendum §4): 9 families, 52 patterns, in rank order. */
+const EXPANSION_SIZES = [6, 5, 5, 6, 8, 8, 6, 4, 4];
 
 describe('atlasLayout', () => {
-  for (const [name, fams] of [['real catalog', real], ['synthetic 1..9', synthetic([1, 2, 3, 4, 5, 6, 7, 8, 9])], ['single family', synthetic([5])]] as const) {
+  for (const [name, fams] of [['real catalog', real], ['synthetic 1..9', synthetic([1, 2, 3, 4, 5, 6, 7, 8, 9])], ['single family', synthetic([5])], ['expansion: 9 families, 52 patterns', synthetic(EXPANSION_SIZES)]] as const) {
     describe(name, () => {
       const L = atlasLayout(fams);
       const all = fams.flatMap(f => f.patterns);
@@ -73,6 +77,14 @@ describe('atlasLayout', () => {
 
   it('lays the real catalog out wider than tall (a landscape map)', () => {
     const L = atlasLayout(real);
+    expect(L.width).toBeGreaterThan(L.height);
+  });
+
+  it('lays out the 9-family, 52-pattern expansion as a landscape map with every tile placed', () => {
+    expect(EXPANSION_SIZES.reduce((a, b) => a + b)).toBe(52);
+    const L = atlasLayout(synthetic(EXPANSION_SIZES));
+    expect(L.islands).toHaveLength(9);
+    expect(L.tiles).toHaveLength(52);
     expect(L.width).toBeGreaterThan(L.height);
   });
 });

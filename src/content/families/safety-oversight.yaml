@@ -1,6 +1,6 @@
 slug: safety-oversight
 name: "Safety & Oversight"
-rank: 6
+rank: 7
 accent: "#E9D8A6"
 description: Checks and human approval points wrapped around any of the other patterns.
 order: [human-in-the-loop, guardrails]

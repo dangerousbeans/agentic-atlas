@@ -1,0 +1,6 @@
+slug: efficiency-cost
+name: "Efficiency & Cost"
+rank: 9
+accent: "#A3E635"
+description: "Spend fewer tokens, dollars and seconds: escalate only when needed, reuse what was already computed, parallelize generation, and batch what can wait."
+order: []

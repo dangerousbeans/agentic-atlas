@@ -8,10 +8,27 @@ const root = 'src/content';
 const families = readdirSync(`${root}/families`).map(f => familySchema.parse(parse(readFileSync(`${root}/families/${f}`, 'utf8'))));
 const slugs = readdirSync(`${root}/patterns`);
 
+/**
+ * Patterns that still lack `build` or `origin` during the expansion migration (plan Task X2/X3). Each content task
+ * removes the slugs it completes; once this list is empty, `build` and `origin` become required in the schema.
+ */
+export const MIGRATION_PENDING: readonly string[] = [
+  'prompt-chaining', 'routing', 'sectioning', 'voting', 'orchestrator-workers',
+  'augmented-llm', 'react', 'reflexion',
+  'plan-and-execute', 'rewoo', 'llm-compiler', 'tree-of-thoughts',
+  'agentic-rag', 'corrective-rag', 'hierarchical-memory',
+  'supervisor', 'handoffs', 'debate',
+  'human-in-the-loop', 'guardrails',
+];
+
 describe('content', () => {
-  it('has 6 families with distinct ranks', () => {
-    expect(families).toHaveLength(6);
-    expect(new Set(families.map(f => f.rank)).size).toBe(6);
+  it('has 9 families ranked 1 to 9 (expansion addendum §4)', () => {
+    expect(families).toHaveLength(9);
+    expect([...families].sort((a, b) => a.rank - b.rank).map(f => f.slug)).toEqual([
+      'workflows', 'reasoning-prompting', 'agent-loops', 'planning-search', 'knowledge-memory',
+      'multi-agent', 'safety-oversight', 'reliability-runtime', 'efficiency-cost',
+    ]);
+    expect(families.map(f => f.rank).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
   for (const slug of slugs) {
     it(`pattern ${slug} is valid and has prose`, () => {
@@ -22,11 +39,14 @@ describe('content', () => {
     });
     it(`pattern ${slug} describes every node and edge, with an example on every edge`, () => {
       const p = patternSchema.parse(parse(readFileSync(`${root}/patterns/${slug}/pattern.yaml`, 'utf8')));
-      const missing = [
-        ...p.diagram.nodes.filter(n => !n.description).map(n => `node "${n.id}" has no description`),
-        ...p.diagram.edges.filter(e => !e.description).map(e => `edge "${e.id}" has no description`),
-        ...p.diagram.edges.filter(e => !e.example).map(e => `edge "${e.id}" has no example`),
-      ];
+      const missing = [p.diagram, ...(p.variants ?? []).map(v => v.diagram)].flatMap((d, i) => {
+        const at = i === 0 ? '' : `variant "${p.variants![i - 1].id}" `;
+        return [
+          ...d.nodes.filter(n => !n.description).map(n => `${at}node "${n.id}" has no description`),
+          ...d.edges.filter(e => !e.description).map(e => `${at}edge "${e.id}" has no description`),
+          ...d.edges.filter(e => !e.example).map(e => `${at}edge "${e.id}" has no example`),
+        ];
+      });
       expect(missing).toEqual([]);
     });
   }
@@ -43,7 +63,27 @@ describe('content', () => {
     }
     expect(comments).toEqual([]);
   });
-  it('has all 21 v1 patterns', () => expect(slugs).toHaveLength(21));
+  it('has all 21 v1 patterns', () => expect(slugs.length).toBeGreaterThanOrEqual(21));
+  it('every pattern not pending migration has build and origin', () => {
+    const lacking = slugs.filter(s => !MIGRATION_PENDING.includes(s)).filter(s => {
+      const p = patternSchema.parse(parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8')));
+      return !p.build || !p.origin;
+    });
+    expect(lacking).toEqual([]);
+  });
+  it('lists the patterns still missing build or origin (informational until the migration ends)', () => {
+    const report = slugs.map(s => patternSchema.parse(parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8'))))
+      .map(p => [p.slug, [!p.build && 'build', !p.origin && 'origin'].filter(Boolean)] as const)
+      .filter(([, gaps]) => gaps.length);
+    if (report.length) console.info(`Expansion migration: ${report.length} pattern(s) still missing fields:\n${report.map(([s, g]) => `  ${s}: ${g.join(', ')}`).join('\n')}`);
+    expect(MIGRATION_PENDING.filter(s => !slugs.includes(s))).toEqual([]);
+  });
+  it('hides families with no patterns from the catalog until they have content', () => {
+    const patterns = slugs.map(s => patternSchema.parse(parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8'))));
+    const cat = buildCatalog(families, patterns);
+    expect(cat.families.every(f => f.order.length > 0)).toBe(true);
+    expect(cat.families.map(f => f.slug)).toEqual([...families].filter(f => f.order.length).sort((a, b) => a.rank - b.rank).map(f => f.slug));
+  });
   it('catalog cross-references are consistent (Review Focus 3)', () => {
     const patterns = slugs.map(s => patternSchema.parse(parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8'))));
     expect(() => buildCatalog(families, patterns)).not.toThrow();

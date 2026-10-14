@@ -1,6 +1,8 @@
 import { validateCatalog, type Family, type Pattern } from './schema';
 
 export interface Catalog {
+  /** Families with at least one pattern, by rank. An empty family (one announced before its patterns land) is kept
+   *  out of the map, the families index and every count until it has content. */
   families: Family[]; patterns: Pattern[]; bySlug: Map<string, Pattern>;
   family(slug: string): Family; patternsOf(familySlug: string): Pattern[];
 }
@@ -8,9 +10,9 @@ export interface Catalog {
 export function buildCatalog(familiesIn: Family[], patternsIn: Pattern[]): Catalog {
   const issues = validateCatalog(familiesIn, patternsIn);
   if (issues.length) throw new Error(`Content catalog is invalid:\n  - ${issues.join('\n  - ')}`);
-  const families = [...familiesIn].sort((a, b) => a.rank - b.rank);
+  const families = [...familiesIn].filter(f => f.order.length > 0).sort((a, b) => a.rank - b.rank);
   const bySlug = new Map(patternsIn.map(p => [p.slug, p]));
-  const famMap = new Map(families.map(f => [f.slug, f]));
+  const famMap = new Map(familiesIn.map(f => [f.slug, f]));
   const patternsOf = (fs: string) => famMap.get(fs)!.order.map(s => bySlug.get(s)!);
   const patterns = families.flatMap(f => patternsOf(f.slug));
   return {
