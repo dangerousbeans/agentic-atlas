@@ -61,7 +61,7 @@ diagram:
   nodes:
     - { id: input, kind: io, label: Task }
     - { id: actor, kind: llm, label: Actor }
-    - { id: tests, kind: evaluator, label: Unit tests }
+    - { id: tests, kind: evaluator, label: Unit tests, model: false }
     - { id: reflector, kind: llm, label: Reflector }
     - { id: memory, kind: memory, label: Lessons }
     - { id: out, kind: io, label: Solution }

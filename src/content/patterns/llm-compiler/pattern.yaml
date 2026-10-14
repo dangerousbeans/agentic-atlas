@@ -75,7 +75,7 @@ diagram:
   nodes:
     - { id: user, kind: io, label: Question }
     - { id: planner, kind: llm, label: Planner }
-    - { id: scheduler, kind: router, label: Scheduler }
+    - { id: scheduler, kind: router, label: Scheduler, model: false }
     - { id: t1, kind: tool, label: Flights }
     - { id: t2, kind: tool, label: Weather }
     - { id: t3, kind: tool, label: Hotel }

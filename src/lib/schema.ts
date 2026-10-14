@@ -25,6 +25,7 @@ export const diagramSchema = z.object({
     size: z.enum(['sm', 'md', 'lg']).optional(),
     pos: z.object({ x: z.number(), y: z.number() }).optional(),
     hidden: z.boolean().optional(),
+    model: z.boolean().optional(),
   })).min(2),
   edges: z.array(z.object({ id, from: id, to: id, label: z.string().max(14).optional(), style: z.enum(['solid', 'dashed', 'loop']).optional(), description: z.string().min(10).max(180).optional(), example: z.string().min(10).max(280).optional() })).min(1),
   scenarios: z.array(z.object({

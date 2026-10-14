@@ -49,7 +49,7 @@ prompts:
 diagram:
   nodes:
     - { id: user, kind: io, label: PR }
-    - { id: splitter, kind: router, label: Splitter }
+    - { id: splitter, kind: router, label: Splitter, model: false }
     - { id: llm1, kind: llm, label: Security }
     - { id: llm2, kind: llm, label: Performance }
     - { id: llm3, kind: llm, label: Tests }
