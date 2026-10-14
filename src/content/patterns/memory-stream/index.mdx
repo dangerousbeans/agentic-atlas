@@ -1,0 +1,34 @@
+## Problem
+
+A long-lived agent sees far more than it can keep in its prompt. A simulated townsperson that has lived for two days has hundreds of memories: breakfast, a walk, a chat about the weather, and one invitation to a party on Valentine's Day. When someone asks "what are you doing tonight?", the agent needs the invitation, not breakfast. Keeping the latest memories forgets the invitation; similarity search alone may surface a chat about evening plans from last week. And none of the raw memories says what they add up to.
+
+## How it works
+
+Every <NodeRef id="env">observation</NodeRef> goes to a <NodeRef id="rater">rater</NodeRef> model that scores how important it is, from 1 (brushing teeth) to 10 (a break-up). The observation is appended to the <NodeRef id="stream">memory stream</NodeRef>, a single flat log with a timestamp, the score and an embedding. Isabella's invitation to her party scores 7; breakfast scores 1.
+
+When the agent needs to act, the current situation becomes a query, and the <NodeRef id="retriever">retriever</NodeRef> scores every memory on three things. Recency decays exponentially with the hours since the memory was last used. Importance is the stored score. Relevance is the similarity between the memory and the query. The three are normalized and added, and the top few go to the <NodeRef id="agent">agent</NodeRef>. The invitation is older than breakfast, but it wins easily on importance and relevance, so Maria's <NodeRef id="out">reply</NodeRef> is "I'm going to Isabella's party at 5. Want to come?"
+
+The third part is reflection. The agent keeps a running total of the importance of new memories, and when it passes a threshold (150 in the paper), a <NodeRef id="reflector">reflector</NodeRef> reads the 100 most recent memories, asks what they say, and writes insights such as "Maria has a crush on Klaus" back into the stream, with pointers to the memories behind them. Reflections are retrieved like any other memory, and later reflections can build on earlier ones, so the agent forms a picture of its world instead of a pile of events.
+
+## When to use
+
+- Long-lived agents or characters need believable continuity across days or weeks of events.
+- What matters is uneven: most events are trivial, a few are decisive, and the agent must tell them apart.
+- You want the agent to form opinions and relationships from experience, not only recall facts.
+
+## When to avoid
+
+- You need exact, structured recall, such as account numbers or the user's stated preferences. Use a fact store or hierarchical memory.
+- The agent lives for one task or one conversation; the context window is enough.
+- Every model call matters for cost. Each observation costs a rating call, and reflections add more.
+
+## Trade-offs
+
+Each observation costs one small rating call and an embedding, and retrieval scores the whole stream, which stays cheap until the stream grows very large. Reflection is the expensive part, but it runs only when enough important things have happened. In exchange, the agent's behaviour stays consistent with what matters in its past, which the paper's ablations show depends on all three parts: observation, planning and reflection.
+
+## Failure modes
+
+- **Miscalibrated importance:** the rater scores everything 5, and the retriever falls back to recency and relevance alone. Give the rater anchored examples at both ends of the scale.
+- **Runaway reflection:** reflections about reflections drift away from what happened. Keep evidence pointers and weight insights by the observations they cite.
+- **Stale favourites:** retrieving a memory refreshes its recency, so a few memories keep winning. Decay from the original timestamp as well, or cap how often one memory is returned.
+- **Fabricated insight:** the reflector infers something the memories do not support. Require citations and drop insights whose evidence is thin.
