@@ -7,8 +7,10 @@ const { uid, spec, layout, variant, title, compact = false } = Astro.props;
 const pid = `${uid}-${variant}`;
 const hiddenIds = new Set(spec.nodes.filter(n => n.hidden).map(n => n.id));
 const pending = (e: { from: string; to: string }) => hiddenIds.has(e.from) || hiddenIds.has(e.to);
-// Narrow: never shrink text below ~85% (scroll instead), never blow a small diagram up past 125%.
-const sizing = variant === 'narrow' ? `--min-w:${Math.round(layout.width * 0.85)}px;--max-w:${Math.round(layout.width * 1.25)}px` : undefined;
+// Edges that converge on one node with the same label (e.g. five "rate?" edges into an evaluator) show it once.
+const labelled = spec.edges.filter((e, i) => e.label && !spec.edges.slice(0, i).some(o => o.to === e.to && o.label === e.label));
+// Narrow: never shrink text below ~78% (scroll instead), never blow a small diagram up past 125%.
+const sizing = variant === 'narrow' ? `--min-w:${Math.round(layout.width * 0.78)}px;--max-w:${Math.round(layout.width * 1.25)}px` : undefined;
 // Compact thumbnails sit inside a link whose heading names them, so they are decorative.
 ---
 <svg class="diagram-svg" data-layout={variant} viewBox={`0 0 ${layout.width} ${layout.height}`} style={sizing}
@@ -30,7 +32,7 @@ const sizing = variant === 'narrow' ? `--min-w:${Math.round(layout.width * 0.85)
     {spec.edges.map(e => (
       <path id={`${pid}-e-${e.id}`} class={`edge edge--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} marker-end={`url(#${pid}-arrow)`} />
     ))}
-    {!compact && spec.edges.filter(e => e.label).map(e => (
+    {!compact && labelled.map(e => (
       <text class={`edge-label edge-label--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} x={layout.edges[e.id].label.x} y={layout.edges[e.id].label.y} text-anchor={layout.edges[e.id].label.anchor}>{e.label}</text>
     ))}
   </g>

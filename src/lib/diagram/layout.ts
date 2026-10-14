@@ -63,6 +63,8 @@ export type LayoutVariant = 'wide' | 'narrow' | 'compact';
 export const NARROW_DIMS: Record<NodeSize, { w: number; h: number }> = { sm: { w: 80, h: 72 }, md: { w: 104, h: 72 }, lg: { w: 128, h: 72 } };
 const COMPACT_DIMS = { w: 60, h: 54 };
 const LINE = 12;
+/** Wide RIGHT layouts wider than this wrap onto more rows (about 1.35x a desktop stage). */
+const WRAP_WIDTH = 1450;
 /** Node label lines: narrow layouts break labels longer than 11 characters at the space nearest the middle. */
 export function labelLines(label: string, variant: LayoutVariant): string[] {
   if (variant !== 'narrow' || label.length <= 11 || !label.includes(' ')) return [label];
@@ -106,7 +108,7 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
       // siblings of a fan-out share a column, rather than being pulled towards their successors
       'elk.layered.layering.strategy': 'LONGEST_PATH_SOURCE',
-      'elk.layered.spacing.nodeNodeBetweenLayers': compact ? '36' : direction === 'RIGHT' ? '72' : d.edges.some(e => e.label) ? '112' : '56',
+      'elk.layered.spacing.nodeNodeBetweenLayers': compact ? '36' : direction === 'RIGHT' ? (d.edges.some(e => e.label) ? '100' : '72') : d.edges.some(e => e.label) ? '112' : '56',
       'elk.spacing.nodeNode': compact ? '14' : direction === 'RIGHT' ? '32' : variant === 'narrow' ? '12' : '24',
       'elk.spacing.edgeNode': '20', 'elk.spacing.edgeEdge': '16',
       'elk.layered.spacing.edgeEdgeBetweenLayers': '16', 'elk.layered.spacing.edgeNodeBetweenLayers': '20',
@@ -127,6 +129,17 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   if (compact && !d.nodes.some(n => n.pos) && !d.edges.some(e => e.style === 'loop') && (out.width ?? 0) > 4.5 * (out.height ?? 1)) {
     graph.layoutOptions = { ...graph.layoutOptions, 'elk.layered.wrapping.strategy': 'MULTI_EDGE', 'elk.aspectRatio': '2.2', 'elk.layered.wrapping.additionalEdgeSpacing': '8' };
     out = (await elk.layout(graph as never)) as unknown as ElkNode;
+  }
+  // Very long left-to-right chains would shrink their text below legibility on a desktop stage; wrap them too.
+  if (variant === 'wide' && direction === 'RIGHT' && !d.nodes.some(n => n.pos) && (out.width ?? 0) > WRAP_WIDTH) {
+    // Wrap into rows; try a few target aspect ratios and keep the first that leaves every loop arc's ends on one row.
+    for (const [strategy, ratio] of [['SINGLE_EDGE', '3.2'], ['MULTI_EDGE', '3.2'], ['MULTI_EDGE', '2.6'], ['MULTI_EDGE', '4'], ['SINGLE_EDGE', '2.2'], ['MULTI_EDGE', '2.2']]) {
+      const wrapped = (await elk.layout({ ...structuredClone(graph), layoutOptions: { ...graph.layoutOptions, 'elk.layered.wrapping.strategy': strategy, 'elk.aspectRatio': ratio, 'elk.layered.wrapping.additionalEdgeSpacing': '16' } } as never)) as unknown as ElkNode;
+      const ys = new Map<string, number>();
+      const walkY = (n: ElkNode, oy: number) => { for (const c of n.children ?? []) { ys.set(c.id, oy + (c.y ?? 0)); walkY(c, oy + (c.y ?? 0)); } };
+      walkY(wrapped, 0);
+      if ((wrapped.width ?? 0) < (out.width ?? 0) * 0.8 && d.edges.every(e => e.style !== 'loop' || Math.abs(ys.get(e.from)! - ys.get(e.to)!) < 60)) { out = wrapped; break; }
+    }
   }
 
   const abs: Record<string, Pt> = { root: { x: 0, y: 0 } };
@@ -184,6 +197,7 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   });
   // Loop arcs go over the row (or beside the column); if another node is in the way, try the other side, then
   // a wider bulge, and keep whichever crosses the fewest other nodes.
+  const routed = d.edges.filter(e => outEdges.get(e.id)?.sections?.length && !moved.has(e.from) && !moved.has(e.to)).map(e => route(e.id));
   const clearArc = (from: string, to: string) => {
     const others = Object.entries(nodes).filter(([id]) => id !== from && id !== to).map(([, b]) => b);
     const cost = (a: ReturnType<typeof boxArc>) => {
@@ -193,6 +207,8 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
         const x = u * u * u * a.s.x + 3 * u * u * t * a.c1.x + 3 * u * t * t * a.c2.x + t * t * t * a.e.x;
         const y = u * u * u * a.s.y + 3 * u * u * t * a.c1.y + 3 * u * t * t * a.c2.y + t * t * t * a.e.y;
         if (others.some(b => x > b.x - 4 && x < b.x + b.w + 4 && y > b.y - 4 && y < b.y + b.h + 4)) n++;
+        // running along (or across) a routed edge, or where its label would sit, also counts against a side
+        if (routed.some(p => p.some((q, j) => j > 0 && segHitsBox(p[j - 1], q, { x: x - 6, y: y - 22, w: 12, h: 28 })))) n += 0.5;
       }
       return n;
     };
@@ -271,6 +287,8 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   for (const k in groups) groups[k] = shBox(groups[k]);
   const polys: Record<string, Pt[]> = {};
   for (const [k, r] of Object.entries(raw)) if (r.kind === 'poly') polys[k] = r.pts.map(sh);
+  // converging edges with the same label show it once (see DiagramSvg)
+  const shownLabel = (id: string) => { const i = d.edges.findIndex(x => x.id === id), e = d.edges[i]; return e.label && !d.edges.slice(0, i).some(o => o.to === e.to && o.label === e.label) ? e.label : undefined; };
   const geo: Record<string, { pts?: Pt[]; arc?: Pt[]; mid?: Pt; label: EdgeLabelPos; text?: string }> = {};
   // Labels are placed greedily in edge order; each takes its best candidate spot that clears the nodes and the
   // labels already placed.
@@ -287,7 +305,7 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
       const partner = returns.get(k) ?? [...returns].find(([, f]) => f === k)?.[0];
       const others = Object.entries(polys).filter(([o]) => o !== k && o !== partner).map(([, v]) => v);
       const cands = labelCandidates(pts, others, direction, r.side, returns.has(k));
-      const text = d.edges.find(x => x.id === k)!.label;
+      const text = shownLabel(k);
       let label = cands[0];
       if (text) {
         const free = (c: EdgeLabelPos) => !taken.some(t => hits(t, labelBox(c, text)));
@@ -374,7 +392,7 @@ function labelCandidates(input: Pt[], others: Pt[][], direction: 'RIGHT' | 'DOWN
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     if (len < 1) continue;
     const horiz = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
-    const base = len + (horiz === (direction === 'RIGHT') ? 60 : 0) - (shared(a, b, others) ? 1000 : 0) + i * 0.01;
+    const base = len + (horiz === (direction === 'RIGHT') && len >= 40 ? 150 : 0) - (shared(a, b, others) ? 1000 : 0) + i * 0.01;
     if (isReturn) [a, b] = [b, a]; // back to this edge's own direction of travel
     for (const [t, pen] of [[0.5, 0], [0.3, 25], [0.7, 25]] as const) {
       if (t !== 0.5 && len < 80) continue;

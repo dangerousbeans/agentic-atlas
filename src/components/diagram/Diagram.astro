@@ -13,7 +13,6 @@ if (!compact) {
   const down = await layoutDiagram(spec, 'DOWN', 'narrow');
   const right = await layoutDiagram(spec, 'RIGHT', 'narrow');
   narrow = right.width < down.width * 0.8 ? right : down;
-  if (import.meta.env.DEV || process.env.DIAGRAM_DEBUG) console.log(`[diagram] ${uid} narrow down=${down.width} right=${right.width}`);
 }
 const timelines = compileDiagram(spec);
 const payload = JSON.stringify({ spec, timelines }).replace(/</g, '\\u003c');
