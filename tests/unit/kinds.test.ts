@@ -30,11 +30,18 @@ describe('schema: description and example', () => {
     edges: [{ id: 'e', from: 'a', to: 'b' }],
     scenarios: [{ id: 's', label: 'S', steps: [{ id: 'x', caption: 'Hello', events: [{ type: 'send', edge: 'e', token: { kind: 'prompt' } }] }] }],
   };
-  it('is valid without descriptions', () => expect(diagramSchema.safeParse(base).success).toBe(true));
+  const full = { ...base, nodes: base.nodes.map(n => ({ ...n, description: 'Describes the node.' })), edges: [{ ...base.edges[0], description: 'Describes the edge.', example: 'A sample payload' }] };
+  it('is valid with descriptions and an example', () => expect(diagramSchema.safeParse(full).success).toBe(true));
+  it('requires a description on nodes and edges, and an example on edges', () => {
+    expect(diagramSchema.safeParse(base).success).toBe(false);
+    expect(diagramSchema.safeParse({ ...full, nodes: [base.nodes[0], full.nodes[1]] }).success).toBe(false);
+    expect(diagramSchema.safeParse({ ...full, edges: [{ ...full.edges[0], description: undefined }] }).success).toBe(false);
+    expect(diagramSchema.safeParse({ ...full, edges: [{ ...full.edges[0], example: undefined }] }).success).toBe(false);
+  });
   it('accepts and bounds description and example', () => {
-    const ok = { ...base, nodes: [{ ...base.nodes[0], description: 'x'.repeat(180) }, base.nodes[1]], edges: [{ ...base.edges[0], description: 'x'.repeat(10), example: 'y'.repeat(280) }] };
+    const ok = { ...full, nodes: [{ ...base.nodes[0], description: 'x'.repeat(180) }, full.nodes[1]], edges: [{ ...base.edges[0], description: 'x'.repeat(10), example: 'y'.repeat(280) }] };
     expect(diagramSchema.safeParse(ok).success).toBe(true);
-    expect(diagramSchema.safeParse({ ...ok, nodes: [{ ...base.nodes[0], description: 'short' }, base.nodes[1]] }).success).toBe(false);
+    expect(diagramSchema.safeParse({ ...ok, nodes: [{ ...base.nodes[0], description: 'short' }, full.nodes[1]] }).success).toBe(false);
     expect(diagramSchema.safeParse({ ...ok, edges: [{ ...base.edges[0], example: 'y'.repeat(281) }] }).success).toBe(false);
   });
 });

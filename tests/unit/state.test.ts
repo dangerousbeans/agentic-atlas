@@ -5,14 +5,14 @@ import type { DiagramSpec } from '../../src/lib/diagram/types';
 
 const spec: DiagramSpec = {
   nodes: [
-    { id: 'in', kind: 'io', label: 'In' }, { id: 'gen', kind: 'llm', label: 'Gen' },
-    { id: 'eval', kind: 'evaluator', label: 'Eval' }, { id: 'out', kind: 'io', label: 'Out' },
-    { id: 'w', kind: 'llm', label: 'W', hidden: true },
+    { id: 'in', description: 'A fixture node.', kind: 'io', label: 'In' }, { id: 'gen', description: 'A fixture node.', kind: 'llm', label: 'Gen' },
+    { id: 'eval', description: 'A fixture node.', kind: 'evaluator', label: 'Eval' }, { id: 'out', description: 'A fixture node.', kind: 'io', label: 'Out' },
+    { id: 'w', description: 'A fixture node.', kind: 'llm', label: 'W', hidden: true },
   ],
   edges: [
-    { id: 'task', from: 'in', to: 'gen' }, { id: 'draft', from: 'gen', to: 'eval' },
-    { id: 'revise', from: 'eval', to: 'gen', style: 'loop' }, { id: 'accept', from: 'eval', to: 'out' },
-    { id: 'spawn', from: 'gen', to: 'w' },
+    { id: 'task', description: 'A fixture edge.', example: 'A sample payload', from: 'in', to: 'gen' }, { id: 'draft', description: 'A fixture edge.', example: 'A sample payload', from: 'gen', to: 'eval' },
+    { id: 'revise', description: 'A fixture edge.', example: 'A sample payload', from: 'eval', to: 'gen', style: 'loop' }, { id: 'accept', description: 'A fixture edge.', example: 'A sample payload', from: 'eval', to: 'out' },
+    { id: 'spawn', description: 'A fixture edge.', example: 'A sample payload', from: 'gen', to: 'w' },
   ],
   scenarios: [{ id: 's', label: 'S', steps: [
     { id: 'start', caption: 'Start', duration: 1000, events: [{ type: 'send', edge: 'task', token: { kind: 'prompt', label: 'q' } }] },

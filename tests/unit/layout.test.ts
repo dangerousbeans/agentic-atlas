@@ -4,13 +4,13 @@ import type { DiagramSpec } from '../../src/lib/diagram/types';
 import { first, last, attached } from './diagram-helpers';
 
 const loop: DiagramSpec = {
-  nodes: [{ id: 'in', kind: 'io', label: 'In' }, { id: 'gen', kind: 'llm', label: 'Gen' }, { id: 'eval', kind: 'evaluator', label: 'Eval' }, { id: 'out', kind: 'io', label: 'Out' }],
-  edges: [{ id: 'task', from: 'in', to: 'gen' }, { id: 'draft', from: 'gen', to: 'eval' }, { id: 'revise', from: 'eval', to: 'gen', style: 'loop', label: 'revise' }, { id: 'accept', from: 'eval', to: 'out' }],
+  nodes: [{ id: 'in', description: 'A fixture node.', kind: 'io', label: 'In' }, { id: 'gen', description: 'A fixture node.', kind: 'llm', label: 'Gen' }, { id: 'eval', description: 'A fixture node.', kind: 'evaluator', label: 'Eval' }, { id: 'out', description: 'A fixture node.', kind: 'io', label: 'Out' }],
+  edges: [{ id: 'task', description: 'A fixture edge.', example: 'A sample payload', from: 'in', to: 'gen' }, { id: 'draft', description: 'A fixture edge.', example: 'A sample payload', from: 'gen', to: 'eval' }, { id: 'revise', description: 'A fixture edge.', example: 'A sample payload', from: 'eval', to: 'gen', style: 'loop', label: 'revise' }, { id: 'accept', description: 'A fixture edge.', example: 'A sample payload', from: 'eval', to: 'out' }],
   scenarios: [{ id: 's', label: 'S', steps: [{ id: 'a', caption: 'A', events: [{ type: 'send', edge: 'task', token: { kind: 'prompt' } }] }] }],
 };
 const fan: DiagramSpec = {
-  nodes: [{ id: 'o', kind: 'llm', label: 'Orch' }, ...[1, 2, 3, 4, 5].map(i => ({ id: `w${i}`, kind: 'llm' as const, label: `W${i}` })), { id: 'out', kind: 'io', label: 'Out' }],
-  edges: [...[1, 2, 3, 4, 5].flatMap(i => [{ id: `d${i}`, from: 'o', to: `w${i}` }, { id: `r${i}`, from: `w${i}`, to: 'out' }])],
+  nodes: [{ id: 'o', description: 'A fixture node.', kind: 'llm', label: 'Orch' }, ...[1, 2, 3, 4, 5].map(i => ({ id: `w${i}`, description: 'A fixture node.', kind: 'llm' as const, label: `W${i}` })), { id: 'out', description: 'A fixture node.', kind: 'io', label: 'Out' }],
+  edges: [...[1, 2, 3, 4, 5].flatMap(i => [{ id: `d${i}`, description: 'A fixture edge.', example: 'A sample payload', from: 'o', to: `w${i}` }, { id: `r${i}`, description: 'A fixture edge.', example: 'A sample payload', from: `w${i}`, to: 'out' }])],
   scenarios: loop.scenarios.map(s => ({ ...s, steps: [{ id: 'a', caption: 'A', events: [{ type: 'send' as const, edge: 'd1', token: { kind: 'prompt' as const } }] }] })),
 };
 const overlaps = (a: { x: number; y: number; w: number; h: number }, b: typeof a) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -67,8 +67,8 @@ describe('layoutDiagram', () => {
   }
   it('bidirectional pair gets visibly separate paths', async () => {
     const spec: DiagramSpec = {
-      nodes: [{ id: 'a', kind: 'llm', label: 'A' }, { id: 'b', kind: 'llm', label: 'B' }],
-      edges: [{ id: 'ab', from: 'a', to: 'b' }, { id: 'ba', from: 'b', to: 'a' }],
+      nodes: [{ id: 'a', description: 'A fixture node.', kind: 'llm', label: 'A' }, { id: 'b', description: 'A fixture node.', kind: 'llm', label: 'B' }],
+      edges: [{ id: 'ab', description: 'A fixture edge.', example: 'A sample payload', from: 'a', to: 'b' }, { id: 'ba', description: 'A fixture edge.', example: 'A sample payload', from: 'b', to: 'a' }],
       scenarios: loop.scenarios.map(s => ({ ...s, steps: [{ id: 'a', caption: 'A', events: [{ type: 'send' as const, edge: 'ab', token: { kind: 'prompt' as const } }] }] })),
     };
     const L = await layoutDiagram(spec, 'RIGHT');

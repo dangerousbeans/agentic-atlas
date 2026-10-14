@@ -5,13 +5,13 @@ import { isModelNode } from '../../src/lib/diagram/kinds';
 import { patternStats, statsLine } from '../../src/lib/pattern-stats';
 import type { DiagramSpec, DiagramEvent, NodeKind, Step } from '../../src/lib/diagram/types';
 
-const node = (id: string, kind: NodeKind) => ({ id, kind, label: id });
+const node = (id: string, kind: NodeKind) => ({ id, description: 'A fixture node.', kind, label: id });
 const tok = { kind: 'prompt' as const };
 const send = (edge: string, at?: [number, number]): DiagramEvent => ({ type: 'send', edge, token: tok, ...(at ? { at } : {}) });
 const step = (id: string, events: DiagramEvent[], extra: Partial<Step> = {}): Step => ({ id, caption: id, events, ...extra });
 const spec = (over: Partial<DiagramSpec> = {}): DiagramSpec => ({
   nodes: [node('a', 'io'), node('b', 'llm'), node('t', 'tool')],
-  edges: [{ id: 'ab', from: 'a', to: 'b' }, { id: 'bt', from: 'b', to: 't' }, { id: 'ba', from: 't', to: 'b' }],
+  edges: [{ id: 'ab', description: 'A fixture edge.', example: 'A sample payload', from: 'a', to: 'b' }, { id: 'bt', description: 'A fixture edge.', example: 'A sample payload', from: 'b', to: 't' }, { id: 'ba', description: 'A fixture edge.', example: 'A sample payload', from: 't', to: 'b' }],
   scenarios: [{ id: 's', label: 'S', steps: [step('x', [send('ab')])] }],
   ...over,
 });
@@ -48,7 +48,7 @@ describe('patternStats (synthetic)', () => {
   });
   it('loop is true for a loop edge or a repeating step', () => {
     expect(patternStats(spec()).loop).toBe(false);
-    expect(patternStats(spec({ edges: [{ id: 'l', from: 'b', to: 'a', style: 'loop' }] })).loop).toBe(true);
+    expect(patternStats(spec({ edges: [{ id: 'l', description: 'A fixture edge.', example: 'A sample payload', from: 'b', to: 'a', style: 'loop' }] })).loop).toBe(true);
     expect(patternStats(one([step('x', [], { repeat: 2 })])).loop).toBe(true);
   });
   it('parallel needs two sends overlapping within a step', () => {

@@ -5,16 +5,16 @@ import type { DiagramSpec, CodeBlock } from '../../src/lib/diagram/types';
 const code: CodeBlock[] = [{ id: 'loop', title: 'loop.py', lang: 'python', source: 'a\nb\nc\n' }];
 const base = (): DiagramSpec => ({
   nodes: [
-    { id: 'in', kind: 'io', label: 'Task' },
-    { id: 'gen', kind: 'llm', label: 'Generator' },
-    { id: 'eval', kind: 'evaluator', label: 'Evaluator' },
-    { id: 'out', kind: 'io', label: 'Output' },
+    { id: 'in', description: 'A fixture node.', kind: 'io', label: 'Task' },
+    { id: 'gen', description: 'A fixture node.', kind: 'llm', label: 'Generator' },
+    { id: 'eval', description: 'A fixture node.', kind: 'evaluator', label: 'Evaluator' },
+    { id: 'out', description: 'A fixture node.', kind: 'io', label: 'Output' },
   ],
   edges: [
-    { id: 'task', from: 'in', to: 'gen' },
-    { id: 'draft', from: 'gen', to: 'eval' },
-    { id: 'revise', from: 'eval', to: 'gen', style: 'loop' },
-    { id: 'accept', from: 'eval', to: 'out' },
+    { id: 'task', description: 'A fixture edge.', example: 'A sample payload', from: 'in', to: 'gen' },
+    { id: 'draft', description: 'A fixture edge.', example: 'A sample payload', from: 'gen', to: 'eval' },
+    { id: 'revise', description: 'A fixture edge.', example: 'A sample payload', from: 'eval', to: 'gen', style: 'loop' },
+    { id: 'accept', description: 'A fixture edge.', example: 'A sample payload', from: 'eval', to: 'out' },
   ],
   scenarios: [{ id: 's', label: 'S', steps: [
     { id: 'a', caption: 'Go.', events: [{ type: 'send', edge: 'task', token: { kind: 'prompt' } }], codeRef: { block: 'loop', lines: '1-3' } },
@@ -24,8 +24,8 @@ const base = (): DiagramSpec => ({
 
 describe('diagramIssues', () => {
   it('accepts a valid diagram', () => expect(diagramIssues(base(), code)).toEqual([]));
-  it('flags duplicate node ids', () => { const d = base(); d.nodes.push({ id: 'gen', kind: 'llm', label: 'X' }); expect(diagramIssues(d, code).join()).toMatch(/duplicate node id "gen"/); });
-  it('flags duplicate edge ids', () => { const d = base(); d.edges.push({ id: 'task', from: 'in', to: 'out' }); expect(diagramIssues(d, code).join()).toMatch(/duplicate edge id "task"/); });
+  it('flags duplicate node ids', () => { const d = base(); d.nodes.push({ id: 'gen', description: 'A fixture node.', kind: 'llm', label: 'X' }); expect(diagramIssues(d, code).join()).toMatch(/duplicate node id "gen"/); });
+  it('flags duplicate edge ids', () => { const d = base(); d.edges.push({ id: 'task', description: 'A fixture edge.', example: 'A sample payload', from: 'in', to: 'out' }); expect(diagramIssues(d, code).join()).toMatch(/duplicate edge id "task"/); });
   it('flags edge to missing node', () => { const d = base(); d.edges[0].to = 'nope'; expect(diagramIssues(d, code).join()).toMatch(/edge "task" .*unknown node "nope"/); });
   it('flags send on unknown edge', () => { const d = base(); d.scenarios[0].steps[0].events = [{ type: 'send', edge: 'zzz', token: { kind: 'prompt' } }]; expect(diagramIssues(d, code).join()).toMatch(/unknown edge "zzz"/); });
   it('flags branch.taken that is not outgoing from node', () => { const d = base(); d.scenarios[0].steps[1].events = [{ type: 'branch', node: 'eval', taken: 'task' }]; expect(diagramIssues(d, code).join()).toMatch(/not an outgoing edge of "eval"/); });
@@ -34,7 +34,7 @@ describe('diagramIssues', () => {
   it('flags unknown codeRef block', () => { const d = base(); d.scenarios[0].steps[0].codeRef = { block: 'nope', lines: '1' }; expect(diagramIssues(d, code).join()).toMatch(/unknown code block "nope"/); });
   it('flags label too long for size', () => { const d = base(); d.nodes[0].label = 'A very long label'; expect(diagramIssues(d, code).join()).toMatch(/label .* exceeds 10 chars/); });
   it('flags appear on a non-hidden node', () => { const d = base(); d.scenarios[0].steps[0].events.push({ type: 'appear', node: 'gen' }); expect(diagramIssues(d, code).join()).toMatch(/appear on "gen" which is not hidden/); });
-  it('flags hidden node that never appears', () => { const d = base(); d.nodes.push({ id: 'w', kind: 'llm', label: 'W', hidden: true }); expect(diagramIssues(d, code).join()).toMatch(/hidden node "w" never appears in scenario "s"/); });
+  it('flags hidden node that never appears', () => { const d = base(); d.nodes.push({ id: 'w', description: 'A fixture node.', kind: 'llm', label: 'W', hidden: true }); expect(diagramIssues(d, code).join()).toMatch(/hidden node "w" never appears in scenario "s"/); });
   it('flags read/write on a non-memory node', () => { const d = base(); d.scenarios[0].steps[0].events.push({ type: 'write', node: 'gen' }); expect(diagramIssues(d, code).join()).toMatch(/write on "gen" which is not a memory node/); });
   it('flags duplicate step ids within a scenario', () => { const d = base(); d.scenarios[0].steps[1].id = 'a'; expect(diagramIssues(d, code).join()).toMatch(/duplicate step id "a"/); });
   it('flags a pinned node inside a group', () => { const d = base(); d.nodes[1].pos = { x: 0, y: 0 }; d.groups = [{ id: 'g', label: 'G', children: ['gen'] }]; expect(diagramIssues(d, code).join()).toMatch(/node "gen" is pinned but inside group "g"; pins are only supported for ungrouped nodes/); });

@@ -6,11 +6,11 @@ import { first, last } from './diagram-helpers';
 
 const scenarios: DiagramSpec['scenarios'] = [{ id: 's', label: 'S', steps: [{ id: 'a', caption: 'A step', events: [{ type: 'activate', node: 'a', status: 'thinking' }] }] }];
 const spec = (nodes: DiagramNode[], edges: DiagramEdge[], extra: Partial<DiagramSpec> = {}): DiagramSpec => ({ nodes, edges, scenarios, ...extra });
-const llm = (id: string, label = id.toUpperCase()): DiagramNode => ({ id, kind: 'llm', label });
-const e = (id: string, from: string, to: string, more: Partial<DiagramEdge> = {}): DiagramEdge => ({ id, from, to, ...more });
+const llm = (id: string, label = id.toUpperCase()): DiagramNode => ({ id, description: 'A fixture node.', kind: 'llm', label });
+const e = (id: string, from: string, to: string, more: Partial<DiagramEdge> = {}): DiagramEdge => ({ id, description: 'A fixture edge.', example: 'A sample payload', from, to, ...more });
 
 // A hub with three workers that report back, plus an output: the shape of orchestrator-workers and supervisor.
-const hub = spec([{ id: 'in', kind: 'io', label: 'In' }, llm('hub'), llm('w1'), llm('w2'), llm('w3'), { id: 'out', kind: 'io', label: 'Out' }], [
+const hub = spec([{ id: 'in', description: 'A fixture node.', kind: 'io', label: 'In' }, llm('hub'), llm('w1'), llm('w2'), llm('w3'), { id: 'out', description: 'A fixture node.', kind: 'io', label: 'Out' }], [
   e('task', 'in', 'hub'), e('d1', 'hub', 'w1'), e('d2', 'hub', 'w2'), e('d3', 'hub', 'w3'),
   e('r1', 'w1', 'hub', { style: 'dashed' }), e('r2', 'w2', 'hub', { style: 'dashed' }), e('r3', 'w3', 'hub', { style: 'dashed' }), e('done', 'hub', 'out'),
 ]);
@@ -27,7 +27,7 @@ describe('returnEdges', () => {
 
 describe('backEdges', () => {
   it('finds edges back to an earlier node that close a cycle (handoff replies)', () => {
-    const s = spec([{ id: 'user', kind: 'io', label: 'User' }, llm('triage'), llm('billing')], [e('in', 'user', 'triage'), e('to-billing', 'triage', 'billing'), e('reply', 'billing', 'user')]);
+    const s = spec([{ id: 'user', description: 'A fixture node.', kind: 'io', label: 'User' }, llm('triage'), llm('billing')], [e('in', 'user', 'triage'), e('to-billing', 'triage', 'billing'), e('reply', 'billing', 'user')]);
     expect([...backEdges(s, returnEdges(s))]).toEqual(['reply']);
   });
   it('does not count an edge to an earlier node when there is no cycle, nor return edges', () => {
@@ -124,7 +124,7 @@ describe('layoutDiagram behaviour', () => {
     expect(Math.abs(L.nodes.n10.y - L.nodes.n1.y)).toBeLessThan(60);
   });
   it('pins place glyph centres in RIGHT and are used transposed in DOWN', async () => {
-    const s = spec([{ ...llm('a'), pos: { x: 0, y: 0 } }, { ...llm('b'), pos: { x: 200, y: 80 } }, { id: 'c', kind: 'io', label: 'C', pos: { x: 400, y: 0 } }], [e('ab', 'a', 'b'), e('bc', 'b', 'c')]);
+    const s = spec([{ ...llm('a'), pos: { x: 0, y: 0 } }, { ...llm('b'), pos: { x: 200, y: 80 } }, { id: 'c', description: 'A fixture node.', kind: 'io', label: 'C', pos: { x: 400, y: 0 } }], [e('ab', 'a', 'b'), e('bc', 'b', 'c')]);
     const R = await layoutDiagram(s, 'RIGHT'), D = await layoutDiagram(s, 'DOWN');
     const gr = (id: string) => glyphCentre(R.nodes[id]), gd = (id: string) => glyphCentre(D.nodes[id]);
     expect(gr('b').x - gr('a').x).toBeCloseTo(200); expect(gr('b').y - gr('a').y).toBeCloseTo(80);
