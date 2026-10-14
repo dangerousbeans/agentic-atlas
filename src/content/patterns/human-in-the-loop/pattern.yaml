@@ -28,7 +28,7 @@ build:
     - "For a high-risk call, save the run's state to durable storage, then send the reviewer the {{prompt:approval}} with the tool, the arguments, the rationale and the effect."
     - "Wait for a reply of approve, edit (with changed arguments) or reject (with a reason). Nothing runs while the run waits."
     - "On approve, run the call as proposed; on edit, run it with the edited arguments; on reject, return the reason to the agent as the tool result so it replans."
-  stop: "The run ends when the agent finishes its task. A pending approval expires after 24 hours; on expiry, treat it as a rejection with the reason 'no reviewer response' and tell the requester."
+  stop: "The run ends when the agent finishes its task. A pending approval expires after 24 hours (configurable); on expiry, treat it as a rejection with the reason 'no reviewer response' and tell the requester."
   requirements:
     - "Persist the paused state so a restart or a deploy cannot lose a pending approval, and resume each run exactly once."
     - "If the risk classifier's reply is not valid JSON, retry once, then treat the call as high risk."
@@ -169,7 +169,7 @@ variants:
         - "Let the agent continue its loop, calling its other tools as normal."
       stop: "The run ends when the agent finishes its task. An unanswered question expires after 24 hours (configurable); the run then ends with a status saying it is waiting on a person, and the question stays visible."
       requirements:
-        - "Cap questions per run (default 3) so the agent cannot hand its work back to the person piece by piece."
+        - "Cap questions per run (default 3). On a 4th ask_human call, send nothing to the person; return a tool error telling the agent to continue on a stated assumption, and to state that assumption in its result."
         - "Require a single, specific question with the reason it is needed; reject an empty question as a tool error."
         - "Persist the paused state so a restart cannot lose a pending question, and resume each run exactly once."
         - "Log every question, its answer, who answered and how long it took."
@@ -191,13 +191,13 @@ variants:
       nodes:
         - { id: user, kind: io, label: Task, pos: { x: 0, y: 0 }, description: "The task that starts the run, such as 'Send Acme their renewal quote'." }
         - { id: agent, kind: agent, label: Agent, pos: { x: 170, y: 0 }, description: "Works on the task with its tools, and pauses to ask a person when it is missing something it must not guess." }
-        - { id: human, kind: human, label: Account owner, pos: { x: 380, y: -100 }, description: "The person who knows the answer. Gets one specific question and replies when they can; the run waits." }
+        - { id: human, kind: human, label: Account owner, pos: { x: 380, y: -150 }, description: "The person who knows the answer. Gets one specific question and replies when they can; the run waits." }
         - { id: tool, kind: tool, label: Quotes API, pos: { x: 380, y: 100 }, description: "The tool the agent needs the answer for: it creates and sends a quote." }
         - { id: out, kind: io, label: Done, pos: { x: 560, y: 100 }, description: "Confirmation that the task is complete, such as 'quote sent'." }
       edges:
         - { id: task, from: user, to: agent, description: "The task goes to the agent.", example: "Send Acme their renewal quote." }
         - { id: ask, from: agent, to: human, label: question, description: "The agent pauses and asks for the one thing it is missing, with the choices and why it needs it.", example: "{\"tool\": \"ask_human\", \"question\": \"Which plan should Acme's renewal quote use?\", \"choices\": [\"Team\", \"Enterprise\"], \"why\": \"Their contract allows either.\"}" }
-        - { id: answer, from: human, to: agent, style: dashed, label: answer, description: "The person's answer comes back as the result of the ask_human call, and the run resumes.", example: "Team, 40 seats. They are not ready for Enterprise yet." }
+        - { id: answer, from: human, to: agent, style: loop, label: answer, description: "The person's answer comes back as the result of the ask_human call, and the run resumes.", example: "Team, 40 seats. They are not ready for Enterprise yet." }
         - { id: call, from: agent, to: tool, description: "With the answer, the agent makes the call it was missing information for.", example: "{\"tool\": \"create_quote\", \"arguments\": {\"customer\": \"Acme\", \"plan\": \"Team\", \"seats\": 40}}" }
         - { id: result, from: tool, to: out, description: "The tool's result is the outcome of the run.", example: "{\"status\": \"sent\", \"quote\": \"Q-5521\", \"to\": \"billing@acme.example\"}" }
       scenarios:
@@ -269,10 +269,10 @@ variants:
     diagram:
       nodes:
         - { id: user, kind: io, label: Task, pos: { x: 0, y: 0 }, description: "The task that starts the run, such as 'Reassign departing rep Sam's 120 contacts to Dana'." }
-        - { id: agent, kind: agent, label: Agent, pos: { x: 150, y: 0 }, description: "Plans the change, saves a checkpoint first, then makes the change at once without waiting for anyone." }
-        - { id: checkpoint, kind: memory, label: Checkpoint, pos: { x: 300, y: 0 }, description: "The values of every record before the change, kept until the review window ends, so the change can be undone." }
-        - { id: tool, kind: tool, label: CRM API, pos: { x: 450, y: 0 }, description: "The real system the agent changes; the same API writes the old values back on a rollback." }
-        - { id: human, kind: human, label: Reviewer, pos: { x: 530, y: 150 }, description: "A person who reviews the change after it has happened, and approves it or rejects it to roll it back." }
+        - { id: agent, kind: agent, label: Agent, pos: { x: 170, y: 0 }, description: "Plans the change, saves a checkpoint first, then makes the change at once without waiting for anyone." }
+        - { id: checkpoint, kind: memory, label: Checkpoint, pos: { x: 380, y: 0 }, description: "The values of every record before the change, kept until the review window ends, so the change can be undone." }
+        - { id: tool, kind: tool, label: CRM API, pos: { x: 570, y: 0 }, description: "The real system the agent changes; the same API writes the old values back on a rollback." }
+        - { id: human, kind: human, label: Reviewer, pos: { x: 680, y: 150 }, description: "A person who reviews the change after it has happened, and approves it or rejects it to roll it back." }
       edges:
         - { id: task, from: user, to: agent, description: "The task goes to the agent.", example: "Sam is leaving. Reassign Sam's 120 contacts to Dana." }
         - { id: save, from: agent, to: checkpoint, label: snapshot, description: "Before anything changes, the agent saves the current values of everything the change will touch.", example: "checkpoint cp-311: 120 contacts, owner = Sam (ids 4001 to 4120)" }

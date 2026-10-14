@@ -183,7 +183,7 @@ variants:
         - "Send the draft and every source to the citation agent with the {{prompt:citer}}, and return the cited report."
       stop: "Stop when the lead replies done, or after 3 spawn rounds. On the cap, have the lead write the report from what it has and list the open questions in it."
       requirements:
-        - "Cap subagents per round (default 4), spawn rounds (default 3) and tool calls per subagent (default 15)."
+        - "Cap subagents per round (default 4), spawn rounds (default 3) and tool calls per subagent (default 15). If the lead asks for more subagents than the cap, run the first 4 and return the rest to the lead as not yet run."
         - "Give each subagent a timeout (default 5 minutes); report a timeout or crash to the lead as that subagent's finding instead of dropping it."
         - "Subagents never see each other's context or the lead's; they get only their brief."
         - "If the lead's reply is not valid JSON, retry once with the parse error, then write the report from the findings so far."
@@ -236,6 +236,7 @@ variants:
         - { id: plan, kind: memory, label: Plan, description: "The lead's plan, saved outside its context window so it survives if a long run truncates the lead's context." }
         - { id: r1, kind: agent, label: Subagent 1, sublabel: support tickets, hidden: true, description: "Spawned with a clean context and one brief. Searches the support tickets and returns condensed findings with sources." }
         - { id: r2, kind: agent, label: Subagent 2, sublabel: call transcripts, hidden: true, description: "Spawned at the same time as subagent 1. Searches the sales-call transcripts and returns condensed findings with sources." }
+        - { id: r3, kind: agent, label: Subagent 3, sublabel: follow-up, hidden: true, description: "Spawned later for a gap the lead found in the first findings: did SSO complaints drop after the August docs fix?" }
         - { id: citer, kind: agent, label: Citation agent, description: "Runs once at the end. Matches every claim in the lead's draft to a source and inserts the citations." }
         - { id: out, kind: io, label: Report, description: "The cited report returned to the user." }
       edges:
@@ -245,6 +246,8 @@ variants:
         - { id: spawn-2, from: lead, to: r2, label: brief, description: "A second brief, sent at the same moment, for a part that does not overlap the first.", example: "{\"objective\": \"Onboarding questions raised in Q3 sales calls\", \"output\": \"top themes with call dates\", \"tools\": [\"transcript_search\"], \"boundaries\": \"prospects only\"}" }
         - { id: back-1, from: r1, to: lead, style: dashed, description: "Condensed findings, not raw search results, come back to the lead.", example: "1. SSO setup is confusing (41 tickets, e.g. #8812). 2. CSV import fails on files over 10 MB (23 tickets, e.g. #9034)." }
         - { id: back-2, from: r2, to: lead, style: dashed, description: "The second subagent's condensed findings come back to the lead.", example: "Prospects asked about SSO setup in 9 of 14 calls (e.g. Acme, 14 Aug). Two asked for a guided import." }
+        - { id: spawn-3, from: lead, to: r3, label: brief, description: "A follow-up brief for the gap, spawned only after the first findings are in.", example: "{\"objective\": \"Did SSO tickets drop after the 20 Aug docs fix?\", \"output\": \"weekly SSO ticket counts, Jul to Sep\", \"tools\": [\"ticket_search\"], \"boundaries\": \"SSO tickets only\"}" }
+        - { id: back-3, from: r3, to: lead, style: dashed, description: "The follow-up findings come back to the lead.", example: "SSO tickets fell from 14 a week to 4 a week after the 20 Aug docs fix (ticket_search, Jul to Sep)." }
         - { id: draft, from: lead, to: citer, label: draft, description: "When the findings answer the question, the lead's draft goes to the citation agent with every source.", example: "Draft: SSO setup is the top onboarding complaint in both tickets and calls; CSV import failures come second." }
         - { id: final, from: citer, to: out, description: "The report goes out with a citation on every claim.", example: "SSO setup is the top onboarding complaint [tickets #8812, #9034; Acme call, 14 Aug]. CSV import failures come second [23 tickets]." }
       scenarios:
@@ -281,15 +284,16 @@ variants:
               events:
                 - { type: read, node: plan, at: [0, 0.15] }
                 - { type: activate, node: lead, status: thinking, at: [0.1, 0.35] }
-                - { type: branch, node: lead, taken: spawn-1, notTaken: [draft], at: [0.35, 0.45] }
-                - { type: send, edge: spawn-1, token: { kind: prompt, label: new brief }, at: [0.45, 0.65] }
-                - { type: activate, node: r1, status: calling, at: [0.65, 0.8] }
-                - { type: send, edge: back-1, token: { kind: result, label: findings }, at: [0.8, 1] }
+                - { type: appear, node: r3, at: [0.35, 0.45] }
+                - { type: branch, node: lead, taken: spawn-3, notTaken: [draft], at: [0.35, 0.45] }
+                - { type: send, edge: spawn-3, token: { kind: prompt, label: new brief }, at: [0.45, 0.65] }
+                - { type: activate, node: r3, status: calling, at: [0.65, 0.8] }
+                - { type: send, edge: back-3, token: { kind: result, label: findings }, at: [0.8, 1] }
             - id: cite
               caption: The findings now answer the question; the lead drafts the report and the citation agent adds a source to every claim.
               duration: 3000
               events:
-                - { type: branch, node: lead, taken: draft, notTaken: [spawn-1, spawn-2], at: [0, 0.2] }
+                - { type: branch, node: lead, taken: draft, notTaken: [spawn-1, spawn-2, spawn-3], at: [0, 0.2] }
                 - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.2, 0.5] }
                 - { type: activate, node: citer, status: thinking, at: [0.5, 0.7] }
                 - { type: send, edge: final, token: { kind: result, label: report }, at: [0.7, 1] }
@@ -312,14 +316,14 @@ variants:
         - "If is_complete is true, ask the orchestrator for the final answer from the history and return it."
         - "Otherwise send the instruction to the agent named in next_speaker, run it, and append its reply, or its error, to the history."
         - "If the turn was not progressing or was in a loop, add one to a stall counter; otherwise reset the counter to zero."
-        - "When the stall counter reaches 2, run the {{prompt:task-ledger}} again with everything learned so far to update the facts, guesses and plan; then reset the counter and clear the workers' history."
+        - "When the stall counter exceeds the stall threshold (default 2), run the {{prompt:task-ledger}} again with everything learned so far to update the facts, guesses and plan; then reset the counter and clear the workers' history."
       stop: "Stop when the progress ledger says the task is complete, after 20 turns, or after 3 replans. On a cap, return the best partial result with the latest task ledger and a status saying the task was not finished."
       requirements:
         - "Make the stall threshold (default 2), the turn cap (default 20) and the replan cap (default 3) parameters."
         - "If the progress ledger reply is not valid JSON or names an unknown agent, retry once, then count the turn as a stall."
         - "Store both ledgers outside the orchestrator's context and log every version, so a run can be audited turn by turn."
         - "Give each worker only the instruction for its turn, not the ledgers."
-        - "Add a test with a stub orchestrator whose progress ledger reports no progress on turns 1 and 2 and completion on turn 4; assert the task-ledger prompt ran exactly twice and the stall counter was 0 after the replan."
+        - "Add a test with a stub orchestrator whose progress ledger reports no progress on turns 1 to 3, progress on turn 4 and completion on turn 5; assert the task-ledger prompt ran exactly twice and the stall counter was 0 after the replan."
     prompts:
       - id: task-ledger
         title: Task ledger prompt
@@ -361,11 +365,11 @@ variants:
         - { id: out, kind: io, label: Result, description: "The final answer, returned once the progress ledger says the task is complete." }
       edges:
         - { id: task, from: user, to: orch, description: "The task goes to the orchestrator, which writes the task ledger before anyone acts.", example: "Find the cheapest refundable fare from Wellington to Sydney on 7 November and save it to fares.csv." }
-        - { id: plan, from: orch, to: facts, label: "plan, replan", description: "The orchestrator fills the task ledger before anyone acts, and rewrites it after two stalled turns in a row.", example: "Given: WLG to SYD, 7 Nov, refundable. Look up: fares on the airline site. Guess: the fare search works without a login. Plan: web surfer searches; coder saves the cheapest fare." }
+        - { id: plan, from: orch, to: facts, label: plan, description: "The orchestrator fills the task ledger before anyone acts, and rewrites it when the stalled turns in a row pass the threshold of 2.", example: "Given: WLG to SYD, 7 Nov, refundable. Look up: fares on the airline site. Guess: the fare search works without a login. Plan: web surfer searches; coder saves the cheapest fare." }
         - { id: check, from: orch, to: progress, label: each turn, description: "Every turn, the orchestrator answers the progress questions and records them.", example: "{\"is_complete\": false, \"is_progressing\": false, \"is_in_loop\": true, \"next_speaker\": \"web_surfer\", \"instruction\": \"Retry the fare search for 7 Nov.\"}" }
         - { id: to-web, from: orch, to: web, label: instruct, description: "The instruction from the progress ledger goes to the worker it named.", example: "Open the airline's fare calendar for WLG to SYD in November and read the refundable fares for the 7th." }
         - { id: from-web, from: web, to: orch, style: dashed, description: "The worker reports what happened, including failures.", example: "Fare calendar, 7 Nov, refundable: NZ$389 (NZ 247, 07:00) and NZ$412 (QF 162, 10:30)." }
-        - { id: to-coder, from: orch, to: coder, label: instruct, description: "When the next step needs code, the instruction goes to the coder.", example: "Write fares.csv with columns date, flight, price_nzd and one row: 2026-11-07, NZ 247, 389." }
+        - { id: to-coder, from: orch, to: coder, description: "When the next step needs code, the instruction goes to the coder.", example: "Write fares.csv with columns date, flight, price_nzd and one row: 2026-11-07, NZ 247, 389." }
         - { id: from-coder, from: coder, to: orch, style: dashed, description: "The coder reports the result of running its code.", example: "Wrote fares.csv (1 row). Checked by reading it back." }
         - { id: finish, from: orch, to: out, description: "When the progress ledger says the task is complete, the orchestrator writes the final answer.", example: "Cheapest refundable fare on 7 Nov: NZ 247 at 07:00, NZ$389. Saved to fares.csv." }
       scenarios:
@@ -383,7 +387,7 @@ variants:
             - id: stuck
               caption: The progress ledger names the web surfer next, but the fare search hits a login wall. No progress.
               duration: 3200
-              repeat: 2
+              repeat: 3
               events:
                 - { type: send, edge: check, token: { kind: result, label: "next: web" }, at: [0, 0.25] }
                 - { type: write, node: progress, at: [0.2, 0.3] }
@@ -392,7 +396,7 @@ variants:
                 - { type: activate, node: web, status: error, at: [0.6, 0.75] }
                 - { type: send, edge: from-web, token: { kind: result, label: login wall }, at: [0.75, 1] }
             - id: replan
-              caption: "Two stalled turns in a row trigger a replan. The task ledger gets a new fact (search needs a login) and a new plan (use the public fare calendar)."
+              caption: "A third stalled turn in a row passes the threshold of 2 and triggers a replan. The task ledger gets a new fact (search needs a login) and a new plan (use the public fare calendar)."
               duration: 3000
               events:
                 - { type: send, edge: check, token: { kind: feedback, label: stalled }, at: [0, 0.3] }

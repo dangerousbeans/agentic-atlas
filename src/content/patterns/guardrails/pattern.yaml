@@ -269,7 +269,7 @@ variants:
       nodes:
         - { id: user, kind: io, label: Message, pos: { x: 0, y: -80 }, description: "A signed-in customer's message, such as 'Where is my order A-1093?'." }
         - { id: agent, kind: agent, label: Agent, pos: { x: 200, y: 0 }, description: "The assistant. Plans tool calls, but every call goes through the guards, which it cannot skip." }
-        - { id: pre, kind: guard, label: Call check, pos: { x: 420, y: -110 }, model: false, description: "Checks each call before it runs, mostly with rules: is the tool allowed, and does the record belong to the signed-in customer?" }
+        - { id: pre, kind: guard, label: Call check, pos: { x: 420, y: -110 }, description: "Checks each call before it runs: rules first (is the tool allowed, is the record the customer's own), with a model fallback for unclear cases." }
         - { id: tool, kind: tool, label: Orders API, pos: { x: 640, y: 0 }, description: "The real tool: looks up an order, including the payment details stored with it." }
         - { id: post, kind: guard, label: Result check, pos: { x: 420, y: 110 }, model: false, description: "Checks each result before the agent sees it: redacts card numbers, secrets and other people's personal data." }
         - { id: out, kind: io, label: Reply, pos: { x: 0, y: 90 }, description: "The agent's answer to the customer." }
@@ -277,7 +277,7 @@ variants:
         - { id: in, from: user, to: agent, description: "The customer's message goes to the agent.", example: "Where is my order A-1093?" }
         - { id: call, from: agent, to: pre, description: "The agent's tool call goes to the call check, not straight to the tool.", example: "{\"tool\": \"get_order\", \"arguments\": {\"order\": \"A-1093\"}}" }
         - { id: allow, from: pre, to: tool, label: allow, description: "An allowed call runs against the real tool.", example: "allow: order A-1093 belongs to signed-in customer 4821." }
-        - { id: deny, from: pre, to: agent, style: dashed, label: deny, description: "A denied call never runs; the agent gets a tool error with the reason.", example: "{\"error\": \"denied: order A-2000 belongs to another customer.\"}" }
+        - { id: deny, from: pre, to: agent, style: loop, label: deny, description: "A denied call never runs; the agent gets a tool error with the reason.", example: "{\"error\": \"denied: order A-2000 belongs to another customer.\"}" }
         - { id: raw, from: tool, to: post, description: "The raw result goes to the result check before the agent sees it.", example: "{\"order\": \"A-1093\", \"status\": \"shipped\", \"eta\": \"Thu\", \"card\": \"4111 1111 1111 1111\"}" }
         - { id: clean, from: post, to: agent, style: dashed, label: checked, description: "The checked result, with sensitive fields redacted, returns to the agent.", example: "{\"order\": \"A-1093\", \"status\": \"shipped\", \"eta\": \"Thu\", \"card\": \"**** 1111\"}" }
         - { id: reply, from: agent, to: out, description: "The agent answers from the checked result.", example: "Your order A-1093 has shipped and should arrive on Thursday." }
@@ -353,11 +353,11 @@ variants:
         - "If the message is unsafe, return a refusal that names the category in plain words; otherwise call the agent."
         - "Call the same classifier on the agent's reply, with the role set to agent and the whole conversation."
         - "Release the reply if it is safe; otherwise withhold it and send the block message."
-      stop: "Each message ends with the released reply or one refusal. The classifier runs at most twice per message: once on the input and once on the output."
+      stop: "Each message ends with the released reply or one refusal. The classifier checks the input and the output once each, plus at most one retry per check."
       requirements:
         - "Use one classifier and one taxonomy for both checks, and change the policy by editing the taxonomy, not the prompt's wording."
         - "Run the classifier at temperature 0, with a small output cap (default 20 tokens)."
-        - "If line one is neither safe nor unsafe, or a code is not in the taxonomy, retry once, then treat the message as unsafe."
+        - "If the classifier call errors or times out (default 3 seconds), line one is neither safe nor unsafe, or a code is not in the taxonomy, retry once, then treat the message or reply as unsafe."
         - "Log the verdict and the category codes for every message, so false positives can be reviewed per category."
         - "Add a test with a stub classifier that returns 'unsafe' and 'C3' for the input; assert the agent is never called and the refusal names category C3, Criminal planning."
     prompts:

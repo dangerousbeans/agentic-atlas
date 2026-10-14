@@ -23,8 +23,8 @@ build:
   steps:
     - "Send the question to every debater (default 3) in parallel and collect their independent first answers, each ending in a one-line answer."
     - "For each round, give every debater its own previous answer and all the other debaters' answers with the {{prompt:revise}}, and call all of them in parallel."
-    - "After each round, pull the one-line answer out of each reply; if every debater gives the same answer, end the rounds early."
-    - "After the last round, take the majority answer. If there is no majority, or you always want a ruling, send the final answers to the judge with the {{prompt:judge}} and parse its JSON into answer and why."
+    - "After the first answers and after each round, pull the one-line answer out of each reply; if every debater gives the same answer, end the rounds early."
+    - "After the last round, take the majority answer. If there is no majority, or you always want a ruling, send the final answers to the judge with the {{prompt:judge}} and parse its JSON into answer and why. If that is not valid JSON, retry once, then return the majority answer if there is one, otherwise all final answers with a not-converged status."
     - "Return the answer together with every debater's final answer, so a reader can see where they disagreed."
   stop: "Stop after 2 rounds, or earlier when every debater gives the same one-line answer. With no majority and no judge, return all the final answers with a status saying the debate did not converge."
   requirements:
@@ -223,7 +223,7 @@ variants:
                 - { type: activate, node: out, status: done, at: [0.9, 1] }
   - id: consensus
     name: Consensus, no judge
-    summary: "The original form: no judge. After each round a plain check hands every debater the others' answers, until they agree or the majority wins."
+    summary: "Du et al.'s judge-free form. A plain check collects the answers and shares them; this build also stops early once they agree and falls back to the majority."
     build:
       goal: "Answer a hard question by letting several debaters revise their answers after reading each other's, with no judge: the rounds end when they agree, and otherwise the majority wins."
       steps:
@@ -256,12 +256,12 @@ variants:
           End with your answer in one line.
     diagram:
       nodes:
-        - { id: user, kind: io, label: Question, pos: { x: 0, y: 0 }, description: "The question posed to every debater, e.g. 'Is 3,599 prime?'." }
-        - { id: a, kind: agent, label: Debater A, pos: { x: 210, y: -130 }, description: "Answers independently, then updates its answer each round after reading B's and C's." }
-        - { id: b, kind: agent, label: Debater B, pos: { x: 210, y: 0 }, description: "Answers independently, then updates its answer each round after reading A's and C's." }
-        - { id: c, kind: agent, label: Debater C, pos: { x: 210, y: 130 }, description: "Answers independently, then updates its answer each round after reading A's and B's." }
-        - { id: check, kind: aggregator, label: Round check, pos: { x: 440, y: 0 }, description: "Plain code, not a model. Collects each round's answers, checks whether they agree, and if not hands every debater the others' answers." }
-        - { id: out, kind: io, label: Answer, pos: { x: 630, y: 0 }, description: "The answer every debater agreed on, or the majority answer after the last round." }
+        - { id: user, kind: io, label: Question, description: "The question posed to every debater, e.g. 'Is 3,599 prime?'." }
+        - { id: a, kind: agent, label: Debater A, description: "Answers independently, then updates its answer each round after reading B's and C's." }
+        - { id: b, kind: agent, label: Debater B, description: "Answers independently, then updates its answer each round after reading A's and C's." }
+        - { id: c, kind: agent, label: Debater C, description: "Answers independently, then updates its answer each round after reading A's and B's." }
+        - { id: check, kind: aggregator, label: Round check, description: "Plain code, not a model. Collects each round's answers, checks whether they agree, and if not hands every debater the others' answers." }
+        - { id: out, kind: io, label: Answer, description: "The answer every debater agreed on, or the majority answer after the last round." }
       edges:
         - { id: q-a, from: user, to: a, description: "The same question goes to debater A.", example: "Question: Is 3,599 prime? Show your reasoning." }
         - { id: q-b, from: user, to: b, description: "The same question goes to debater B in parallel.", example: "Question: Is 3,599 prime? Show your reasoning." }
@@ -281,9 +281,9 @@ variants:
               caption: The same question goes to all three debaters at once.
               duration: 1400
               events:
-                - { type: send, edge: q-a, token: { kind: prompt, label: question } }
-                - { type: send, edge: q-b, token: { kind: prompt, label: question } }
-                - { type: send, edge: q-c, token: { kind: prompt, label: question } }
+                - { type: send, edge: q-a, token: { kind: prompt, label: question }, at: [0, 0.7] }
+                - { type: send, edge: q-b, token: { kind: prompt, label: question }, at: [0.15, 0.85] }
+                - { type: send, edge: q-c, token: { kind: prompt, label: question }, at: [0.3, 1] }
             - id: first-answers
               caption: Each debater answers alone, and the answers reach the round check. A says prime; B and C say 59 x 61.
               duration: 2600

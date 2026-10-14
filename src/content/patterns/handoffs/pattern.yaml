@@ -144,10 +144,10 @@ variants:
       steps:
         - "Give triage, which runs with the {{prompt:triage}}, one handoff tool per specialist; give every specialist, which runs with the {{prompt:specialist}}, a transfer_back_to_triage tool that takes a summary of what is done and what is left."
         - "Keep one message history and an active-agent pointer that starts at triage; call the active agent with the full history on each user message."
-        - "When an agent calls a handoff tool, append the handoff and its argument to the history, move the pointer, and call the new agent in the same turn."
+        - "When an agent calls a handoff tool, append the handoff and its argument to the history, move the pointer, and call the new agent in the same turn. An agent may send the user a message and call a handoff tool in one response: send the message, then follow the handoff."
         - "When a specialist hands back, triage reads the summary and either hands the open part to another specialist or replies to the user."
         - "Send whichever agent's reply ends the turn to the user."
-      stop: "A turn ends when the active agent replies to the user. Allow at most 4 handoffs per user message, hand-backs included; on the cap, apologize and route the conversation to a human."
+      stop: "A turn ends when the active agent replies to the user without calling a handoff tool; a message sent together with a hand-back does not end it. Allow at most 4 handoffs per user message, hand-backs included; on the cap, apologize and route the conversation to a human."
       requirements:
         - "Make the per-message handoff cap a parameter (default 4)."
         - "Require a non-empty summary on transfer_back_to_triage; if it is empty, return a tool error asking for one."
@@ -217,7 +217,7 @@ variants:
                 - { type: activate, node: billing, status: thinking, at: [0, 0.5] }
                 - { type: send, edge: billing-reply, token: { kind: result, label: refunded }, at: [0.5, 1] }
             - id: hand-back
-              caption: Its part done, billing hands the conversation back to triage with a summary of what is still open.
+              caption: In the same response, billing hands the conversation back to triage with a summary of what is still open, so the turn goes on.
               duration: 2400
               events:
                 - { type: send, edge: back, token: { kind: prompt, label: crash open }, at: [0, 0.6] }
@@ -263,7 +263,7 @@ variants:
         - { id: in, from: user, to: triage, description: "With no active agent stored, the first message goes to triage.", example: "I was charged twice for my March invoice." }
         - { id: to-billing, from: triage, to: billing, label: handoff, description: "Triage passes the conversation to billing.", example: "transfer_to_billing: \"User says they were charged twice on the March invoice.\"" }
         - { id: to-tech, from: triage, to: tech, label: handoff, description: "The route triage would use for a technical problem.", example: "transfer_to_tech: \"User reports the app crashes on login.\"" }
-        - { id: record, from: billing, to: active, label: record, description: "As billing takes over from the handoff, it is written to the store as the active agent, before it runs.", example: "conversation 7f3a: active_agent = billing" }
+        - { id: record, from: billing, to: active, label: record, description: "The handoff writes billing to the store as the active agent before billing runs.", example: "conversation 7f3a: active_agent = billing" }
         - { id: billing-reply, from: billing, to: user, description: "Billing answers the user directly.", example: "I can see two charges of $29 on March 3. I've refunded one; it arrives in 3-5 days." }
         - { id: next, from: user, to: active, label: next message, description: "The user's next message is routed by the store, not by triage.", example: "Thanks. Can you also send me the corrected March invoice?" }
         - { id: resume, from: active, to: billing, label: resume, description: "The store names billing, so billing is called first, with the full history.", example: "active_agent = billing: calling billing with 4 messages of history." }
