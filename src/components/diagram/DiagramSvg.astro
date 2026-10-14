@@ -28,11 +28,18 @@ const sizing = compact ? undefined : `--max-w:${Math.round(layout.width * MAX_SC
       <path class="arrow" d="M0,1 L9,5 L0,9 z" />
     </marker>
     <radialGradient id={`${pid}-halo`}><stop offset="0" class="halo-stop-a" /><stop offset="1" class="halo-stop-b" /></radialGradient>
+    {/* the comet glow, pre-rendered: flow-player fills each token dot's glow circle with it instead of a live drop-shadow */}
+    <radialGradient id={`${pid}-tglow`} class="token-glow"><stop offset="0" class="tglow-a" /><stop offset="0.3" class="tglow-b" /><stop offset="0.6" class="tglow-c" /><stop offset="1" class="tglow-d" /></radialGradient>
   </defs>
   <g class="groups">
     {Object.entries(layout.groups).map(([id, g]) => (
       <g class="group" data-group={id}><rect x={g.x} y={g.y} width={g.w} height={g.h} rx="0" />{!compact && <text x={g.x + 14} y={g.y + 20}>{g.label}</text>}</g>
     ))}
+  </g>
+  {/* Active-edge glow as a soft stroked underlay, not a filter: the comet rides the active edge, and a drop-shadow
+      under it would be re-blurred on every frame (R11). */}
+  <g class="edge-glows" aria-hidden="true">
+    {spec.edges.map(e => <path class="edge-glow" data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} data-from={e.from} data-to={e.to} />)}
   </g>
   <g class="edges">
     {spec.edges.map(e => (
