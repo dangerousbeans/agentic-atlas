@@ -7,21 +7,25 @@ badges: { autonomy: low, cost: low, latency: medium }
 sources:
   - title: "Instructor docs: Retry Logic with Tenacity"
     url: https://python.useinstructor.com/concepts/retrying/
+  - title: "Instructor on GitHub (started by Jason Liu as jxnl/instructor)"
+    url: https://github.com/567-labs/instructor
 related:
   composesWith: [prompt-chaining, augmented-llm, model-fallback]
   confusedWith:
     - slug: evaluator-optimizer
       difference: "Evaluator-optimizer asks an LLM judge whether the work is good enough. Schema repair runs a deterministic check, and the validator's own error text is the feedback."
+    - slug: critic
+      difference: "CRITIC verifies an answer's claims with tools such as search or code. Schema repair checks format and business rules with plain code, and feeds the validator's error back."
     - slug: guardrails
       difference: "Guardrails block unsafe or off-topic content. Schema repair does not judge content; it fixes output that downstream code cannot parse or that breaks a business rule."
 origin:
   by: Jason Liu
   org: Instructor
   year: 2023
-  url: https://python.useinstructor.com/concepts/retrying/
+  url: https://github.com/567-labs/instructor
   kind: popularized
   uncertain: true
-  note: "No single inventor. Instructor's reask made the loop popular in 2023, but the cited page does not name its author, and the same idea ships as LangChain's OutputFixingParser and in Guardrails AI."
+  note: "No single inventor: the same validate-and-reask loop ships as LangChain's OutputFixingParser and in Guardrails AI. Jason Liu's Instructor (repository started as jxnl/instructor in June 2023) made it popular."
 build:
   goal: "Turn unstructured input into an object that passes a typed schema and every business rule, feeding the exact validation error back to the model until it passes or a retry budget runs out."
   steps:
@@ -58,6 +62,7 @@ prompts:
       with the corrected JSON object only.
 
       <schema>{{json_schema}}</schema>
+      <rules>{{rules}}</rules>
       <document>{{document}}</document>
       <previous_reply>{{previous_reply}}</previous_reply>
       <errors>
