@@ -32,7 +32,7 @@ build:
   requirements:
     - "Use the stop sequence 'Intermediate answer:' so the model never writes its own answer to a follow-up."
     - "Cap follow-ups with a parameter (default 4), and stop early if the same follow-up question is asked twice."
-    - "Trim each search result to one short snippet, and write 'No answer found' when the search returns nothing."
+    - "Trim each search result to one short snippet. If the search returns nothing, or fails or times out after one retry, use 'No answer found' as the intermediate answer and log the error."
     - "Log every follow-up question with its search query and the snippet that came back."
     - "Add a test with a stub LLM and a fake search: two follow-ups get '1889' and 'Benjamin Harrison'; assert exactly two searches and the answer exactly 'Benjamin Harrison'."
 prompts:
