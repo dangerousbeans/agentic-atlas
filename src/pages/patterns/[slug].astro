@@ -8,7 +8,6 @@ import RelatedPatterns from '../../components/pattern/RelatedPatterns.astro';
 import Sources from '../../components/pattern/Sources.astro';
 import PatternNav from '../../components/pattern/PatternNav.astro';
 import SpecTable from '../../components/pattern/SpecTable.astro';
-import Frame from '../../components/site/Frame.astro';
 import { patternStats } from '../../lib/pattern-stats';
 import { getCatalog } from '../../lib/catalog';
 import { getEntry, render } from 'astro:content';
@@ -34,7 +33,7 @@ const stats = patternStats(p.diagram as DiagramSpec);
     <PatternNav index={index} total={cat.patterns.length} prev={prev} next={next} slugs={slugs} />
     <div class="instrument">
       <div class="stage">
-        <Frame><Diagram uid={p.slug} spec={p.diagram as DiagramSpec} title={p.name} /></Frame>
+        <Diagram uid={p.slug} spec={p.diagram as DiagramSpec} title={p.name} />
         <p class="legend mono" aria-label="Keyboard shortcuts"><span><kbd>←</kbd> <kbd>→</kbd> neighbours</span><span><kbd>r</kbd> random</span><span><kbd>esc</kbd> atlas</span></p>
       </div>
       <div class="info">
@@ -53,8 +52,7 @@ const stats = patternStats(p.diagram as DiagramSpec);
 <style>
   .instrument { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: clamp(28px, 3.5vw, 48px); align-items: start; margin-top: 18px; }
   .info { padding-top: 6px; }
-  /* Room under the diagram's last disclosure so the bottom corner brackets don't sit on it. */
-  .stage :global(.frame) { --frame-pad: 0 0 28px; }
+  .stage { padding-bottom: 28px; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 14px 0 0; font-size: 12px; letter-spacing: .04em; color: var(--text-3); }
   kbd { font: 500 11px var(--font-mono); color: var(--text-2); border: 1px solid var(--line-strong); padding: 1px 6px; }
   .body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 48px; align-items: start; margin-top: 32px; }
