@@ -30,3 +30,34 @@ test('404 page links home', async ({ page }) => {
   expect(res?.status()).toBe(404);
   await expect(page.getByRole('link', { name: /atlas/i }).first()).toBeVisible();
 });
+
+test('Enter in the search box opens the first result', async ({ page }) => {
+  await page.goto('/');
+  await page.keyboard.press('ControlOrMeta+k');
+  const dialog = page.getByRole('dialog', { name: 'Search patterns' });
+  await dialog.getByRole('searchbox').fill('critique');
+  await expect(dialog.locator('.results a').first()).toBeVisible({ timeout: 5000 });
+  await dialog.getByRole('searchbox').press('Enter');
+  await page.waitForURL(/\/(patterns|families)\//);
+});
+
+test('Enter with no results leaves the dialog open', async ({ page }) => {
+  await page.goto('/');
+  await page.keyboard.press('ControlOrMeta+k');
+  const dialog = page.getByRole('dialog', { name: 'Search patterns' });
+  await dialog.getByRole('searchbox').fill('zzzzqqqq');
+  await expect(dialog.getByRole('status')).toHaveText('No matches.', { timeout: 5000 });
+  await dialog.getByRole('searchbox').press('Enter');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: /close search/ }).click();
+  await expect(dialog).toBeHidden();
+});
+
+test('family page is filterable by family', async ({ page }) => {
+  await page.goto('/');
+  await page.keyboard.press('ControlOrMeta+k');
+  const dialog = page.getByRole('dialog', { name: 'Search patterns' });
+  await dialog.getByRole('combobox', { name: 'Family' }).selectOption('Agent Loops');
+  await dialog.getByRole('searchbox').fill('loops');
+  await expect(dialog.locator('.results .fam').first()).toHaveText('Agent Loops', { timeout: 5000 });
+});

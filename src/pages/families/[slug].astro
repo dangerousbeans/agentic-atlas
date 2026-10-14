@@ -15,7 +15,7 @@ const pats = cat.patternsOf(f.slug);
 <BaseLayout title={f.name} description={f.description} accent={f.accent} pagefind>
   <section class="fam-hero">
     <Constellation data={data} focus={f.slug} height={420}>
-      <div class="copy wrap"><p class="eyebrow">Family · {pats.length} patterns</p><h1>{f.name}</h1><p class="lede">{f.description}</p></div>
+      <div class="copy wrap"><p class="eyebrow">Family · {pats.length} patterns</p><h1><span data-pagefind-filter="family">{f.name}</span></h1><p class="lede">{f.description}</p></div>
     </Constellation>
   </section>
   <section class="wrap">

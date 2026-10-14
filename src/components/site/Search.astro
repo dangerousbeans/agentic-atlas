@@ -2,19 +2,20 @@
 import { getCatalog } from '../../lib/catalog';
 const cat = await getCatalog();
 ---
-<button type="button" class="search-btn" data-search-open aria-haspopup="dialog">Search <kbd>⌘K</kbd></button>
+<button type="button" class="search-btn" data-search-open aria-haspopup="dialog">Search <kbd data-kbd>Ctrl K</kbd></button>
 <dialog class="search" aria-label="Search patterns">
-  <form method="dialog" class="search-head">
+  <div class="search-head">
     <input type="search" aria-label="Search" placeholder="Search patterns, e.g. 'loop', 'memory', 'tools'" autocomplete="off" />
     <label><span class="sr-only">Family</span>
       <select aria-label="Family"><option value="">All families</option>{cat.families.map(f => <option value={f.name}>{f.name}</option>)}</select>
     </label>
-    <button value="close" aria-label="Close search">Esc</button>
-  </form>
+    <button type="button" data-search-close aria-label="Esc, close search">Esc</button>
+  </div>
   <p class="status" role="status"></p>
   <ul class="results"></ul>
 </dialog>
 <script>
+  import { joinBase } from '../../lib/url';
   const dlg = document.querySelector<HTMLDialogElement>('dialog.search')!;
   const input = dlg.querySelector<HTMLInputElement>('input')!;
   const fam = dlg.querySelector<HTMLSelectElement>('select')!;
@@ -24,20 +25,26 @@ const cat = await getCatalog();
   let pf: PF | null = null;
   const load = async () => {
     if (pf) return pf;
-    try { pf = (await import(/* @vite-ignore */ `${import.meta.env.BASE_URL}pagefind/pagefind.js`)) as PF; await pf.init(); }
-    catch { status.textContent = 'Search is available in the production build.'; }
+    try { pf = (await import(/* @vite-ignore */ joinBase(import.meta.env.BASE_URL, 'pagefind/pagefind.js'))) as PF; await pf.init(); }
+    catch { pf = null; status.textContent = 'Search is available in the production build.'; status.dataset.unavailable = '1'; }
     return pf;
   };
   const open = async () => { dlg.showModal(); input.focus(); await load(); };
   document.querySelector('[data-search-open]')!.addEventListener('click', open);
   addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); open(); } });
+  dlg.querySelector('[data-search-close]')!.addEventListener('click', () => dlg.close());
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); list.querySelector<HTMLAnchorElement>('a')?.click(); } });
+  if (/Mac|iPhone|iPad/.test(navigator.platform)) document.querySelectorAll('[data-kbd]').forEach(k => (k.textContent = '⌘K'));
   let seq = 0;
   const run = async () => {
     const my = ++seq; const q = input.value.trim();
     if (!q) { list.innerHTML = ''; status.textContent = ''; return; }
     const p = await load(); if (!p) return;
-    const r = await p.search(q, fam.value ? { filters: { family: fam.value } } : {});
-    const items = await Promise.all(r.results.slice(0, 8).map(x => x.data()));
+    let items;
+    try {
+      const r = await p.search(q, fam.value ? { filters: { family: fam.value } } : {});
+      items = await Promise.all(r.results.slice(0, 8).map(x => x.data()));
+    } catch { if (my === seq) { status.textContent = 'Search failed — try again.'; list.replaceChildren(); } return; }
     if (my !== seq) return;
     status.textContent = items.length ? `${items.length} result${items.length > 1 ? 's' : ''}` : 'No matches.';
     list.replaceChildren(...items.map(it => {
