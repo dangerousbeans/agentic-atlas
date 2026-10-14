@@ -1,0 +1,36 @@
+## Problem
+
+Ask a model "3 muffins cost $5. What do 12 muffins and 2 coffees at $3.50 cost?" and ask for the number only. Often it gets it right. Sometimes it says $25. The question needs three small calculations, and a model asked to answer at once has to do all of them in the single step of writing the first token of its answer. There is nowhere to keep the intermediate results.
+
+## How it works
+
+Chain-of-thought gives the model that space by asking it to write the working out before the answer. The <NodeRef id="question">question</NodeRef> goes to the <NodeRef id="model">model</NodeRef> with a few worked examples that show numbered steps, or simply with the line "Let's think step by step."
+
+The model then writes <NodeRef id="s1">step 1</NodeRef> (12 ÷ 3 = 4 packs), <NodeRef id="s2">step 2</NodeRef> (4 × $5 = $20) and <NodeRef id="s3">step 3</NodeRef> (2 × $3.50 = $7). Each step is generated after the one before, so it can read that step's result instead of holding it in its head. The reply ends with one line, "Answer: $27", which your code parses out as the <NodeRef id="answer">answer</NodeRef>.
+
+All of this happens in one call. The steps are not separate requests and your code does not run between them; they are just the first part of the reply. That is the whole pattern, and it is the building block for the rest of this family.
+
+Wei et al. introduced the idea in 2022 with worked examples (few-shot). Kojima et al. showed the same year that the one line "Let's think step by step" gets much of the gain without any examples. Reasoning models now do this natively: they write hidden thinking before answering, which is the same mechanism trained in rather than prompted.
+
+## When to use
+
+- The task needs several steps of arithmetic, logic or symbol manipulation, and the model skips or fumbles them when it answers directly.
+- You want to see why a model reached an answer, for debugging or review.
+- You are composing a larger pattern: voting over several reasoning paths, or a decomposition such as least-to-most.
+
+## When to avoid
+
+- The question is a single lookup or a classification. Extra steps add tokens and latency and do not help.
+- Latency is critical. The reasoning can be many times longer than the answer.
+- You are already using a reasoning model. It thinks before it answers anyway, and asking it to write its steps again mostly duplicates that work.
+
+## Trade-offs
+
+You pay for the reasoning tokens on every call, and the answer arrives later because it comes last. In exchange you get a large accuracy gain on multi-step problems, a trace you can read, and a simple design: one call, no orchestration. The trace is not a guaranteed explanation, though. The model can write plausible steps that are not what actually drove its answer.
+
+## Failure modes
+
+- **Unparseable output:** the reply never reaches an "Answer:" line, or is cut off by the token limit. Leave room for the reasoning, take the answer from the last answer line only, and fall back to an extraction call.
+- **Confident wrong steps:** one bad step carries through to the end, and the neat working makes the error look trustworthy. Check important results, or sample several chains and vote.
+- **Arithmetic slips inside the steps:** writing the steps down does not make the model a calculator. If the numbers matter, let code do them, as in program-aided reasoning.
+- **Leaking the working:** the steps may contain things the end user should not see. Show only the answer unless the product needs the working.

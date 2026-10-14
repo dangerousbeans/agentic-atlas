@@ -1,0 +1,173 @@
+slug: chain-of-thought
+name: Chain-of-Thought
+family: reasoning-prompting
+aliases: [CoT, Step-by-step reasoning, Zero-shot CoT, Extended thinking]
+summary: The model writes out its intermediate reasoning steps before the final answer, all inside one call.
+badges: { autonomy: low, cost: low, latency: medium }
+sources:
+  - title: "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models (Wei et al., 2022)"
+    url: https://arxiv.org/abs/2201.11903
+  - title: "Large Language Models are Zero-Shot Reasoners (Kojima et al., 2022)"
+    url: https://arxiv.org/abs/2205.11916
+related:
+  composesWith: [voting, least-to-most, self-ask]
+  confusedWith:
+    - { slug: prompt-chaining, difference: "Prompt chaining makes several model calls, with your code between them; chain-of-thought is one call whose output contains the steps." }
+    - { slug: tree-of-thoughts, difference: "Tree of Thoughts branches, scores and backtracks over many calls; chain-of-thought follows one line of reasoning in one call." }
+origin:
+  by: Jason Wei et al.
+  org: Google Research, Brain Team
+  year: 2022
+  url: https://arxiv.org/abs/2201.11903
+  kind: introduced
+  note: "Wei et al. prompted with worked examples (few-shot). Later in 2022, Kojima et al. showed that the single line 'Let's think step by step' gets much of the same gain with no examples (zero-shot CoT)."
+build:
+  goal: "Answer a multi-step question with one model call whose output shows the working first and then a single, machine-readable final answer line."
+  steps:
+    - "Keep 2 to 4 worked examples for the task type, each with a question, numbered reasoning steps and a final line that starts with 'Answer:'."
+    - "Fill in the {{prompt:cot}} with the examples and the user's question, and call the model once."
+    - "Split the reply at the last line that starts with 'Answer:'. Everything before it is the reasoning; the rest of that line is the answer."
+    - "Return the answer to the caller and keep the reasoning for logs and debugging, not for the end user, unless the product needs to show its working."
+    - "If no 'Answer:' line is found, call the model once more with the reply and the {{prompt:extract}} to pull the answer out."
+  stop: "Stop after the one reasoning call, or after the single extraction call when the answer line is missing. If extraction also fails, return no answer with a status saying the reply could not be parsed."
+  requirements:
+    - "Keep the worked examples in a data file, not inline in code, so they can be swapped per task type."
+    - "Parse the answer from the last 'Answer:' line only, so a step that mentions the word earlier is never taken as the answer."
+    - "Leave room in the output token limit for the reasoning, and log when a reply is cut off before its answer line."
+    - "Make the examples optional: with none, the prompt falls back to the zero-shot line 'Let's think step by step.'"
+    - "Add a test with a stub LLM that returns three reasoning lines then 'Answer: $27'; assert exactly one model call and that the returned answer is exactly '$27'."
+prompts:
+  - id: cot
+    title: Step-by-step prompt
+    lang: markdown
+    source: |
+      Solve the problem. Work through it step by step, one short numbered
+      step per line, then give the result on a final line that starts with "Answer:".
+
+      {{#each examples}}
+      Question: {{question}}
+      {{reasoning}}
+      Answer: {{answer}}
+
+      {{/each}}
+      Question: {{question}}
+      {{#unless examples}}Let's think step by step.{{/unless}}
+  - id: extract
+    title: Answer extraction prompt
+    lang: markdown
+    source: |
+      Below is a worked solution that does not end with a clear answer line.
+
+      <question>{{question}}</question>
+      <solution>{{reasoning}}</solution>
+
+      Reply with exactly one line: "Answer: " followed by the final answer
+      the solution reaches. If it reaches none, reply "Answer: unknown".
+diagram:
+  groups:
+    - { id: one-call, label: One model call, children: [s1, s2, s3] }
+  nodes:
+    - id: question
+      kind: io
+      label: Question
+      description: "A multi-step word problem: '3 muffins cost $5. What do 12 muffins and 2 coffees at $3.50 cost?'"
+    - id: model
+      kind: llm
+      label: Model
+      description: "One model, prompted to show its working. Everything to its right is text it writes in the same reply."
+    - id: s1
+      kind: llm
+      label: Step 1
+      sublabel: 12 ÷ 3 = 4 packs
+      description: "The first reasoning step the model writes: how many packs of three make up twelve muffins."
+    - id: s2
+      kind: llm
+      label: Step 2
+      sublabel: 4 × $5 = $20
+      description: "The second step, which uses the first step's result: the cost of the four packs of muffins."
+    - id: s3
+      kind: llm
+      label: Step 3
+      sublabel: 2 × $3.50 = $7
+      description: "The third step prices the coffees; with all the parts written down, the total is a simple sum."
+    - id: answer
+      kind: io
+      label: Answer
+      description: "The final line of the same reply, 'Answer: $27', which your code parses out."
+  edges:
+    - id: ask
+      from: question
+      to: model
+      description: "The question goes to the model with worked examples, or with the line 'Let's think step by step.'"
+      example: "Q: 3 muffins cost $5. What do 12 muffins and 2 coffees at $3.50 cost? Let's think step by step."
+    - id: think
+      from: model
+      to: s1
+      label: step by step
+      description: "Instead of answering at once, the model starts writing numbered steps."
+      example: "1. 12 muffins is 12 ÷ 3 = 4 packs of three."
+    - id: then12
+      from: s1
+      to: s2
+      description: "Each step is written after the one before, so it can use that step's result."
+      example: "2. 4 packs × $5 = $20 for the muffins."
+    - id: then23
+      from: s2
+      to: s3
+      description: "The model moves on to the next part of the question, keeping the running result in view."
+      example: "3. 2 coffees × $3.50 = $7."
+    - id: conclude
+      from: s3
+      to: answer
+      description: "The reply ends with one answer line, built from the steps above it."
+      example: "4. $20 + $7 = $27. Answer: $27"
+    - id: blurt
+      from: model
+      to: answer
+      style: dashed
+      label: no steps
+      description: "Without the prompt to show its working, the model jumps straight to an answer and can skip a step."
+      example: "Answer: $25"
+  scenarios:
+    - id: step-by-step
+      label: Step by step
+      steps:
+        - id: ask
+          caption: The question arrives with the instruction to show the working.
+          duration: 1200
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: steps
+          caption: Inside one reply, the model writes each step in turn, and each step uses the result of the one before.
+          duration: 4200
+          events:
+            - { type: activate, node: model, status: thinking, at: [0, 0.2] }
+            - { type: branch, node: model, taken: think, notTaken: [blurt], at: [0.15, 0.25] }
+            - { type: send, edge: think, token: { kind: tokens, label: 4 packs }, at: [0.2, 0.4] }
+            - { type: activate, node: s1, status: thinking, at: [0.35, 0.5] }
+            - { type: send, edge: then12, token: { kind: tokens, label: "$20" }, at: [0.5, 0.65] }
+            - { type: activate, node: s2, status: thinking, at: [0.6, 0.72] }
+            - { type: send, edge: then23, token: { kind: tokens, label: "$7" }, at: [0.72, 0.87] }
+            - { type: activate, node: s3, status: thinking, at: [0.85, 1] }
+        - id: answer
+          caption: "The last line adds the parts up; your code parses 'Answer: $27' from the end of the reply."
+          duration: 1800
+          events:
+            - { type: send, edge: conclude, token: { kind: result, label: "$27" }, at: [0, 0.7] }
+            - { type: activate, node: answer, status: done, at: [0.6, 1] }
+    - id: no-cot
+      label: Without the steps
+      steps:
+        - id: ask
+          caption: The same question arrives, but the prompt asks only for the answer.
+          duration: 1200
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: blurt
+          caption: "With no working written down, the model answers in one jump and slips on the sum, saying $25 instead of $27."
+          duration: 2600
+          events:
+            - { type: activate, node: model, status: thinking, at: [0, 0.3] }
+            - { type: branch, node: model, taken: blurt, notTaken: [think], at: [0.25, 0.4] }
+            - { type: send, edge: blurt, token: { kind: result, label: "$25" }, at: [0.4, 0.8] }
+            - { type: activate, node: answer, status: error, at: [0.75, 1] }
