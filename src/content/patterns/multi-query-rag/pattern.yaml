@@ -1,0 +1,346 @@
+slug: multi-query-rag
+name: Multi-Query RAG
+family: knowledge-memory
+aliases: [RAG-Fusion, Query expansion, Query decomposition, Sub-question retrieval]
+summary: Rewrite one question into several queries, retrieve for each in parallel, then fuse the ranked lists before generating.
+badges: { autonomy: low, cost: medium, latency: medium }
+sources:
+  - title: "Forget RAG, the Future is RAG-Fusion (Raudaschl, 2023)"
+    url: https://adrianraudaschl.com/blog/forget-rag-the-future-is-rag-fusion/
+  - title: "rag-fusion reference implementation (Raudaschl)"
+    url: https://github.com/Raudaschl/rag-fusion
+  - title: "RAG-Fusion: a New Take on Retrieval-Augmented Generation (Rackauckas, 2024)"
+    url: https://arxiv.org/abs/2402.03367
+  - title: "Query Rewriting for Retrieval-Augmented Large Language Models (Ma et al., 2023)"
+    url: https://arxiv.org/abs/2305.14283
+  - title: "Take a Step Back: Evoking Reasoning via Abstraction in Large Language Models (Zheng et al., 2023)"
+    url: https://arxiv.org/abs/2310.06117
+  - title: Sub Question Query Engine (LlamaIndex documentation)
+    url: https://developers.llamaindex.ai/python/examples/query_engine/sub_question_query_engine/
+related:
+  composesWith: [retrieve-and-rerank, corrective-rag]
+  confusedWith:
+    - slug: agentic-rag
+      difference: "Multi-query RAG is a fixed, one-shot fan-out: it always searches, with every query, once. Agentic RAG decides whether, where and how often to search, in a loop."
+    - slug: sectioning
+      difference: "Sectioning splits a task into different subtasks. Multi-query RAG fans out over different wordings of one question, all aimed at the same answer."
+    - slug: hyde
+      difference: "HyDE writes one answer-shaped passage and searches with its embedding. Multi-query RAG writes several queries and fuses their ranked lists."
+origin:
+  by: Adrian Raudaschl
+  org: Independent (blog post, first published on Medium)
+  year: 2023
+  url: https://adrianraudaschl.com/blog/forget-rag-the-future-is-rag-fusion/
+  kind: popularized
+  uncertain: true
+  note: "Raudaschl named and popularized RAG-Fusion in October 2023. Generating several queries and fusing their ranks predates it in information retrieval (query expansion; Reciprocal Rank Fusion, Cormack et al., 2009), and LangChain's MultiQueryRetriever appeared around the same time, so there is no single inventor."
+build:
+  goal: "Answer a question from a document index by searching with several model-written rewordings of it in parallel, fusing the ranked results with Reciprocal Rank Fusion, and answering from the fused top documents."
+  steps:
+    - "Call the rewriter model with the {{prompt:rewrite}}, filling in the question. Parse its reply into a list of N queries (default 3), drop any identical to the original, and add the original question as one more query."
+    - "Run every query against the retriever in parallel, keeping each ranked list of document IDs (default top 10 per query)."
+    - "Fuse the lists with Reciprocal Rank Fusion: each document scores the sum of 1 / (60 + rank) over every list it appears in, with ranks starting at 1."
+    - "Sort by fused score, drop duplicates, and keep the top k documents (default 5)."
+    - "Call the generator model with the {{prompt:answer}}, passing the original question, never a rewrite, and the k fused documents, and return its answer."
+  stop: "Stop after one fan-out, one fusion and one generation. If every retrieval returns nothing, say the index has no answer instead of generating."
+  requirements:
+    - "Make the number of rewrites, the per-query depth, k and the RRF constant (default 60) configurable."
+    - "Run the retrievals concurrently with a per-query timeout; a failed or timed-out query drops out of the fusion instead of failing the request."
+    - "If the rewriter's reply cannot be parsed, fall back to searching with the original question alone."
+    - "Log each query with its ranked IDs and the fused scores, so a surprising answer can be traced to the query that pulled its document in."
+    - "Add a test with a stub LLM returning 3 queries and a fake retriever keyed by query: D7 ranks 2, 1 and 3 in their lists, and the original question gets an empty list. Assert 4 retrieval calls and D7 first with score exactly 1/62 + 1/61 + 1/63."
+defaultVariantName: RAG-Fusion
+prompts:
+  - id: rewrite
+    title: Query rewriter prompt
+    lang: markdown
+    source: |
+      You write search queries for a document index.
+
+      <question>{{question}}</question>
+
+      Write {{n}} different search queries that together cover what someone
+      would need to read to answer the question. Vary the wording and the angle:
+      use the terms a document on the subject would use, not the question's own.
+      Return one query per line, with no numbering and no commentary.
+  - id: answer
+    title: Grounded answer prompt
+    lang: markdown
+    source: |
+      Answer the question using only the documents below. They were retrieved
+      with several rewordings of the question, so some may cover only part of it.
+
+      <question>{{question}}</question>
+      <documents>{{documents}}</documents>
+
+      Cite the document ID after each claim, like [D7]. If a part of the
+      question is not covered by the documents, say which part.
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Question, description: "A question with several facets, such as 'Is a Model Y cheaper to run than a Camry?'." }
+    - { id: rewriter, kind: llm, label: Rewriter, description: "Rewrites the one question into three search queries, each worded the way a relevant document would be." }
+    - { id: r1, kind: memory, label: Search 1, sublabel: EV cost per mile, description: "The retriever, run with the first query; it returns its own ranked list of document IDs." }
+    - { id: r2, kind: memory, label: Search 2, sublabel: Camry fuel economy, description: "The same retriever, run in parallel with the second query, returning a second ranked list." }
+    - { id: r3, kind: memory, label: Search 3, sublabel: insurance + upkeep, description: "The same retriever with the third query, returning a third ranked list." }
+    - { id: fuse, kind: aggregator, label: Fuse, sublabel: Reciprocal Rank Fusion, description: "Merges the ranked lists, one per rewrite plus one for the original question: each document scores the sum of 1/(60 + rank) over every list it appears in." }
+    - { id: generator, kind: llm, label: Generator, description: "Answers the original question from the top fused documents, citing each one." }
+    - { id: out, kind: io, label: Answer, description: "An answer covering every facet the queries reached, with citations." }
+  edges:
+    - { id: ask, from: user, to: rewriter, description: "The question goes to the rewriter before any search runs.", example: "Is a Model Y cheaper to run than a Camry?" }
+    - { id: q1, from: rewriter, to: r1, description: "The first rewritten query. The original question is searched too, as a fourth query, so a drifting rewrite cannot crowd it out.", example: "Tesla Model Y electricity cost per mile at home charging rates" }
+    - { id: q2, from: rewriter, to: r2, description: "The second rewritten query, searched at the same time.", example: "Toyota Camry 2.5L real-world fuel economy mpg" }
+    - { id: q3, from: rewriter, to: r3, description: "The third rewritten query, for a facet the question only implied.", example: "EV versus petrol car insurance and maintenance costs per year" }
+    - { id: l1, from: r1, to: fuse, description: "The first ranked list of document IDs.", example: "1. D3 (EV charging costs)  2. D7 (5-year cost of ownership)  3. D1" }
+    - { id: l2, from: r2, to: fuse, description: "The second ranked list.", example: "1. D7 (5-year cost of ownership)  2. D9 (Camry mpg test)  3. D4" }
+    - { id: l3, from: r3, to: fuse, description: "The third ranked list.", example: "1. D5 (insurance by drivetrain)  2. D2  3. D7 (5-year cost of ownership)" }
+    - { id: fused, from: fuse, to: generator, label: top 5, description: "The fused top documents. One that appears in every list rises above any single list's winner.", example: "D7 0.0484, D3 0.0164, D5 0.0164, D9 0.0161, D2 0.0161" }
+    - { id: question, from: user, to: generator, style: dashed, description: "The original question goes to the generator, so it answers what was asked rather than a rewrite.", example: "Question: Is a Model Y cheaper to run than a Camry?" }
+    - { id: answer, from: generator, to: out, description: "The answer, citing the fused documents.", example: "Usually yes: about 4 cents a mile to charge at home [D3] against about 11 for fuel [D9], though insurance runs higher [D5]. Over 5 years the Model Y costs less to run [D7]." }
+  scenarios:
+    - id: fusion
+      label: Three queries, one fused list
+      steps:
+        - id: ask
+          caption: The question arrives; worded as it is, a single search would mostly find EV pages.
+          duration: 1400
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: fan-out
+          caption: The rewriter writes three queries, one per facet, and all three searches run at once.
+          duration: 3000
+          events:
+            - { type: activate, node: rewriter, status: thinking, at: [0, 0.4] }
+            - { type: send, edge: q1, token: { kind: prompt, label: query 1 }, at: [0.4, 0.75] }
+            - { type: send, edge: q2, token: { kind: prompt, label: query 2 }, at: [0.4, 0.75] }
+            - { type: send, edge: q3, token: { kind: prompt, label: query 3 }, at: [0.4, 0.75] }
+            - { type: read, node: r1, at: [0.75, 1] }
+            - { type: read, node: r2, at: [0.75, 1] }
+            - { type: read, node: r3, at: [0.75, 1] }
+        - id: fuse
+          caption: Three ranked lists reach the fuser. D7 tops only one list, but appears in all three, so it rises to first.
+          duration: 3200
+          events:
+            - { type: send, edge: l1, token: { kind: result, label: list 1 }, at: [0, 0.4] }
+            - { type: send, edge: l2, token: { kind: result, label: list 2 }, at: [0, 0.4] }
+            - { type: send, edge: l3, token: { kind: result, label: list 3 }, at: [0, 0.4] }
+            - { type: activate, node: fuse, status: thinking, at: [0.4, 1] }
+        - id: answer
+          caption: The top five fused documents and the original question go to the generator, which answers every facet.
+          duration: 3000
+          events:
+            - { type: send, edge: fused, token: { kind: result, label: top 5 }, at: [0, 0.35] }
+            - { type: send, edge: question, token: { kind: prompt, label: question }, at: [0, 0.35] }
+            - { type: activate, node: generator, status: thinking, at: [0.35, 0.7] }
+            - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.7, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
+variants:
+  - id: sub-question
+    name: Sub-questions
+    summary: "Split the question into sub-questions, retrieve and answer each one separately, then combine the sub-answers into the final answer."
+    origin:
+      by: Simon Suo (LlamaIndex)
+      org: LlamaIndex
+      year: 2023
+      url: https://developers.llamaindex.ai/python/examples/query_engine/sub_question_query_engine/
+      kind: popularized
+      uncertain: true
+      note: "LlamaIndex shipped its SubQuestionQueryEngine in May 2023. Decomposing a question into sub-questions predates it in prompting research (least-to-most, Zhou et al. 2022; Self-Ask, Press et al. 2022); LlamaIndex packaged it for retrieval."
+    build:
+      goal: "Answer a multi-part question by splitting it into independent sub-questions, answering each from its own retrieval, and combining the sub-answers into one final answer."
+      steps:
+        - "Call the decomposer model with the {{prompt:decompose}}, filling in the question. Parse its reply into a list of 2 to 4 independent sub-questions."
+        - "For each sub-question, in parallel, retrieve the top k documents (default 4)."
+        - "For each sub-question, call the answer model with the {{prompt:sub-answer}}, passing that sub-question and only its own documents."
+        - "Call the combiner model with the {{prompt:combine}}, passing the original question and every sub-question with its sub-answer."
+        - "Return the combined answer, with the sub-answers attached so a reader can check each part."
+      stop: "Stop once the combiner has answered. A sub-question with no documents gets the sub-answer 'not found', and the combiner must say which part it could not answer."
+      requirements:
+        - "Cap the sub-questions (default 4); if the decomposer returns more, keep the first four and log the rest."
+        - "Run the retrieve-and-answer branches concurrently, each with its own timeout."
+        - "Give each sub-answer call only its own documents, so one branch's sources cannot leak into another's answer."
+        - "Reject sub-questions that depend on another's answer (that needs a loop, as in agentic RAG). If the decomposer's reply cannot be parsed or yields fewer than 2 sub-questions, answer the original question with a single retrieval."
+        - "Add a test with a stub LLM that splits a question into 3 sub-questions; assert 3 retrievals, 3 sub-answer calls each holding only its own documents, and one combiner call holding all 3 sub-answers."
+    prompts:
+      - id: decompose
+        title: Decomposer prompt
+        lang: markdown
+        source: |
+          Break the question into the smallest set of independent sub-questions
+          that together answer it.
+
+          <question>{{question}}</question>
+
+          Each sub-question must make sense on its own and must not depend on the
+          answer to another one. Write 2 to 4 sub-questions, one per line, with no
+          numbering and no commentary.
+      - id: sub-answer
+        title: Sub-answer prompt
+        lang: markdown
+        source: |
+          Answer the sub-question using only the documents below.
+
+          <sub_question>{{sub_question}}</sub_question>
+          <documents>{{documents}}</documents>
+
+          Give a short, factual answer and cite the document ID after each claim.
+          If the documents do not answer it, reply exactly: not found
+      - id: combine
+        title: Combiner prompt
+        lang: markdown
+        source: |
+          Answer the original question from the sub-answers below.
+
+          <question>{{question}}</question>
+          <sub_answers>{{sub_questions_and_answers}}</sub_answers>
+
+          Keep every citation. If a sub-answer is "not found", say which part of
+          the question could not be answered.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, description: "A question with several parts, such as 'Is a Model Y cheaper to run than a Camry?'." }
+        - { id: decomposer, kind: llm, label: Decomposer, description: "Splits the question into independent sub-questions, each answerable on its own." }
+        - { id: retriever, kind: memory, label: Retriever, sublabel: one search per sub-q, description: "Searches the index once per sub-question and hands each branch its own documents." }
+        - { id: a1, kind: llm, label: Answer 1, sublabel: EV cost per mile, description: "Answers the first sub-question from its own documents only." }
+        - { id: a2, kind: llm, label: Answer 2, sublabel: Camry fuel cost, description: "Answers the second sub-question from its own documents only." }
+        - { id: a3, kind: llm, label: Answer 3, sublabel: insurance + upkeep, description: "Answers the third sub-question from its own documents only." }
+        - { id: combiner, kind: llm, label: Combiner, description: "Writes the final answer from the three sub-answers, keeping their citations." }
+        - { id: out, kind: io, label: Answer, description: "The combined answer, with each part traceable to its sub-answer." }
+      edges:
+        - { id: ask, from: user, to: decomposer, description: "The question goes to the decomposer first.", example: "Is a Model Y cheaper to run than a Camry?" }
+        - { id: subqs, from: decomposer, to: retriever, label: 3 sub-qs, description: "The independent sub-questions, each searched separately.", example: "1. What does a Model Y cost per mile to charge? 2. What does a Camry cost per mile in fuel? 3. How do their insurance and maintenance costs compare?" }
+        - { id: c1, from: retriever, to: a1, description: "The documents found for the first sub-question, and only those.", example: "[D3] EV charging costs at home and on the road; [D7] 5-year cost of ownership" }
+        - { id: c2, from: retriever, to: a2, description: "The documents found for the second sub-question.", example: "[D9] Camry real-world mpg test; [D4] average US fuel prices 2026" }
+        - { id: c3, from: retriever, to: a3, description: "The documents found for the third sub-question.", example: "[D5] insurance premiums by drivetrain; [D2] EV maintenance schedules" }
+        - { id: s1, from: a1, to: combiner, description: "The first sub-answer, with its citations.", example: "About 4 cents a mile charging at home [D3]." }
+        - { id: s2, from: a2, to: combiner, description: "The second sub-answer.", example: "About 11 cents a mile at 32 mpg and $3.50 a gallon [D9][D4]." }
+        - { id: s3, from: a3, to: combiner, description: "The third sub-answer.", example: "Insurance about 15% higher for the Model Y [D5]; maintenance lower, with no oil changes [D2]." }
+        - { id: question, from: user, to: combiner, style: dashed, description: "The original question goes to the combiner, so the final answer addresses it as asked.", example: "Question: Is a Model Y cheaper to run than a Camry?" }
+        - { id: answer, from: combiner, to: out, description: "The final answer, built from the three sub-answers.", example: "Usually yes. Energy costs about 4 cents a mile against 11 [D3][D9], which outweighs the higher insurance [D5]." }
+      scenarios:
+        - id: split-and-combine
+          label: Split, answer each, combine
+          steps:
+            - id: ask
+              caption: The question arrives at the decomposer.
+              duration: 1400
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question } }
+            - id: split
+              caption: The decomposer writes three independent sub-questions, and each gets its own search.
+              duration: 2600
+              events:
+                - { type: activate, node: decomposer, status: thinking, at: [0, 0.45] }
+                - { type: send, edge: subqs, token: { kind: prompt, label: 3 sub-qs }, at: [0.45, 0.8] }
+                - { type: read, node: retriever, at: [0.8, 1] }
+            - id: branches
+              caption: Each branch answers its sub-question from its own documents only.
+              duration: 3200
+              events:
+                - { type: send, edge: c1, token: { kind: result, label: docs }, at: [0, 0.35] }
+                - { type: send, edge: c2, token: { kind: result, label: docs }, at: [0, 0.35] }
+                - { type: send, edge: c3, token: { kind: result, label: docs }, at: [0, 0.35] }
+                - { type: activate, node: a1, status: thinking, at: [0.35, 0.75] }
+                - { type: activate, node: a2, status: thinking, at: [0.35, 0.75] }
+                - { type: activate, node: a3, status: thinking, at: [0.35, 0.75] }
+            - id: combine
+              caption: The combiner merges the three sub-answers into one answer to the original question.
+              duration: 3200
+              events:
+                - { type: send, edge: s1, token: { kind: result, label: ans 1 }, at: [0, 0.35] }
+                - { type: send, edge: s2, token: { kind: result, label: ans 2 }, at: [0, 0.35] }
+                - { type: send, edge: s3, token: { kind: result, label: ans 3 }, at: [0, 0.35] }
+                - { type: send, edge: question, token: { kind: prompt, label: question }, at: [0, 0.35] }
+                - { type: activate, node: combiner, status: thinking, at: [0.35, 0.7] }
+                - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.7, 0.95] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
+  - id: step-back
+    name: Step-back query
+    summary: "Search with an abstracted, more general version of the question as well as the question itself, so the answer gets background principles as well as specifics."
+    origin:
+      by: Huaixiu Steven Zheng et al.
+      org: Google DeepMind
+      year: 2023
+      url: https://arxiv.org/abs/2310.06117
+      kind: introduced
+      note: "Step-back prompting first asks the model a higher-level question about the concepts behind the original, and retrieves for it alongside the original (ICLR 2024)."
+    build:
+      goal: "Answer a specific question by retrieving for it and for a more general step-back question in parallel, then answering from both sets of documents."
+      steps:
+        - "Call the step-back model with the {{prompt:step-back}}, filling in the question. It returns one more general question about the principles or background behind it."
+        - "Retrieve the top k documents (default 4) for the original question and, in parallel, for the step-back question."
+        - "Call the generator model with the {{prompt:answer}}, passing the original question, the step-back question and the two document sets, labelled separately."
+        - "Return the answer."
+      stop: "Stop after one step-back question, two retrievals and one generation. If both retrievals come back empty, say the index has no answer."
+      requirements:
+        - "Keep the original-question retrieval even when the step-back retrieval succeeds; the specifics come from it."
+        - "Label the two document sets separately in the generator prompt, so the model knows which documents are background."
+        - "If the step-back call fails, fall back to the original retrieval alone instead of failing the request."
+        - "Log the step-back question next to both result lists."
+        - "Add a test with a stub LLM returning a fixed step-back question and a fake retriever; assert the retriever was called twice, once with each question, and the generator prompt holds the step-back documents inside <background_documents> and the original-question documents inside <specific_documents>."
+    prompts:
+      - id: step-back
+        title: Step-back prompt
+        lang: markdown
+        source: |
+          You are an expert at stepping back from a specific question to the
+          general principle or background it depends on.
+
+          <question>{{question}}</question>
+
+          Write one more general question whose answer would give the background
+          needed to answer the original. Return only that question.
+      - id: answer
+        title: Answer with background prompt
+        lang: markdown
+        source: |
+          Answer the question. Use the background documents for principles and
+          the specific documents for facts.
+
+          <question>{{question}}</question>
+          <step_back_question>{{step_back_question}}</step_back_question>
+          <background_documents>{{background_docs}}</background_documents>
+          <specific_documents>{{specific_docs}}</specific_documents>
+
+          Cite the document ID after each claim.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, description: "A specific question, such as 'Is a Model Y cheaper to run than a Camry?'." }
+        - { id: stepback, kind: llm, label: Step-back, description: "Writes one more general question about the principles behind the original." }
+        - { id: specific, kind: memory, label: Specific search, description: "The retriever, run with the original question, finding documents about these two cars." }
+        - { id: general, kind: memory, label: General search, description: "The same retriever, run with the step-back question, finding background on what drives running costs." }
+        - { id: generator, kind: llm, label: Generator, description: "Answers the original question, using the background documents for principles and the specific ones for facts." }
+        - { id: out, kind: io, label: Answer, description: "An answer that explains why as well as how much, with citations." }
+      edges:
+        - { id: ask, from: user, to: stepback, description: "The question goes to the step-back model.", example: "Is a Model Y cheaper to run than a Camry?" }
+        - { id: direct, from: user, to: specific, description: "The original question is searched as it stands, in parallel with the step-back.", example: "Is a Model Y cheaper to run than a Camry?" }
+        - { id: abstract, from: stepback, to: general, label: step-back q, description: "The more general question, searched for background.", example: "What determines the running cost of an electric car compared with a petrol car?" }
+        - { id: specifics, from: specific, to: generator, description: "Documents about the two cars themselves.", example: "[D7] Model Y vs Camry: 5-year cost of ownership; [D9] Camry real-world mpg test" }
+        - { id: background, from: general, to: generator, description: "Background documents about what drives running costs.", example: "[B2] Electricity vs petrol price per mile explained; [B5] Why EV insurance costs more" }
+        - { id: answer, from: generator, to: out, description: "The answer, combining principles and specifics.", example: "Usually yes. Electricity costs less per mile than petrol [B2], so the Model Y saves about 7 cents a mile [D7], partly offset by higher insurance [B5]." }
+      scenarios:
+        - id: step-back-search
+          label: Specific and general searches
+          steps:
+            - id: ask
+              caption: The question is searched as it stands and also goes to the step-back model.
+              duration: 2400
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.5] }
+                - { type: send, edge: direct, token: { kind: prompt, label: question }, at: [0, 0.5] }
+                - { type: read, node: specific, at: [0.5, 1] }
+                - { type: activate, node: stepback, status: thinking, at: [0.5, 1] }
+            - id: abstract
+              caption: The step-back model asks what drives running costs in general, and that question is searched too.
+              duration: 2400
+              events:
+                - { type: send, edge: abstract, token: { kind: prompt, label: step-back }, at: [0, 0.5] }
+                - { type: read, node: general, at: [0.5, 1] }
+            - id: answer
+              caption: The generator answers from both document sets, principles from one and figures from the other.
+              duration: 3200
+              events:
+                - { type: send, edge: specifics, token: { kind: result, label: specifics }, at: [0, 0.35] }
+                - { type: send, edge: background, token: { kind: result, label: background }, at: [0, 0.35] }
+                - { type: activate, node: generator, status: thinking, at: [0.35, 0.7] }
+                - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.7, 0.95] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }

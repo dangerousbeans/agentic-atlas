@@ -1,0 +1,36 @@
+## Problem
+
+Some questions are about the whole corpus, not any part of it. Ask "across 1,000 podcast transcripts, what are the main themes about tech regulation?" and chunk retrieval returns the ten chunks most similar to the question, which are ten passages that happen to use the words "tech regulation". The answer covers whatever those ten mention and misses every theme that never used the phrase. The question needs a summary of everything, and no top-k can hold everything.
+
+## How it works
+
+GraphRAG does most of its work before any question arrives.
+
+At index time, an <NodeRef id="extractor">extractor</NodeRef> model reads every chunk of the <NodeRef id="docs">corpus</NodeRef> and pulls out entities and the relationships between them: the FTC, the Digital Markets Act, and the fact that one cited the other as precedent. These merge into an <NodeRef id="graph">entity graph</NodeRef>, and a <NodeRef id="clusterer">clusterer</NodeRef> running a community-detection algorithm (Leiden) splits it into communities of closely linked entities, at several levels of detail. A <NodeRef id="summarizer">summarizer</NodeRef> writes a report for each community, so "Antitrust enforcement" gets a page saying what ties the FTC, the DOJ and merger review together. The <NodeRef id="reports">community reports</NodeRef> are stored.
+
+At query time, a global <NodeRef id="user">question</NodeRef> goes to the reports, not to the raw chunks. They are shuffled into batches, and the <NodeRef id="map">map</NodeRef> step asks the question of each batch in parallel; every call returns partial-answer points, each scored for helpfulness. The <NodeRef id="reducer">reducer</NodeRef> drops the zero-scored points, keeps the best, and writes one <NodeRef id="out">answer</NodeRef>. Because every community was summarized, every theme had a chance to be seen.
+
+The **Local search** tab shows the other query mode, for questions about specific things ("what has the FTC said about the DMA?"). It matches the entities the question names and answers from their neighbourhood in the graph: related entities, relationships, community reports and the original chunks.
+
+## When to use
+
+- People ask "sensemaking" questions about a whole corpus: main themes, recurring arguments, who is connected to whom.
+- The corpus is fairly stable, so the indexing cost is paid rarely.
+- Answers need to span many documents that never mention each other directly.
+
+## When to avoid
+
+- Questions are pinpoint lookups. Plain retrieval, or retrieve-and-rerank, is far cheaper and just as good.
+- The corpus changes constantly; re-extracting and re-summarizing is expensive.
+- The indexing budget is small. Every chunk costs an extraction call, and every community a summary call.
+
+## Trade-offs
+
+GraphRAG moves cost from query time to index time, and the index cost is large: model calls over the whole corpus, before the first question. A global question is also expensive, with one map call per batch of reports. In return, it can answer questions that no amount of chunk retrieval can, and the community hierarchy lets you trade detail for cost by choosing which level to map over.
+
+## Failure modes
+
+- **Entity sprawl:** the same entity is extracted under several names ("FTC", "Federal Trade Commission") and the graph fragments. Ask for canonical names and merge aliases.
+- **Stale index:** new documents are not in the graph, so global answers silently ignore them. Re-index on a schedule and show the index date.
+- **Generic answers:** summaries of summaries lose the specifics. Keep chunk links so claims can be traced, and use local search for detail.
+- **Map noise:** irrelevant batches still return low-value points that crowd the reduce. Drop zero-scored points and cap the reduce budget.

@@ -1,0 +1,36 @@
+## Problem
+
+Questions and the documents that answer them are written differently. A user types "why does my sourdough collapse in the oven?", while the article that answers it talks about overproofing, gluten structure and the poke test. Embed the short question, and its vector can sit far from the vector of the article it needs. Dense retrievers close that gap with training on labelled query-document pairs, but a new corpus rarely has any.
+
+## How it works
+
+HyDE answers first and searches second. The <NodeRef id="user">question</NodeRef> goes to a <NodeRef id="writer">writer</NodeRef> model, which drafts a short passage as if it were a document that answers the question: "Sourdough that collapses in the oven is usually overproofed. Long fermentation weakens the gluten network..." The passage may get details wrong. What matters is that it uses the vocabulary and shape of a real answer.
+
+The <NodeRef id="embed">embedder</NodeRef> turns that passage into a vector, and the <NodeRef id="vectordb">vector index</NodeRef> returns the real documents nearest to it. An answer-shaped vector lands among answer-shaped documents, so the guide on overproofing comes back even though the question never used the word.
+
+Then the hypothetical passage is thrown away. The <NodeRef id="generator">generator</NodeRef> gets the original question and the real documents only, and writes the <NodeRef id="out">answer</NodeRef> with citations. The fake passage steered the search; it is never evidence. The second scenario shows why this matters: the writer guesses the wrong baking temperature, the vector still finds the baking guides, and the user gets the guides' figures.
+
+The paper also samples several hypothetical passages and averages their vectors with the question's own vector, which smooths out any single odd guess.
+
+## When to use
+
+- Queries are short or worded very differently from the documents.
+- You have no labelled data to fine-tune the retriever, as with a new corpus or a new language.
+- The model knows the domain well enough to write a plausible answer, even if its details are unreliable.
+
+## When to avoid
+
+- The model knows nothing about the domain. Its passage points the search in the wrong direction.
+- Exact matches matter, such as part numbers, error codes or names. Use keyword search or hybrid search instead (see retrieve-and-rerank).
+- Latency is tight. The writer call runs before retrieval can start.
+
+## Trade-offs
+
+HyDE adds one generation before every search: a short passage, so the cost is small, but it sits on the critical path. In return it lifts zero-shot retrieval without training anything, and you can still use a plain off-the-shelf embedding model. It also works as a drop-in step in front of an existing RAG pipeline, since it only changes the query vector.
+
+## Failure modes
+
+- **Confident wrong direction:** the passage commits to a wrong premise and retrieves documents about that. Average several passages with the question's vector.
+- **Leaked hallucination:** the hypothetical passage reaches the generator and its invented facts end up in the answer. Never pass it on.
+- **Encoder mismatch:** the passage is embedded with a different model from the index, and the nearest neighbours are noise. Use one embedding model throughout.
+- **Lost specifics:** the passage paraphrases away an ID or a rare term the user typed. Combine HyDE with a keyword search for such queries.

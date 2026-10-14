@@ -1,0 +1,246 @@
+slug: graph-rag
+name: GraphRAG
+family: knowledge-memory
+aliases: [Graph RAG, Knowledge-graph RAG, Community-summary RAG]
+summary: Index a corpus as an LLM-built entity graph with pre-written community summaries, then map-reduce over those summaries to answer whole-corpus questions.
+badges: { autonomy: low, cost: high, latency: high }
+sources:
+  - title: "From Local to Global: A Graph RAG Approach to Query-Focused Summarization (Edge et al., 2024)"
+    url: https://arxiv.org/abs/2404.16130
+  - title: GraphRAG global search (Microsoft GraphRAG documentation)
+    url: https://microsoft.github.io/graphrag/query/global_search/
+  - title: GraphRAG local search (Microsoft GraphRAG documentation)
+    url: https://microsoft.github.io/graphrag/query/local_search/
+related:
+  composesWith: [sectioning, retrieve-and-rerank]
+  confusedWith:
+    - slug: agentic-rag
+      difference: "Agentic RAG retrieves chunks on demand at query time. GraphRAG's distinctive work happens offline: it builds the entity graph and writes the community summaries before any question arrives."
+    - slug: sectioning
+      difference: "Sectioning splits the input at query time. GraphRAG's map step runs over community summaries that were built at index time, so the split follows the corpus's own structure."
+origin:
+  by: Darren Edge, Ha Trinh et al.
+  org: Microsoft Research, Microsoft Strategic Missions and Technologies, Microsoft Office of the CTO
+  year: 2024
+  url: https://arxiv.org/abs/2404.16130
+  kind: introduced
+  note: "The paper evaluates on podcast transcripts and news articles, with global sensemaking questions that plain chunk retrieval cannot answer."
+defaultVariantName: Global search
+build:
+  goal: "Answer whole-corpus questions, such as 'what are the main themes?', by building an entity graph of the corpus offline, writing a summary of each community in it, and map-reducing over those summaries at query time."
+  steps:
+    - "At index time, split the documents into chunks and call the extractor model with the {{prompt:extract}} on each chunk, collecting entities and relationships with short descriptions."
+    - "Merge duplicate entities across chunks and build a graph: entities as nodes, relationships as weighted edges."
+    - "Cluster the graph into communities with a community-detection algorithm such as Leiden, keeping the hierarchy of levels."
+    - "For each community, call the summarizer model with the {{prompt:summarize}} on its entities and relationships, and store the resulting community report."
+    - "At query time, shuffle the reports at the chosen level into batches that fit the context window, and call the map model with the {{prompt:map}} on each batch in parallel, collecting points with helpfulness scores from 0 to 100."
+    - "Drop points that scored 0, sort the rest by score, keep as many as fit in one context window, and call the reduce model with the {{prompt:reduce}} to write the final answer."
+  stop: "Stop after one map round and one reduce call. If every map call returns only zero-scored points, say the corpus does not cover the question."
+  requirements:
+    - "Persist the graph, communities and reports, and rebuild only the communities whose chunks changed, since full re-indexing is expensive."
+    - "Make the community level, the map batch size, the maximum number of map calls per query (default 50) and the reduce token budget configurable, so query cost stays bounded at fine community levels."
+    - "Run the map calls concurrently with a per-call timeout; a failed, timed-out or unparseable map reply drops out of the reduce instead of failing the request. If an extraction reply is not valid JSON, retry once, then skip that chunk and log it."
+    - "Keep each point's source community IDs through the reduce, so the answer can cite the communities it drew on."
+    - "Add a test with a stub LLM whose map calls return points scored 80, 0 and 40; assert the reduce prompt holds the 80 and 40 points in that order and not the zero-scored one."
+prompts:
+  - id: extract
+    title: Entity extraction prompt
+    lang: markdown
+    source: |
+      Extract the entities and relationships in the text below.
+
+      Entity types: {{entity_types}}
+
+      <text>{{chunk}}</text>
+
+      Return JSON:
+      {"entities": [{"name": "...", "type": "...", "description": "..."}],
+       "relationships": [{"source": "...", "target": "...", "description": "...", "strength": 1-10}]}
+      Use the full, canonical name for each entity, so the same entity in
+      another chunk can be merged with it.
+  - id: summarize
+    title: Community report prompt
+    lang: markdown
+    source: |
+      Write a report on the community of related entities below.
+
+      <entities>{{entities}}</entities>
+      <relationships>{{relationships}}</relationships>
+
+      Return a title, a one-paragraph summary of what ties these entities
+      together, and 3 to 6 key findings, each with the entities it rests on.
+  - id: map
+    title: Map prompt
+    lang: markdown
+    source: |
+      Answer the question as far as the community reports below allow.
+
+      <question>{{question}}</question>
+      <reports>{{report_batch}}</reports>
+
+      Return JSON: {"points": [{"description": "...", "score": 0-100}]}
+      Score each point by how helpful it is for answering the question.
+      If the reports are irrelevant, return one point with score 0.
+  - id: reduce
+    title: Reduce prompt
+    lang: markdown
+    source: |
+      Write a complete answer to the question from the analysts' points below,
+      which are sorted from most to least helpful.
+
+      <question>{{question}}</question>
+      <points>{{ranked_points}}</points>
+
+      Merge overlapping points, keep the most important themes first, and do
+      not add anything the points do not support.
+diagram:
+  nodes:
+    - { id: docs, kind: io, label: Corpus, description: "The whole corpus, such as 1,000 podcast transcripts, split into chunks at index time." }
+    - { id: extractor, kind: llm, label: Extractor, sublabel: extract entities, description: "Reads every chunk and extracts entities and the relationships between them, with short descriptions." }
+    - { id: user, kind: io, label: Question, description: "A whole-corpus question, such as 'What are the main themes about tech regulation?'." }
+    - { id: graph, kind: memory, label: Entity graph, description: "The merged entities and relationships: one node per entity, one weighted edge per relationship." }
+    - { id: clusterer, kind: tool, label: Clusterer, sublabel: Leiden, description: "A community-detection algorithm (Leiden) that groups closely linked entities into communities, at several levels of detail." }
+    - { id: summarizer, kind: llm, label: Summarizer, sublabel: community reports, description: "Writes a report for each community: what ties its entities together and its key findings." }
+    - { id: reports, kind: memory, label: Community reports, size: lg, description: "The pre-written community reports, the units the query-time map step reads instead of raw chunks." }
+    - { id: map, kind: llm, label: Map, sublabel: one call per batch, description: "Runs in parallel over batches of reports, each call returning partial answer points with helpfulness scores." }
+    - { id: reducer, kind: aggregator, label: Reduce, description: "Drops unhelpful points, sorts the rest by score and writes one answer from the best of them." }
+    - { id: out, kind: io, label: Answer, description: "A corpus-wide answer listing the main themes, each traced to the communities it came from." }
+  edges:
+    - { id: chunks, from: docs, to: extractor, description: "Each chunk of the corpus goes to the extractor.", example: "Ep. 212, 14:05: '...the FTC's case against the merger leaned on the EU's Digital Markets Act...'" }
+    - { id: entities, from: extractor, to: graph, description: "Entities and relationships are merged into the graph.", example: "{\"entities\": [\"FTC\", \"Digital Markets Act\"], \"relationships\": [{\"source\": \"FTC\", \"target\": \"Digital Markets Act\", \"description\": \"cited as precedent\"}]}" }
+    - { id: cluster, from: graph, to: clusterer, description: "The whole graph goes to the clusterer once extraction is done.", example: "4,812 entities, 11,309 weighted relationships" }
+    - { id: communities, from: clusterer, to: summarizer, label: communities, description: "Each community's entities and relationships go to the summarizer.", example: "Community 14: FTC, DOJ, Lina Khan, merger review, Digital Markets Act (23 relationships)" }
+    - { id: report, from: summarizer, to: reports, description: "Each community report is stored for query time.", example: "Community 14, 'Antitrust enforcement': US regulators and EU rules on platform mergers. Findings: 1. The FTC cites the DMA as precedent..." }
+    - { id: ask, from: user, to: map, style: dashed, description: "A global question goes to the map step, which asks it of every batch of community reports, never of raw chunks.", example: "Across these podcasts, what are the main themes about tech regulation?" }
+    - { id: batches, from: reports, to: map, label: report batches, description: "Shuffled batches of reports, each sized to fit one context window, go to parallel map calls.", example: "Batch 3 of 12: reports 14, 31, 7, 52 (about 8,000 tokens)" }
+    - { id: points, from: map, to: reducer, label: scored points, description: "Each map call returns partial answer points, each with a 0 to 100 helpfulness score.", example: "{\"points\": [{\"description\": \"Antitrust: regulators borrowing EU rules for US merger review\", \"score\": 85}]}" }
+    - { id: answer, from: reducer, to: out, description: "The reducer's final answer, built from the highest-scored points.", example: "Three themes recur: antitrust enforcement against platform mergers (communities 14, 22), AI safety rules (31, 7) and child online safety (52)." }
+  scenarios:
+    - id: global-question
+      label: Global question
+      steps:
+        - id: ask
+          caption: A question about the whole corpus arrives. No single chunk could answer it.
+          duration: 1600
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: map
+          caption: The community reports are batched, and the map model answers the question from each batch in parallel.
+          duration: 3200
+          events:
+            - { type: read, node: reports, at: [0, 0.25] }
+            - { type: send, edge: batches, token: { kind: result, label: batches }, at: [0.25, 0.55] }
+            - { type: activate, node: map, status: thinking, at: [0.55, 1] }
+        - id: reduce
+          caption: The scored points are sorted, the unhelpful ones dropped, and the reducer writes one answer from the best.
+          duration: 3200
+          events:
+            - { type: send, edge: points, token: { kind: result, label: points }, at: [0, 0.35] }
+            - { type: activate, node: reducer, status: thinking, at: [0.35, 0.7] }
+            - { type: send, edge: answer, token: { kind: result, label: themes }, at: [0.7, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
+    - id: index
+      label: Build the index
+      steps:
+        - id: extract
+          caption: The extractor reads each transcript chunk and pulls out entities, such as the FTC and the Digital Markets Act, and how they relate.
+          duration: 2800
+          events:
+            - { type: send, edge: chunks, token: { kind: prompt, label: chunk }, at: [0, 0.35] }
+            - { type: activate, node: extractor, status: thinking, at: [0.35, 0.7] }
+            - { type: send, edge: entities, token: { kind: result, label: entities }, at: [0.7, 0.9] }
+            - { type: write, node: graph, at: [0.85, 1] }
+        - id: cluster
+          caption: The Leiden clusterer splits the merged graph into communities of closely linked entities.
+          duration: 2400
+          events:
+            - { type: read, node: graph, at: [0, 0.25] }
+            - { type: send, edge: cluster, token: { kind: tool-call, label: graph }, at: [0.25, 0.55] }
+            - { type: activate, node: clusterer, status: calling, at: [0.55, 1] }
+        - id: summarize
+          caption: The summarizer writes a report for each community, and the reports are stored for query time.
+          duration: 3000
+          events:
+            - { type: send, edge: communities, token: { kind: result, label: community }, at: [0, 0.3] }
+            - { type: activate, node: summarizer, status: thinking, at: [0.3, 0.65] }
+            - { type: send, edge: report, token: { kind: result, label: report }, at: [0.65, 0.9] }
+            - { type: write, node: reports, at: [0.85, 1] }
+variants:
+  - id: local-search
+    name: Local search
+    summary: "For a question about a specific entity, match it in the graph, gather its neighbours, relationships, community reports and source chunks, and answer from that context."
+    build:
+      goal: "Answer a question about specific entities by matching them in a prebuilt GraphRAG index and answering from the graph neighbourhood, community reports and source chunks around them."
+      steps:
+        - "Embed the question and find the entities whose description embeddings are nearest to it and clear a configurable similarity floor (default top 10, floor 0.5)."
+        - "From the graph, collect each matched entity's neighbours and relationships, the reports of the communities it belongs to, and the text chunks it was extracted from."
+        - "Rank every candidate item by its link to the matched entities, and fill a fixed context budget in proportions you configure (for example half chunks, a quarter relationships, a quarter community reports)."
+        - "Call the answer model with the {{prompt:local-answer}}, passing the question and the assembled context, and return its answer."
+      stop: "Stop after one context build and one generation. If no entity clears the similarity floor, say the index has nothing on the question."
+      requirements:
+        - "Reuse the global-search index: the same graph, communities, reports and chunk links."
+        - "Make the matched-entity count, the context budget and the per-type proportions configurable."
+        - "Truncate by rank, never mid-item, when the context budget is reached."
+        - "Log the matched entities and every item placed in the context, with its type and source."
+        - "Add a test with a small fixed graph and a stub LLM; assert that a question naming 'FTC' places the FTC entity, its neighbour 'Digital Markets Act' and the chunk it was extracted from in the context, and nothing from an unconnected community."
+    prompts:
+      - id: local-answer
+        title: Local search answer prompt
+        lang: markdown
+        source: |
+          Answer the question using the knowledge-graph context below.
+
+          <question>{{question}}</question>
+          <entities>{{entities}}</entities>
+          <relationships>{{relationships}}</relationships>
+          <community_reports>{{reports}}</community_reports>
+          <source_chunks>{{chunks}}</source_chunks>
+
+          Prefer the source chunks for specific facts and the reports for the
+          bigger picture. Cite the entity or chunk ID after each claim.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, description: "A question about specific entities, such as 'What has the FTC said about the Digital Markets Act?'." }
+        - { id: match, kind: tool, label: Entity match, description: "Embeds the question and finds the entities whose descriptions are nearest to it." }
+        - { id: graph, kind: memory, label: Entity graph, description: "The prebuilt graph: entities, relationships and the communities they belong to." }
+        - { id: chunks, kind: memory, label: Source chunks, description: "The original text chunks, each linked to the entities extracted from it." }
+        - { id: context, kind: aggregator, label: Context builder, description: "Ranks the neighbours, relationships, reports and chunks around the matched entities and fills a fixed context budget." }
+        - { id: answerer, kind: llm, label: Answerer, description: "Answers from the assembled context, citing entities and chunks." }
+        - { id: out, kind: io, label: Answer, description: "An answer grounded in one neighbourhood of the graph." }
+      edges:
+        - { id: ask, from: user, to: match, description: "The question is embedded and matched against entity descriptions.", example: "What has the FTC said about the Digital Markets Act?" }
+        - { id: entry, from: match, to: graph, description: "The matched entities become entry points into the graph.", example: "FTC (0.91), Digital Markets Act (0.88), Lina Khan (0.74)" }
+        - { id: neighbours, from: graph, to: context, description: "Neighbouring entities, relationships and community reports around the entry points.", example: "FTC -cited as precedent-> Digital Markets Act; FTC -led by-> Lina Khan; report: community 14, 'Antitrust enforcement'" }
+        - { id: linked, from: match, to: chunks, description: "The matched entities also look up the source chunks they were extracted from.", example: "FTC -> chunks ep212-14, ep188-03, ep301-22" }
+        - { id: text, from: chunks, to: context, description: "The linked source chunks, for verbatim detail.", example: "Ep. 212, 14:05: '...the FTC's case against the merger leaned on the EU's Digital Markets Act...'" }
+        - { id: prompt, from: context, to: answerer, description: "One context window, filled by rank within each item type's share of the budget.", example: "12 entities, 18 relationships, 2 community reports, 6 chunks (about 12,000 tokens)" }
+        - { id: answer, from: answerer, to: out, description: "The answer, citing the entities and chunks it used.", example: "The FTC has cited the DMA as precedent for reviewing platform mergers [ep212-14], though it has no US equivalent [community 14]." }
+      scenarios:
+        - id: local-question
+          label: Local question
+          steps:
+            - id: match
+              caption: The question names the FTC. The matcher finds the FTC entity and looks up the chunks it came from.
+              duration: 2600
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.4] }
+                - { type: activate, node: match, status: calling, at: [0.4, 0.7] }
+                - { type: send, edge: entry, token: { kind: tool-call, label: FTC }, at: [0.7, 1] }
+                - { type: send, edge: linked, token: { kind: tool-call, label: chunk IDs }, at: [0.7, 1] }
+            - id: gather
+              caption: The FTC's neighbours, relationships and community report are gathered, along with the source chunks.
+              duration: 3000
+              events:
+                - { type: read, node: graph, at: [0, 0.35] }
+                - { type: read, node: chunks, at: [0, 0.35] }
+                - { type: send, edge: neighbours, token: { kind: result, label: neighbours }, at: [0.35, 1] }
+                - { type: send, edge: text, token: { kind: result, label: chunks }, at: [0.35, 1] }
+            - id: answer
+              caption: The context builder fills one window by rank, and the answerer replies from it.
+              duration: 3000
+              events:
+                - { type: activate, node: context, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: prompt, token: { kind: prompt, label: context }, at: [0.3, 0.55] }
+                - { type: activate, node: answerer, status: thinking, at: [0.55, 0.8] }
+                - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.8, 1] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }

@@ -1,0 +1,36 @@
+## Problem
+
+One query gets one angle. Ask "is a Model Y cheaper to run than a Camry?" and a vector search returns pages about EV charging, because that is what the question's wording is closest to. The Camry's fuel economy, and the insurance and maintenance costs the question only implied, sit further away and never make the top five. The answer comes out one-sided, and nothing in the pipeline notices.
+
+## How it works
+
+Multi-query RAG asks the question several ways before it searches. A <NodeRef id="rewriter">rewriter</NodeRef> model turns the <NodeRef id="user">question</NodeRef> into three queries, each worded the way a relevant document would be: "Tesla Model Y electricity cost per mile", "Toyota Camry real-world fuel economy", "EV versus petrol insurance and maintenance costs".
+
+All three searches run at once: <NodeRef id="r1">search 1</NodeRef>, <NodeRef id="r2">search 2</NodeRef> and <NodeRef id="r3">search 3</NodeRef> each return their own ranked list. The <NodeRef id="fuse">fuser</NodeRef> merges them with Reciprocal Rank Fusion: every document scores 1/(60 + rank) for each list it appears in, and the scores add up. A five-year cost-of-ownership article (D7) tops only one list, but it appears in all three, so it rises to first, ahead of documents that won a single list. Agreement across wordings is the signal.
+
+The <NodeRef id="generator">generator</NodeRef> then gets the top fused documents and the original question, not any of the rewrites, and writes an <NodeRef id="out">answer</NodeRef> that covers every facet.
+
+The tabs show two other ways to fan out. **Sub-questions** splits the question into independent parts and answers each separately before a combiner merges them; this suits questions that are really several questions. **Step-back query** adds one more general question ("what determines the running cost of an EV compared with a petrol car?") and retrieves background for it alongside the specifics.
+
+## When to use
+
+- Questions are ambiguous, have several facets, or are worded badly.
+- Recall matters more than cost: missing a relevant document is worse than an extra search.
+- Your retriever is sensitive to wording, as dense embeddings often are.
+
+## When to avoid
+
+- Queries are already precise, such as lookups by name or ID. The rewrites add cost and can drift off topic.
+- The sub-questions depend on each other ("who is the CEO, and where did she study?"). A fixed fan-out cannot use one answer to form the next query; use agentic RAG or self-ask.
+- The latency budget cannot absorb a rewriter call before the searches start.
+
+## Trade-offs
+
+You pay one extra model call and N extra searches per question. The searches run in parallel, so latency grows by about one rewriter call, while cost grows with N. Fusion is cheap and needs no model. The gain is recall, and the risk is drift: a rewrite that wanders off topic pulls in documents the generator then has to ignore.
+
+## Failure modes
+
+- **Query drift:** a rewrite answers a different question, and its documents crowd out relevant ones. Always include the original question as one of the queries.
+- **Answering the rewrite:** the generator sees a rewritten query and answers that instead. Give it the original question only.
+- **Redundant rewrites:** the three queries are near-paraphrases and return the same list, so you pay for nothing. Ask for different angles, not different wording.
+- **Lost depth:** fusing many shallow lists favours documents that are vaguely relevant everywhere over one that is precisely relevant once. Keep the per-query depth modest and consider a reranker after fusion.
