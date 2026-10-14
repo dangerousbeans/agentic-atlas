@@ -3,6 +3,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import NodeShape from '../components/diagram/NodeShape.astro';
 import '../components/diagram/diagram.css';
 import { author } from '../lib/author';
+import { newPatternUrl, correctionUrl, contributingUrl } from '../lib/contribute';
 import { NODE_KINDS } from '../lib/diagram/types';
 const desc: Record<string, string> = {
   io: 'Input or output: where a request enters or a result leaves.', llm: 'A single LLM call with a specific prompt.', agent: 'A full agent: an LLM in a loop with its own tools.',
@@ -34,6 +35,10 @@ const desc: Record<string, string> = {
     <p>Built by {author.name}. <a href={author.github} rel="me">GitHub</a> · <a href={author.repo}>Source</a></p>
     <h2>Credits</h2>
     <p>Built with Astro, ELK, Expressive Code and Pagefind. Typeset in Archivo and JetBrains Mono.</p>
+    <section class="contribute" aria-labelledby="contribute">
+      <h2 id="contribute">Contribute</h2>
+      <p>Spotted a mistake, or missing a pattern? Corrections and new patterns are welcome. <a href={newPatternUrl()}>Propose a pattern</a> · <a href={correctionUrl()}>Suggest a correction</a> · <a href={contributingUrl()}>Read the contributing guide</a></p>
+    </section>
     <h2>Licence</h2>
     <p>Code is <a href={`${author.repo}/blob/main/LICENSE`}>MIT</a>. The pattern write-ups, diagrams and prompts are <a href={`${author.repo}/blob/main/LICENSE-content`}>CC BY 4.0</a>: reuse them with attribution to “{author.name}, Agentic Atlas”.</p>
   </article>

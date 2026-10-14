@@ -10,6 +10,7 @@ import PatternNav from '../../components/pattern/PatternNav.astro';
 import SpecTable from '../../components/pattern/SpecTable.astro';
 import { patternStats } from '../../lib/pattern-stats';
 import { author, patternSourceUrl } from '../../lib/author';
+import { correctionUrl } from '../../lib/contribute';
 import { getCatalog } from '../../lib/catalog';
 import { getEntry, render } from 'astro:content';
 import type { DiagramSpec, CodeBlock } from '../../lib/diagram/types';
@@ -48,7 +49,7 @@ const stats = patternStats(p.diagram as DiagramSpec);
     </div>
     <RelatedPatterns pattern={p} catalog={cat} />
     <Sources sources={p.sources} />
-    <p class="made mono" data-pagefind-ignore>From the Agentic Atlas by {author.name} · <a href={patternSourceUrl(p.slug)}>Edit on GitHub</a></p>
+    <p class="made mono" data-pagefind-ignore>From the Agentic Atlas by {author.name} · <a href={patternSourceUrl(p.slug)}>Edit on GitHub</a> · <a href={correctionUrl(p.slug, p.name)}>Suggest a correction</a></p>
   </article>
 </BaseLayout>
 <style>
