@@ -1,0 +1,123 @@
+slug: reflexion
+name: Reflexion
+family: agent-loops
+aliases: [Verbal reinforcement learning, Episodic self-reflection]
+summary: After a failed attempt, the agent writes a lesson in plain language to memory and tries again with that lesson in context.
+badges: { autonomy: medium, cost: high, latency: high }
+sources:
+  - title: "Reflexion: Language Agents with Verbal Reinforcement Learning (Shinn et al., 2023)"
+    url: https://arxiv.org/abs/2303.11366
+related:
+  composesWith: [react]
+  confusedWith:
+    - { slug: evaluator-optimizer, difference: "Evaluator-Optimizer critiques and revises one draft inside a single run; Reflexion distills each failed trial into a lesson saved in memory, so a fresh attempt starts smarter." }
+code:
+  - id: reflexion
+    title: reflexion.py
+    lang: python
+    source: |
+      def reflexion(task, tests, max_trials=3):
+          lessons = []                          # episodic memory
+          for trial in range(max_trials):
+              attempt = llm(ACTOR_PROMPT, task=task, lessons=lessons)
+              result = run_tests(tests, attempt)
+              if result.passed:
+                  return attempt
+              lesson = llm(REFLECT_PROMPT, task=task, attempt=attempt, trace=result.trace)
+              lessons.append(lesson)            # persists into the next trial
+          return attempt
+prompts:
+  - id: actor
+    title: Actor prompt
+    lang: markdown
+    source: |
+      Solve the task below. Your code will be checked by unit tests.
+
+      <task>{{task}}</task>
+
+      {{#if lessons}}
+      You have attempted this before. Lessons you wrote for yourself:
+      <lessons>{{lessons}}</lessons>
+      Do not repeat a mistake listed here.
+      {{/if}}
+
+      Return only the code.
+  - id: reflector
+    title: Reflection prompt
+    lang: markdown
+    source: |
+      Your attempt failed. Work out why, and write a lesson for your next try.
+
+      <task>{{task}}</task>
+      <attempt>{{attempt}}</attempt>
+      <test_output>{{trace}}</test_output>
+
+      In two or three sentences, state:
+      1. the specific mistake (not "the code was wrong")
+      2. what to do differently next time
+
+      Write in the first person. Do not write code.
+diagram:
+  nodes:
+    - { id: input, kind: io, label: Task }
+    - { id: actor, kind: llm, label: Actor }
+    - { id: tests, kind: evaluator, label: Unit tests }
+    - { id: reflector, kind: llm, label: Reflector }
+    - { id: memory, kind: memory, label: Lessons }
+    - { id: out, kind: io, label: Solution }
+  edges:
+    - { id: start, from: input, to: actor }
+    - { id: attempt, from: actor, to: tests, label: attempt }
+    - { id: fail, from: tests, to: reflector, label: fail }
+    - { id: lesson, from: reflector, to: memory, label: lesson }
+    - { id: recall, from: memory, to: actor, style: loop, label: recall }
+    - { id: pass, from: tests, to: out, label: pass }
+  scenarios:
+    - id: learns-from-failure
+      label: Fails once, then passes with a lesson
+      steps:
+        - id: start
+          caption: The task arrives at the actor and the lessons list is empty.
+          duration: 1000
+          codeRef: { block: reflexion, lines: "1-2" }
+          events:
+            - { type: send, edge: start, token: { kind: prompt, label: task } }
+        - id: trial-1
+          caption: The first attempt runs against the tests, and they fail.
+          duration: 3000
+          codeRef: { block: reflexion, lines: "4-5" }
+          events:
+            - { type: activate, node: actor, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: attempt, token: { kind: result, label: code v1 }, at: [0.3, 0.6] }
+            - { type: branch, node: tests, taken: fail, notTaken: [pass], at: [0.6, 0.75] }
+            - { type: activate, node: tests, status: error, at: [0.75, 1] }
+        - id: reflect
+          caption: The failing test output goes to the reflector, which works out what went wrong.
+          duration: 2400
+          codeRef: { block: reflexion, lines: "8" }
+          events:
+            - { type: send, edge: fail, token: { kind: feedback, label: stack trace }, at: [0, 0.5] }
+            - { type: activate, node: reflector, status: thinking, at: [0.5, 1] }
+        - id: write-lesson
+          caption: The reflector writes a plain-language lesson and saves it to memory.
+          duration: 2000
+          codeRef: { block: reflexion, lines: "9" }
+          events:
+            - { type: send, edge: lesson, token: { kind: tokens, label: off-by-one }, at: [0, 0.6] }
+            - { type: write, node: memory, at: [0.6, 1] }
+        - id: recall
+          caption: Trial 2 begins by recalling the lesson into the actor's prompt.
+          duration: 2000
+          codeRef: { block: reflexion, lines: "3-4" }
+          events:
+            - { type: read, node: memory, at: [0, 0.4] }
+            - { type: send, edge: recall, token: { kind: tokens, label: off-by-one }, at: [0.4, 1] }
+        - id: trial-2
+          caption: With the lesson in context, the new attempt passes every test.
+          duration: 3000
+          codeRef: { block: reflexion, lines: "4-7" }
+          events:
+            - { type: activate, node: actor, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: attempt, token: { kind: result, label: code v2 }, at: [0.3, 0.6] }
+            - { type: branch, node: tests, taken: pass, notTaken: [fail], at: [0.6, 0.8] }
+            - { type: send, edge: pass, token: { kind: result, label: solution }, at: [0.8, 1] }

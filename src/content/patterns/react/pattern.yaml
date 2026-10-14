@@ -1,0 +1,156 @@
+slug: react
+name: ReAct (Autonomous Agent)
+family: agent-loops
+aliases: [Reason+Act, Agent loop, Autonomous agent]
+summary: Alternate Thought, Action (tool call) and Observation until the model decides it is done.
+badges: { autonomy: high, cost: high, latency: high }
+sources:
+  - title: "ReAct: Synergizing Reasoning and Acting in Language Models (Yao et al., 2022)"
+    url: https://arxiv.org/abs/2210.03629
+  - title: Building effective agents (Anthropic, 2024)
+    url: https://www.anthropic.com/engineering/building-effective-agents
+related:
+  composesWith: [augmented-llm, reflexion]
+  confusedWith:
+    - { slug: augmented-llm, difference: "An augmented LLM makes a bounded handful of tool calls for one request; ReAct keeps looping, choosing each next action from the last observation, until it judges the goal met." }
+code:
+  - id: react
+    title: react.py
+    lang: python
+    source: |
+      def react(question, tools, max_steps=8):
+          transcript = [REACT_PROMPT, question]
+          for step in range(max_steps):
+              out = llm(transcript, stop=["Observation:"])  # Thought + Action
+              transcript.append(out.text)
+              if out.final_answer:
+                  return out.final_answer
+              observation = tools[out.action.name](out.action.input)
+              transcript.append(f"Observation: {observation}")
+          return "Stopped: step budget spent"
+prompts:
+  - id: react-system
+    title: ReAct system prompt
+    lang: markdown
+    source: |
+      Answer the question by interleaving Thought, Action and Observation.
+
+      Available actions:
+      {{tool_descriptions}}
+
+      Use exactly this format:
+      Thought: what you know and what you need next
+      Action: tool_name[input]
+      Observation: (written by the system, never by you)
+
+      When you can answer, write:
+      Thought: I now have enough information.
+      Final Answer: your answer
+
+      Rules:
+      - One action per turn. Wait for the observation.
+      - If an action fails, say why in your next Thought and try a different approach.
+      - Do not answer from memory when a tool can verify the fact.
+
+      Question: {{question}}
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Question }
+    - { id: agent, kind: llm, label: Agent }
+    - { id: search, kind: tool, label: Search }
+    - { id: calculator, kind: tool, label: Calculator }
+    - { id: out, kind: io, label: Answer }
+  edges:
+    - { id: ask, from: user, to: agent }
+    - { id: act-search, from: agent, to: search, label: action }
+    - { id: obs-search, from: search, to: agent, style: dashed, label: observation }
+    - { id: act-calc, from: agent, to: calculator, label: action }
+    - { id: obs-calc, from: calculator, to: agent, style: dashed, label: observation }
+    - { id: finish, from: agent, to: out, label: final }
+  scenarios:
+    - id: years-apart
+      label: '"How many years apart were the Eiffel Tower and Golden Gate Bridge completed?"'
+      steps:
+        - id: ask
+          caption: The question reaches the agent, which has no plan yet, only a format to follow.
+          duration: 1000
+          codeRef: { block: react, lines: "1-2" }
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: "years apart?" } }
+        - id: turn-1
+          caption: Thought, then Action. The agent decides it needs the Eiffel Tower's date and searches for it.
+          duration: 3000
+          codeRef: { block: react, lines: "3-9" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: act-search, token: { kind: tool-call, label: Eiffel year }, at: [0.25, 0.5] }
+            - { type: activate, node: search, status: calling, at: [0.5, 0.7] }
+            - { type: send, edge: obs-search, token: { kind: result, label: "1889" }, at: [0.7, 1] }
+        - id: turn-2
+          caption: The observation shapes the next Thought. One date is known, so it searches for the other.
+          duration: 3000
+          codeRef: { block: react, lines: "3-9" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: act-search, token: { kind: tool-call, label: Golden Gate }, at: [0.25, 0.5] }
+            - { type: activate, node: search, status: calling, at: [0.5, 0.7] }
+            - { type: send, edge: obs-search, token: { kind: result, label: "1937" }, at: [0.7, 1] }
+        - id: turn-3
+          caption: Both dates are in the transcript, so the agent switches tools and has the calculator subtract.
+          duration: 3000
+          codeRef: { block: react, lines: "3-9" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: act-calc, token: { kind: tool-call, label: 1937-1889 }, at: [0.25, 0.5] }
+            - { type: activate, node: calculator, status: calling, at: [0.5, 0.7] }
+            - { type: send, edge: obs-calc, token: { kind: result, label: "48" }, at: [0.7, 1] }
+        - id: finish
+          caption: The agent decides it has enough information, writes its final answer and the loop ends.
+          duration: 2000
+          codeRef: { block: react, lines: "5-7" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: finish, token: { kind: result, label: 48 years }, at: [0.5, 1] }
+    - id: recovers-from-error
+      label: A search fails and the agent adapts
+      steps:
+        - id: ask
+          caption: The question reaches the agent.
+          duration: 1000
+          codeRef: { block: react, lines: "1-2" }
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: 15% of revenue } }
+        - id: turn-1
+          caption: The agent searches for last year's revenue, but the search tool fails.
+          duration: 3000
+          codeRef: { block: react, lines: "3-9" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: act-search, token: { kind: tool-call, label: ACME revenue }, at: [0.25, 0.5] }
+            - { type: activate, node: search, status: error, at: [0.5, 0.7] }
+            - { type: send, edge: obs-search, token: { kind: result, label: timeout }, at: [0.7, 1] }
+        - id: turn-2
+          caption: The next Thought reads the error and retries with a narrower query that succeeds.
+          duration: 3000
+          codeRef: { block: react, lines: "3-9" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: act-search, token: { kind: tool-call, label: ACME 10-K }, at: [0.25, 0.5] }
+            - { type: activate, node: search, status: calling, at: [0.5, 0.7] }
+            - { type: send, edge: obs-search, token: { kind: result, label: $4.2M }, at: [0.7, 1] }
+        - id: turn-3
+          caption: With the figure in hand, the calculator takes 15 percent of it.
+          duration: 3000
+          codeRef: { block: react, lines: "3-9" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: act-calc, token: { kind: tool-call, label: 4.2M*0.15 }, at: [0.25, 0.5] }
+            - { type: activate, node: calculator, status: calling, at: [0.5, 0.7] }
+            - { type: send, edge: obs-calc, token: { kind: result, label: $630k }, at: [0.7, 1] }
+        - id: finish
+          caption: The agent reports the answer.
+          duration: 2000
+          codeRef: { block: react, lines: "5-7" }
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: finish, token: { kind: result, label: $630k }, at: [0.5, 1] }

@@ -1,0 +1,34 @@
+## Problem
+
+Some tasks cannot be planned in advance because the next step depends on what the last one revealed. To answer "how many years apart were the Eiffel Tower and the Golden Gate Bridge completed?", an assistant first has to find two dates, and only then can it subtract. A single prompt cannot see the future, and a fixed workflow does not know which lookup comes next.
+
+## How it works
+
+ReAct interleaves reasoning with acting. On every turn the <NodeRef id="agent">agent</NodeRef> writes a short Thought about what it knows and what is missing, then an Action: a call to one of its tools. Your code runs that tool and appends the result to the transcript as an Observation. The model is called again with the longer transcript, so each new Thought can build on the last Observation.
+
+In the example, the first turn searches for the Eiffel Tower and gets 1889. The second searches for the bridge and gets 1937. The third turn switches to the <NodeRef id="calculator">calculator</NodeRef>, because the agent has both numbers and only needs the difference. Different turns use different tools: <NodeRef id="search">search</NodeRef> for facts, the calculator for arithmetic. When the agent writes a Final Answer instead of an Action, the loop ends and the answer goes to the <NodeRef id="out">answer</NodeRef> node.
+
+The Thought lines matter. They let the model track its subgoals, notice that an observation was an error, and change approach instead of repeating itself.
+
+## When to use
+
+- The number and order of steps cannot be predicted from the input.
+- Each step's result decides the next, as in research, debugging or navigating an unfamiliar system.
+- You can bound the damage: sandboxed tools, a step limit and a cost cap.
+
+## When to avoid
+
+- The path is known. A workflow such as prompt chaining or routing is cheaper, faster and easier to test.
+- You cannot sandbox the tools or limit spend. An autonomous loop with write access and no budget is an incident waiting to happen.
+- Latency matters. Every turn is a full model call over a growing transcript.
+
+## Trade-offs
+
+ReAct buys flexibility with predictability. Cost and latency grow with the number of turns, and the transcript gets longer each time, so later calls cost more than early ones. Behavior is harder to test because two runs can take different routes to the same answer. In exchange, you handle tasks no one wrote a flowchart for.
+
+## Failure modes
+
+- **Loops:** the agent repeats the same failing action. Cap the steps and detect repeated actions.
+- **Hallucinated observations:** the model writes its own "Observation:" line. Stop generation at that token, as the pseudocode does.
+- **Context bloat:** long tool outputs crowd out the task. Truncate or summarize observations.
+- **Early quitting:** the agent answers from memory without verifying. Tell it explicitly to check facts with a tool.

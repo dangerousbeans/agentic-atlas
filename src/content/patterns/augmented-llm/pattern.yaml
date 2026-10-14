@@ -1,0 +1,124 @@
+slug: augmented-llm
+name: Augmented LLM
+family: agent-loops
+aliases: [Tool use, Function calling, The building block]
+summary: One LLM call that can use tools, retrieval and memory; every other pattern is built from this.
+badges: { autonomy: low, cost: low, latency: low }
+sources:
+  - title: Building effective agents (Anthropic, 2024)
+    url: https://www.anthropic.com/engineering/building-effective-agents
+  - title: "Toolformer: Language Models Can Teach Themselves to Use Tools (Schick et al., 2023)"
+    url: https://arxiv.org/abs/2302.04761
+related:
+  composesWith: [react, routing, orchestrator-workers]
+  confusedWith:
+    - { slug: react, difference: "An augmented LLM answers one request, using whatever tools it needs along the way; ReAct is the open-ended loop of many such steps that runs until the model decides the goal is met." }
+code:
+  - id: augmented
+    title: augmented_llm.py
+    lang: python
+    source: |
+      def augmented_llm(user_msg, tools, memory):
+          messages = [SYSTEM_PROMPT, memory.recall(user_msg), user_msg]
+          while True:
+              reply = llm(messages, tools=tools)      # tools include search
+              if not reply.tool_calls:
+                  break                               # the model has what it needs
+              for call in reply.tool_calls:
+                  result = tools[call.name](**call.args)
+                  messages += [call, result]          # feed the result back
+          memory.write(user_msg, reply.text)          # keep what is worth keeping
+          return reply.text
+prompts:
+  - id: system
+    title: System prompt with tools
+    lang: markdown
+    source: |
+      You are a support assistant for {{company}}.
+
+      You can call these tools. Call one only when you need it:
+      - search_docs(query): search the {{company}} help center
+      - calculator(expression): exact arithmetic
+      - save_note(text): store a durable fact about this customer
+
+      Rules:
+      - Never guess a policy. If you are unsure, call search_docs first.
+      - Quote the document title when you rely on a search result.
+      - When you have enough information, answer in plain language.
+
+      Relevant notes from earlier conversations:
+      {{memory_notes}}
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Question }
+    - { id: llm, kind: llm, label: LLM }
+    - { id: retrieval, kind: tool, label: Retrieval }
+    - { id: calculator, kind: tool, label: Calculator }
+    - { id: memory, kind: memory, label: Memory }
+    - { id: out, kind: io, label: Answer }
+  edges:
+    - { id: ask, from: user, to: llm }
+    - { id: search, from: llm, to: retrieval, label: query }
+    - { id: found, from: retrieval, to: llm, style: dashed, label: passages }
+    - { id: calc, from: llm, to: calculator, label: expression }
+    - { id: calc-back, from: calculator, to: llm, style: dashed, label: number }
+    - { id: remember, from: llm, to: memory, label: save }
+    - { id: answer, from: llm, to: out }
+  scenarios:
+    - id: refund-quote
+      label: '"What would a 30-day refund on my $240 plan be?"'
+      steps:
+        - id: ask
+          caption: The customer's question reaches the model along with its system prompt and tool list.
+          duration: 1000
+          codeRef: { block: augmented, lines: "1-2" }
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: "refund?" } }
+        - id: retrieve
+          caption: The model decides it needs the refund policy and calls the retrieval tool.
+          duration: 2600
+          codeRef: { block: augmented, lines: "3-8" }
+          events:
+            - { type: activate, node: llm, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: search, token: { kind: tool-call, label: refund policy }, at: [0.25, 0.5] }
+            - { type: activate, node: retrieval, status: calling, at: [0.5, 0.7] }
+            - { type: send, edge: found, token: { kind: result, label: policy text }, at: [0.7, 1] }
+        - id: compute
+          caption: With the policy in context, it calls the calculator for the exact prorated amount.
+          duration: 2600
+          codeRef: { block: augmented, lines: "3-8" }
+          events:
+            - { type: activate, node: llm, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: calc, token: { kind: tool-call, label: 240*29/30 }, at: [0.25, 0.5] }
+            - { type: activate, node: calculator, status: calling, at: [0.5, 0.7] }
+            - { type: send, edge: calc-back, token: { kind: result, label: "232.00" }, at: [0.7, 1] }
+        - id: remember
+          caption: The model saves a durable fact about the customer's plan to memory.
+          duration: 1400
+          codeRef: { block: augmented, lines: "9" }
+          events:
+            - { type: send, edge: remember, token: { kind: tokens, label: plan = $240 }, at: [0, 0.6] }
+            - { type: write, node: memory, at: [0.6, 1] }
+        - id: answer
+          caption: No more tool calls are needed, so the model writes the final answer.
+          duration: 1800
+          codeRef: { block: augmented, lines: "10" }
+          events:
+            - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: answer, token: { kind: result, label: $232 refund }, at: [0.5, 1] }
+    - id: no-tools
+      label: '"Thanks, that helps!"'
+      steps:
+        - id: ask
+          caption: A message that needs no outside information reaches the model.
+          duration: 1000
+          codeRef: { block: augmented, lines: "1-2" }
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: thanks } }
+        - id: answer
+          caption: The model sees nothing to look up and replies directly, since tools are optional.
+          duration: 1800
+          codeRef: { block: augmented, lines: "4-6" }
+          events:
+            - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: answer, token: { kind: result, label: reply }, at: [0.5, 1] }

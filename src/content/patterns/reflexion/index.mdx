@@ -1,0 +1,36 @@
+## Problem
+
+An agent that fails a task and simply tries again usually repeats the same mistake. Retraining the model after each failure is slow and expensive, and often impossible because the weights are not yours. Yet a person who fails a coding exercise does something cheap and effective: they work out why it failed and carry that lesson into the next attempt.
+
+## How it works
+
+Reflexion, from Shinn et al., calls this verbal reinforcement learning. Instead of updating weights, the agent updates text.
+
+The <NodeRef id="actor">actor</NodeRef> attempts the <NodeRef id="input">task</NodeRef>, for example writing a function. The attempt runs against <NodeRef id="tests">unit tests</NodeRef>, which give an objective signal. If they pass, the solution is returned. If they fail, the failing output goes to the <NodeRef id="reflector">reflector</NodeRef>, a model call whose only job is diagnosis. It writes a short, specific lesson such as "I treated the range as inclusive; the tests expect exclusive upper bounds". That lesson is saved to <NodeRef id="memory">memory</NodeRef>.
+
+On the next trial, the stored lessons are placed in the actor's prompt, so the new attempt starts from what the last one learned. The loop repeats until the tests pass or a trial budget runs out, and the passing code goes to the <NodeRef id="out">solution</NodeRef>.
+
+The difference from a plain retry is the memory. Lessons persist across trials, and in longer-running systems across whole tasks.
+
+## When to use
+
+- You have a trustworthy signal for success or failure: tests, a validator, a game score.
+- Failures are informative, and a human could say "next time, do X instead".
+- The task can be attempted repeatedly, as in coding, puzzle solving or multi-step web tasks.
+
+## When to avoid
+
+- There is no reliable evaluator. The reflector will invent a plausible but wrong diagnosis, and the lesson will mislead later attempts.
+- Attempts are expensive or have side effects that cannot be undone.
+- One more careful pass over the same draft would do. Evaluator-Optimizer is simpler.
+
+## Trade-offs
+
+Each failed trial costs an actor call, a test run and a reflection call, and the lessons add prompt tokens to every later attempt. In return, the improvement carries forward without any training. Most of the gain tends to arrive in the first few trials, so keep the budget small.
+
+## Failure modes
+
+- **Wrong lessons:** a mistaken diagnosis is written into memory and poisons later trials. Ground reflection in the actual test output, not in vibes.
+- **Vague lessons:** "be more careful" teaches nothing. Require the specific mistake and the specific change.
+- **Memory bloat:** lessons pile up and crowd the prompt. Keep only the most recent or most relevant few.
+- **Overfitting to the tests:** the actor special-cases the visible tests. Hold some tests back.
