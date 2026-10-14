@@ -31,11 +31,12 @@ build:
     - "If the reply has answer, return it. If it has replan, go back to the planner with the reason and the results so far, so it plans only what is missing."
   stop: "Stop when the joiner returns an answer, or after 2 replans. On the cap, return the best partial results with the joiner's last reason and a status saying the question was not fully answered."
   requirements:
+    - "Optionally parse the planner's output as it streams, and start each task as soon as its line is complete and its dependencies are met."
     - "Make the replan cap (default 2), the tasks per plan (default 10) and the concurrent tool calls (default 5) parameters, and give every task a timeout (default 30 seconds)."
-    - "Reject a plan in which a $N points to a missing or later task, or the dependencies form a cycle; retry the planner once with the error, then stop."
+    - "Reject a plan in which a $N points to a missing or later task, or the dependencies form a cycle; retry the planner once with the error, then stop with a failed status and the validation error."
     - "When a task errors, store the error as its result, skip every task that depends on it, and let the joiner see both."
     - "If the joiner's reply is not valid JSON, retry it once, then treat it as a replan with the raw reply as the reason."
-    - "Add a test with a stub planner returning 3 tasks where task 3 uses $1, and fake 100 ms tools; assert tasks 1 and 2 overlap, task 3 starts after task 1 ends, and task 3 received task 1's result."
+    - "Add a test with a stub LLM whose planner returns 3 tasks where task 3 uses $1 and whose joiner returns an answer, and fake 100 ms tools; assert 1 planner call, 1 joiner call, tasks 1 and 2 overlap, and task 3 starts after task 1 ends with its result."
 defaultVariantName: Joiner with replan
 prompts:
   - id: planner
@@ -248,7 +249,7 @@ variants:
       year: 2023
       url: https://developers.openai.com/api/docs/guides/function-calling
       kind: popularized
-      note: "Parallel function calling, in which a model may return several tool calls in one turn for the runtime to run together. Most model APIs with tool use now offer the same."
+      note: "Introduced in November 2023 alongside GPT-4 Turbo (DevDay): parallel function calling, in which a model may return several tool calls in one turn for the runtime to run together. Most model APIs with tool use now offer the same."
     build:
       goal: "Answer a question with one tool-using model that may request several tool calls per turn, running each turn's calls concurrently and feeding all their results back in the next turn."
       steps:
@@ -259,7 +260,7 @@ variants:
         - "When a reply contains no tool calls, return its text as the answer."
       stop: "Stop when the model replies without tool calls, or after 5 turns. On the cap, return the last reply and the tool results gathered so far, with a status saying the turn budget ran out."
       requirements:
-        - "Make the turn cap (default 5), the calls per turn (default 8) and the per-call timeout (default 30 seconds) parameters."
+        - "Make the turn cap (default 5), the calls per turn (default 8) and the per-call timeout (default 30 seconds) parameters; beyond 8 calls, run the first 8 and return a call-limit-exceeded error as each extra call's result."
         - "Run one turn's calls concurrently, but never start a call from the next turn until every result of the current turn has been returned to the model."
         - "If a tool call's arguments are not valid JSON for its schema, return the validation error as that call's result and let the model correct it."
         - "Log each turn with its calls, their start and end times, and their results."

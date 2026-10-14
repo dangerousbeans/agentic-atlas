@@ -33,7 +33,7 @@ build:
     - "If a rating reply does not start with sure, maybe or impossible, treat it as maybe: never prune a branch on a parse failure."
     - "Drop proposed thoughts that duplicate a sibling or a state already visited, so the breadth is not wasted."
     - "Use a deterministic solution check (here, evaluate the arithmetic) wherever the task allows, instead of asking the model."
-    - "Add a test on the Game of 24 with a stub LLM in which every child of the first-tried second-level thought is rated impossible; assert 4 proposal calls and the returned path 10-4=6, 13-9=4, 6*4=24."
+    - "Add a Game of 24 test with a stub LLM rating 10-4=6 sure, 4+9=13 and 13*4=52 impossible, then 6+9=15 sure, 13-9=4 maybe, and every child of 6+9=15 impossible; assert 4 proposal calls and the path 10-4=6, 13-9=4, 6*4=24."
 defaultVariantName: Depth-first
 prompts:
   - id: propose
@@ -235,8 +235,8 @@ variants:
       steps:
         - "Start the frontier as a list holding one empty state: the problem with no thoughts taken."
         - "For every state on the frontier, call the model with the {{prompt:propose}} and parse up to breadth candidate thoughts, giving the next level's children."
-        - "Rate every child with the {{prompt:value}}, mapping sure, maybe and impossible to scores of 20, 1 and 0, and summing over the samples if you rate more than once."
-        - "Drop impossible children, sort the rest by score, and keep the top beam-width as the new frontier."
+        - "Rate every child with the {{prompt:value}}, mapping sure, maybe and impossible to scores of 20, 1 and 0.001 as the paper does, and summing over the samples if you rate more than once."
+        - "Sort the children by score and keep the top beam-width as the new frontier; dropping impossible children outright is a simplification that saves calls."
         - "Repeat for the configured number of levels, then return the best-scoring final state that passes the solution check."
       stop: "Stop after the last level, or earlier if the frontier is empty. If no final state passes the solution check, return the best-scoring one with a status saying it is unverified."
       requirements:
@@ -244,7 +244,7 @@ variants:
         - "Run the proposal and rating calls for one level concurrently, with a cap on calls in flight (default 8)."
         - "If a rating reply does not start with sure, maybe or impossible, score it as maybe; never prune on a parse failure."
         - "Deduplicate children with the same state across the whole level before rating, so the beam is not filled with copies."
-        - "Add a test with a stub LLM, beam width 2 and 3 levels; assert exactly 2 states survive each of the first two levels and the returned path ends in 24."
+        - "Add a test with a stub LLM, beam width 2 and 3 levels; assert 5 proposal calls (1 + 2 + 2), 2 states kept after each of the first two levels, and the exact path 10-4=6, 13-9=4, 6*4=24."
     diagram:
       nodes:
         - id: problem

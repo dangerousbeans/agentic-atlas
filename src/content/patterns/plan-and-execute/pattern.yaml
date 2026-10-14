@@ -32,7 +32,7 @@ build:
   stop: "Stop when the replanner returns final_answer, or after 10 executed steps. On the cap, return past_steps and the unfinished plan with a status saying the goal was not reached."
   requirements:
     - "Make the step cap (default 10), the plan length cap (default 7) and the executor's own tool-call cap per step (default 5) parameters."
-    - "If the planner's list or the replanner's JSON cannot be parsed, retry that call once with the parse error appended, then stop with a failed status."
+    - "If the planner's list or the replanner's JSON cannot be parsed, or remaining_steps is empty with no final_answer, retry once with the error appended, then stop with a failed status. Truncate a plan over the cap, and log it."
     - "When a tool errors or the executor hits its cap, record the error text as that step's result so the replanner can route around it; do not abort the run."
     - "Let the planner, executor and replanner use separately configured models, so a cheaper model can execute the steps."
     - "Log the plan before and after every replan, next to the step result that caused the change."
@@ -211,7 +211,7 @@ variants:
       stop: "Stop after the extraction call; there is no loop. If the extracted answer fails format validation twice, return the reasoning text with a status saying no answer could be extracted."
       requirements:
         - "Use no tools: every fact the plan needs must be in the question, so route questions that need lookups to the tool-using pattern instead."
-        - "Cap the reasoning reply length (default 1,000 tokens) and treat a truncated reply as a failed attempt."
+        - "Cap the reasoning reply length (default 1,000 tokens). If a reply is truncated, retry once; if it is truncated again, stop with a status saying the reasoning did not finish."
         - "If the extracted answer does not match the expected format, retry the extraction call once with the format error appended."
         - "Keep the reasoning text alongside the answer so a wrong answer can be traced to the step that went wrong."
         - "Add a test with a stub LLM that returns a two-step plan with a worked result, then '960' from extraction; assert exactly two model calls and that the answer is 960."
@@ -281,7 +281,7 @@ variants:
           from: extractor
           to: out
           description: "The extracted answer leaves in the expected format, with no reasoning around it."
-          example: "960 (dollars)"
+          example: "Answer: 960"
       scenarios:
         - id: word-problem
           label: A two-step word problem
@@ -327,7 +327,7 @@ variants:
         - "If the executor reports success, return its result for this task."
         - "If it reports failure and the depth limit is not reached, call the planner with the {{prompt:decompose}}, passing the task and the failure reason, and parse its JSON into sub_steps plus a logic of and or or."
         - "Run each sub-step through this same procedure, one level deeper. With and, stop at the first sub-step that fails; with or, stop at the first that succeeds."
-        - "Combine the sub-step results into the result for the parent task and return it upwards."
+        - "Return the result upwards. For and, the parent's result is the list of sub-step results in order (the last is usually the deliverable); for or, it is the result of the sub-step that succeeded."
       stop: "Stop when the top-level task succeeds, or when a task fails at the depth limit (default 3). On failure, return the tree of attempted sub-steps with each one's result or reason."
       requirements:
         - "Make the depth limit (default 3), the sub-steps per decomposition (default 4) and the executor's tool calls per attempt (default 8) parameters."

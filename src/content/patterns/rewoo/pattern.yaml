@@ -21,20 +21,20 @@ origin:
   kind: introduced
   note: "The authors' affiliations are not confirmed: the paper's first page lists only email addresses (microsoft.com, tamu.edu, ncsu.edu), so no organisation is given here."
 build:
-  goal: "Answer a question with exactly two model calls: a planner that writes every tool call upfront with #E placeholders, and a solver that answers from the collected evidence."
+  goal: "Answer a question with two model calls on the happy path: a planner that writes every tool call upfront with #E placeholders, and a solver that answers from the collected evidence."
   steps:
     - "Call the planner model once with the {{prompt:planner}}, passing the question and the tool descriptions."
     - "Parse the reply into an ordered list of steps, each with a reason, a variable (#E1, #E2...), a tool name and an input string."
     - "Validate the plan before running anything: every tool name exists, every variable is unique, and every #E an input mentions belongs to an earlier step."
     - "Run the steps in order with plain code and no model calls: substitute the stored evidence for each #E in the input, call the tool, and store the result under its variable."
     - "Call the solver model once with the {{prompt:solver}}, passing the question and the plan with every step's evidence filled in, and return its answer."
-  stop: "Stop after the solver's single call; the planner is never called again. If the plan fails validation twice, stop before any tool runs and return the validation errors."
+  stop: "Stop after the solver's single call; the planner is never called again (an LLM used as a worker tool counts as a tool, not a planner call). If the plan fails validation twice, stop before any tool runs and return the validation errors with a failed status."
   requirements:
     - "Cap the plan length (default 8 steps) and give each tool call a timeout (default 30 seconds)."
     - "If the plan cannot be parsed or fails validation, retry the planner once with the errors appended; do not run a partly valid plan."
     - "When a tool call errors or times out, store the error text as that variable's evidence and keep going, so the solver can say what it could not determine."
     - "Log the plan, each substituted tool input and each piece of evidence, so a wrong answer can be traced to the step that caused it."
-    - "Add a test with a stub LLM that plans 3 steps and fake tools; assert exactly two model calls, and that the third tool received the first two results in place of #E1 and #E2."
+    - "Add a test with a stub LLM that plans 3 steps and fake tools; assert exactly two model calls (one planner, one solver), and that the third tool received the first two results in place of #E1 and #E2."
 defaultVariantName: Sequential workers
 prompts:
   - id: planner
@@ -224,6 +224,7 @@ variants:
         - id: solver
           kind: llm
           label: Solver
+          sublabel: "all #E"
           description: "Called once: reads the question, plan and all evidence together and writes the final answer."
         - id: out
           kind: io
@@ -263,7 +264,7 @@ variants:
           from: calculator
           to: solver
           label: evidence
-          description: "With the last step done, the plan and every piece of evidence go to the solver in one prompt."
+          description: "With the last step done, the plan and all three results (#E1 to #E3) go to the solver together in one prompt."
           example: "#E1 = 376,000; #E2 = 103,000 km2; #E3 = 3.65"
         - id: answer
           from: solver
