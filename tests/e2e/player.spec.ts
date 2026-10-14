@@ -340,3 +340,25 @@ test.describe('no JS', () => {
     await expect(parts).toContainText('Judges each draft against the criteria');
   });
 });
+
+// Tokens that share a run (here the splitter's fan-out bus) place their labels around each other, never on top.
+test('token labels on a shared run never overlap', async ({ page }) => {
+  await page.goto('/patterns/sectioning/');
+  const fp = fpOf(page);
+  await expect(fp).toHaveAttribute('data-playing', 'true');
+  await page.mouse.move(0, 0);
+  let seen = 0;
+  // sample the fan-out (step 2) until three labelled tokens have been on screen together a few times
+  for (let i = 0; i < 200 && seen < 5; i++) {
+    const boxes = await fp.locator('svg[data-layout="wide"] g.token:not([display]) text:not([display])').evaluateAll(ts =>
+      ts.filter(t => t.textContent).map(t => { const r = t.getBoundingClientRect(); return { t: t.textContent, x: r.x, y: r.y, w: r.width, h: r.height }; }));
+    if (boxes.length >= 3) seen++;
+    for (let a = 0; a < boxes.length; a++) for (let b = a + 1; b < boxes.length; b++) {
+      const p = boxes[a], q = boxes[b];
+      const overlap = Math.min(p.x + p.w, q.x + q.w) - Math.max(p.x, q.x) > 1 && Math.min(p.y + p.h, q.y + q.h) - Math.max(p.y, q.y) > 1;
+      expect(overlap, `${p.t} / ${q.t}`).toBe(false);
+    }
+    await page.waitForTimeout(40);
+  }
+  expect(seen, 'frames with all three fan-out labels shown').toBeGreaterThan(0);
+});

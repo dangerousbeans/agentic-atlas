@@ -344,6 +344,9 @@ class FlowPlayer extends HTMLElement {
 
   private drawTokens(v: View, tokens: TokenState[]) {
     while (v.pool.length < tokens.length) v.pool.push(this.makeToken(v));
+    // token labels placed so far this frame: a later label avoids them as it avoids the static text, so tokens that
+    // share a run (a fan-out or fan-in on a bus) never stack their labels
+    const taken: Rect[] = [];
     v.pool.forEach((g, i) => {
       const tok = tokens[i];
       if (!tok) { g.setAttribute('display', 'none'); return; }
@@ -381,7 +384,8 @@ class FlowPlayer extends HTMLElement {
         const anchor = Math.abs(nx) > 0.7 ? (nx > 0 ? 'start' : 'end') : 'middle';
         const left = anchor === 'middle' ? cx - w / 2 : anchor === 'start' ? cx - 4 : cx - w + 4;
         const box = { x: left, y: cy - h / 2, w, h };
-        if (v.obstacles.some(o => hit(o, box))) continue;
+        if (v.obstacles.some(o => hit(o, box)) || taken.some(o => hit(o, box))) continue;
+        taken.push(box);
         label.setAttribute('text-anchor', anchor);
         label.setAttribute('transform', `translate(${anchor === 'middle' ? cx : anchor === 'start' ? cx - 4 : cx + 4},${cy + 3.5})`);
         placed = true;
