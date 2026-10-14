@@ -1,0 +1,34 @@
+## Problem
+
+Different models are good at different things. Ask three of them to "explain how HTTPS certificate pinning works" and one gives the clearest mechanism, another remembers that public-key pins survive certificate renewal, and the third confidently says browsers support the HPKP header, which they dropped years ago. Picking one model means losing what the others knew. A majority vote does not help either, because there is no single short answer to count.
+
+## How it works
+
+Mixture-of-Agents stacks models in layers. In the first layer, several models from different families each answer the <NodeRef id="user">prompt</NodeRef> on their own: <NodeRef id="l1a">Qwen</NodeRef>, <NodeRef id="l1b">Llama</NodeRef> and <NodeRef id="l1c">WizardLM</NodeRef> in the diagram. Every model in the next layer then receives the original prompt plus all of the first layer's answers, numbered, under an aggregate-and-synthesize prompt: evaluate these critically, keep what is right, fix what is wrong and write a better answer.
+
+In the example, each layer-2 model sees all three first-layer answers. They keep the clear mechanism and the advice about key pins, and drop the HPKP claim because the other answers contradict it. A final <NodeRef id="agg">aggregator</NodeRef> does the same over the layer-2 answers and writes the single <NodeRef id="out">answer</NodeRef> the user gets.
+
+The paper behind the pattern found that models write better answers when shown other models' answers, even weaker ones. Layering repeats that effect. The models can be the same in every layer; what matters is that each layer sees everything the last one produced. The MoA-Lite tab shows the cheaper version, with one proposer layer feeding the aggregator directly.
+
+## When to use
+
+- Answer quality matters more than cost or latency: reports, explanations, high-value drafts.
+- You have access to several capable models from different families, so their mistakes are unlikely to overlap.
+- The output is open-ended prose that cannot be majority-voted.
+
+## When to avoid
+
+- Latency matters. Every layer waits for its slowest model, and the layers run one after another.
+- The budget is tight. Three proposers over two layers plus an aggregator is seven calls, with ever longer prompts.
+- Your models are near copies of each other. The gain comes from diversity, and similar models repeat the same mistakes.
+
+## Trade-offs
+
+Mixture-of-Agents is a pure quality-for-cost trade with no autonomy at all: the topology is fixed, and no model chooses what happens next. Each extra layer multiplies the calls and lengthens the time to first token, and the gains shrink after two or three layers. The aggregator is the bottleneck. It must be strong enough to judge and merge several long answers, or the final step throws away what the earlier layers found.
+
+## Failure modes
+
+- **Majority of wrong:** if most first-layer answers share a mistake, later layers tend to adopt it. Use models from different families.
+- **Copying, not synthesizing:** a later model copies the longest or most confident answer. Tell it explicitly not to copy any one answer.
+- **Weak aggregator:** a small final model drops good details from the layer-2 answers. Use your strongest model for the last step.
+- **Context overflow:** long answers times several models overflows the context window. Cap the proposers' answer length.
