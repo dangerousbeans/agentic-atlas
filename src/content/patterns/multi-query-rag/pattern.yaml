@@ -37,7 +37,7 @@ origin:
 build:
   goal: "Answer a question from a document index by searching with several model-written rewordings of it in parallel, fusing the ranked results with Reciprocal Rank Fusion, and answering from the fused top documents."
   steps:
-    - "Call the rewriter model with the {{prompt:rewrite}}, filling in the question. Parse its reply into a list of N queries (default 3) and add the original question as one more query."
+    - "Call the rewriter model with the {{prompt:rewrite}}, filling in the question. Parse its reply into a list of N queries (default 3), drop any identical to the original, and add the original question as one more query."
     - "Run every query against the retriever in parallel, keeping each ranked list of document IDs (default top 10 per query)."
     - "Fuse the lists with Reciprocal Rank Fusion: each document scores the sum of 1 / (60 + rank) over every list it appears in, with ranks starting at 1."
     - "Sort by fused score, drop duplicates, and keep the top k documents (default 5)."
