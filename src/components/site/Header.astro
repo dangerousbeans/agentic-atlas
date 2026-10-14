@@ -9,7 +9,7 @@ const norm = (p: string) => ('/' + p.replace(/^\/+|\/+$/g, '') + '/').replace(/^
 const path = norm(base && raw.startsWith(base) ? raw.slice(base.length) : raw);
 const links = [
   { label: 'Atlas', to: '/', page: '/', active: path === '/' || path.startsWith('/patterns/') },
-  { label: 'Families', to: '/#families', page: '/families/', active: path.startsWith('/families/') },
+  { label: 'Families', to: '/families/', page: '/families/', active: path.startsWith('/families/') },
   { label: 'About', to: '/about/', page: '/about/', active: path.startsWith('/about/') },
 ];
 // Exact page -> aria-current="page"; inside the section (e.g. Atlas on /patterns/*) -> "true".

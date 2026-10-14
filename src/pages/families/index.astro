@@ -1,0 +1,36 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PatternCard from '../../components/site/PatternCard.astro';
+import { getCatalog } from '../../lib/catalog';
+import { href } from '../../lib/url';
+const cat = await getCatalog();
+---
+<BaseLayout title="Families" description={`${cat.patterns.length} agentic patterns in ${cat.families.length} families, each with a live diagram.`}>
+  <div class="wrap page">
+    <header class="intro">
+      <h1 class="display">Families of agentic patterns</h1>
+      <p class="lede">{cat.patterns.length} patterns in {cat.families.length} families. Each family shares a way of wiring models, tools and control flow; every card plays its diagram live.</p>
+    </header>
+    {cat.families.map(f => {
+      const pats = cat.patternsOf(f.slug);
+      return (
+        <section class="family-section" aria-labelledby={`fam-${f.slug}`}>
+          <h2 id={`fam-${f.slug}`}><a href={href(`/families/${f.slug}/`)}>{f.name}</a></h2>
+          <p class="desc">{f.description}</p>
+          <div class="grid">{pats.map(p => <PatternCard pattern={p} family={f} />)}</div>
+        </section>
+      );
+    })}
+  </div>
+</BaseLayout>
+<style>
+  .page { padding-top: 56px; padding-bottom: 96px; }
+  .intro h1 { margin: 0 0 20px; font-size: clamp(2rem, 5.5vw, 3.6rem); line-height: 1.05; max-width: 16ch; }
+  .lede { color: var(--text-2); font-size: 18px; line-height: 1.6; max-width: 40rem; margin: 0; }
+  .family-section { margin-top: 64px; }
+  h2 { margin: 0 0 8px; font-size: 1.35rem; }
+  h2 a { text-decoration: none; color: var(--text); }
+  h2 a:hover { color: var(--accent); }
+  .desc { color: var(--text-2); max-width: 44rem; margin: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 16px; }
+</style>
