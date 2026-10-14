@@ -1,0 +1,405 @@
+slug: model-cascade
+name: Model Cascade
+family: efficiency-cost
+aliases: [LLM cascade, FrugalGPT, Escalation ladder, Cheap-first escalation]
+summary: Try the cheapest model first; a scorer checks the answer and escalates to a stronger, pricier model only when confidence is low.
+badges: { autonomy: low, cost: low, latency: medium }
+sources:
+  - title: "FrugalGPT: How to Use Large Language Models While Reducing Cost and Improving Performance (Chen, Zaharia, Zou, 2023)"
+    url: https://arxiv.org/abs/2305.05176
+  - title: "RouteLLM: Learning to Route LLMs with Preference Data (Ong et al., 2024)"
+    url: https://arxiv.org/abs/2406.18665
+  - title: "Fast Inference from Transformers via Speculative Decoding (Leviathan et al., 2022)"
+    url: https://arxiv.org/abs/2211.17192
+related:
+  composesWith: [caching, model-fallback, evaluator-optimizer]
+  confusedWith:
+    - slug: routing
+      difference: "Routing picks among peer handlers by topic before any answer exists. A cascade picks by difficulty, and escalates only after it has seen a cheap answer and found it weak."
+    - slug: model-fallback
+      difference: "Fallback moves to another model when a call fails with an error. A cascade moves up when a call succeeds but the answer scores too low."
+origin:
+  by: Lingjiao Chen, Matei Zaharia, James Zou
+  org: Stanford University
+  year: 2023
+  url: https://arxiv.org/abs/2305.05176
+  kind: introduced
+  note: "FrugalGPT introduced the LLM cascade for commercial model APIs. Cascades of cheap-then-expensive classifiers are much older."
+defaultVariantName: Sequential cascade
+build:
+  goal: "Answer each query with the cheapest model whose answer passes a reliability score, escalating up an ordered list of models only when the score falls below that rung's threshold."
+  steps:
+    - "Configure an ordered list of models from cheapest to most capable, each with a score threshold; the last rung has no threshold."
+    - "Call the cheapest model with the {{prompt:answer}}."
+    - "Score the answer from 0 to 1. FrugalGPT uses a small trained scorer; until you have labelled data, use the {{prompt:scorer}} on a cheap model, and calibrate its self-reported scores before trusting a threshold."
+    - "If the score meets the rung's threshold, return the answer. Otherwise call the next model up with the same prompt and score again."
+    - "Return the last rung's answer without scoring it, and record which rung answered and the total cost of the request."
+  stop: "Stop at the first answer that meets its threshold, or after the top model answers. If a scorer call fails, treat the score as 0 and escalate, so a broken scorer costs money rather than quality."
+  requirements:
+    - "Keep the models and thresholds in configuration, and tune the thresholds on a labelled sample so that the cascade matches the top model's accuracy at the lowest cost."
+    - "Parse the scorer's reply as a number; if it is not one, treat it as 0."
+    - "Log per request: each rung tried, its score, its token cost, and the rung that answered."
+    - "Report the share of traffic answered at each rung; if most traffic reaches the top, the cascade is costing more than calling the top model directly."
+    - "Add a test with stub models where the small model's answer scores 0.41 against a threshold of 0.8; assert exactly one large-model call and that the large model's answer is returned. A second case scoring 0.93 must make zero large-model calls."
+prompts:
+  - id: answer
+    title: Answer prompt (same at every rung)
+    lang: markdown
+    source: |
+      You are a support assistant for {{product}}. Answer the customer's question
+      accurately and concisely, using the documentation below.
+
+      <docs>{{docs}}</docs>
+      <question>{{question}}</question>
+
+      If the documentation does not cover it, say what is missing rather than guessing.
+  - id: scorer
+    title: Scorer prompt
+    lang: markdown
+    source: |
+      Rate how likely the answer below is to be correct and complete for the question.
+      Judge only from the question, the documentation and the answer.
+
+      <docs>{{docs}}</docs>
+      <question>{{question}}</question>
+      <answer>{{answer}}</answer>
+
+      Reply with a single number between 0 and 1, and nothing else.
+diagram:
+  nodes:
+    - id: user
+      kind: io
+      label: Question
+      description: "A support question. Most are easy ('How do I reset my router?'); a few are hard and need a stronger model."
+    - id: small
+      kind: llm
+      label: Small model
+      sublabel: $0.0002 / query
+      description: "The cheapest model, tried first on every question. It handles the easy majority on its own."
+    - id: scorer
+      kind: evaluator
+      label: Scorer
+      description: "A cheap judge that rates the small model's answer from 0 to 1. Above the threshold the answer ships; below it, the question escalates."
+    - id: large
+      kind: llm
+      label: Large model
+      sublabel: $0.03 / query
+      description: "The strongest, priciest model, called only for questions where the cheap answer scored too low."
+    - id: out
+      kind: io
+      label: Answer
+      description: "The answer sent to the customer, from whichever rung of the cascade passed."
+  edges:
+    - id: in
+      from: user
+      to: small
+      description: "Every question goes to the cheapest model first."
+      example: "Why does my VPN drop only on 5 GHz since the last firmware update?"
+    - id: draft
+      from: small
+      to: scorer
+      description: "The small model's answer goes to the scorer, together with the question."
+      example: "Try restarting your router and reconnecting to the VPN."
+    - id: ok
+      from: scorer
+      to: out
+      label: ≥ 0.8
+      description: "If the score meets the threshold, the cheap answer is good enough and goes to the customer."
+      example: "score 0.93: 'Hold the reset button for 10 seconds until the light blinks amber, then set it up again in the app.'"
+    - id: escalate
+      from: scorer
+      to: large
+      label: < 0.8
+      description: "If the score is too low, the same question goes up to the large model; the cheap answer is thrown away."
+      example: "score 0.41: generic advice that ignores the 5 GHz and firmware details. Escalating to the large model."
+    - id: final
+      from: large
+      to: out
+      description: "The top rung's answer is returned without another score; there is nowhere higher to go."
+      example: "Firmware 3.2 enables DFS channels on 5 GHz; when radar forces a channel switch, the VPN tunnel drops. Pin channel 36 or update to 3.2.1."
+  scenarios:
+    - id: easy
+      label: Easy question
+      steps:
+        - id: ask
+          caption: "'How do I reset my router?' goes to the small model."
+          duration: 1800
+          events:
+            - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.5] }
+            - { type: activate, node: small, status: thinking, at: [0.5, 1] }
+        - id: pass
+          caption: The scorer rates the answer 0.93, so it ships. Answer-model cost, $0.0002, plus a fraction of a cent for the scorer; the large model is never called.
+          duration: 2600
+          events:
+            - { type: send, edge: draft, token: { kind: result, label: answer }, at: [0, 0.35] }
+            - { type: branch, node: scorer, taken: ok, notTaken: [escalate], at: [0.35, 0.5] }
+            - { type: send, edge: ok, token: { kind: result, label: "0.93" }, at: [0.5, 0.9] }
+            - { type: activate, node: out, status: done, at: [0.85, 1] }
+    - id: hard
+      label: Hard question
+      steps:
+        - id: ask
+          caption: A tricky VPN question goes to the small model first, like every question.
+          duration: 1800
+          events:
+            - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.5] }
+            - { type: activate, node: small, status: thinking, at: [0.5, 1] }
+        - id: low
+          caption: Its generic answer scores 0.41, below the threshold, so the question escalates.
+          duration: 2400
+          events:
+            - { type: send, edge: draft, token: { kind: result, label: answer }, at: [0, 0.35] }
+            - { type: activate, node: scorer, status: error, at: [0.35, 0.5] }
+            - { type: branch, node: scorer, taken: escalate, notTaken: [ok], at: [0.5, 0.6] }
+            - { type: send, edge: escalate, token: { kind: feedback, label: "0.41" }, at: [0.6, 1] }
+        - id: large
+          caption: The large model works out the firmware and DFS cause. Answer-model cost is now about $0.03, plus the scorer; the cheap attempt was wasted, but small.
+          duration: 2800
+          events:
+            - { type: activate, node: large, status: thinking, at: [0, 0.45] }
+            - { type: send, edge: final, token: { kind: result, label: answer }, at: [0.45, 0.9] }
+            - { type: activate, node: out, status: done, at: [0.85, 1] }
+variants:
+  - id: predictive-router
+    name: Predictive router
+    summary: "A trained router predicts how hard the query is before any model runs, so exactly one model answers and nothing is wasted on a failed cheap attempt."
+    origin:
+      by: Isaac Ong et al.
+      org: UC Berkeley, Anyscale, Canva
+      year: 2024
+      url: https://arxiv.org/abs/2406.18665
+      kind: introduced
+      note: "RouteLLM (ICLR 2025) trains routers on human preference data to choose between a strong and a weak model per query."
+    build:
+      goal: "Before any answer is generated, predict whether the cheap model will answer a query well, and send it to exactly one model: the cheap one or the strong one."
+      steps:
+        - "Collect labelled examples of queries where the cheap model's answer was as good as the strong model's, and where it was not (from preference data, evaluations or past cascade logs)."
+        - "Train a small classifier on them that outputs the probability the strong model is needed. Until you have data, use a cheap model with the {{prompt:difficulty}} as the router."
+        - "For each query, get the router's probability and compare it with a threshold set from your cost budget."
+        - "Send the query to the strong model if the probability exceeds the threshold, otherwise to the cheap model, using the {{prompt:answer}} for both."
+        - "Log the decision and sample routed traffic for offline grading, to retrain the router as the models change."
+      stop: "Each query makes exactly one answer call. If the router fails or times out, send the query to the strong model."
+      requirements:
+        - "Make the threshold a parameter, and report the share of traffic it sends to the strong model."
+        - "Keep the router far cheaper than the cheap model: a small classifier, or a short prompt on the smallest model."
+        - "Re-evaluate the router whenever either model is upgraded; its training data describes the old pair."
+        - "Add a test with a stub router returning 0.9 and 0.1 for two queries and a threshold of 0.5; assert the first reaches only the strong model and the second only the cheap one."
+    prompts:
+      - id: difficulty
+        title: Difficulty router prompt
+        lang: markdown
+        source: |
+          Decide whether a small, fast model can answer this support question well,
+          or whether it needs a stronger model.
+
+          <question>{{question}}</question>
+
+          Needs the strong model: multi-step troubleshooting, several interacting
+          conditions, ambiguous or unusual setups.
+          Small model is fine: single-fact lookups, standard how-to steps.
+
+          Reply with a single number between 0 and 1: the probability the strong model is needed.
+      - id: answer
+        title: Answer prompt
+        lang: markdown
+        source: |
+          You are a support assistant for {{product}}. Answer the customer's question
+          accurately and concisely, using the documentation below.
+
+          <docs>{{docs}}</docs>
+          <question>{{question}}</question>
+
+          If the documentation does not cover it, say what is missing rather than guessing.
+    diagram:
+      nodes:
+        - id: user
+          kind: io
+          label: Question
+          description: "A support question, easy or hard; the router has to tell which before any answer exists."
+        - id: router
+          kind: router
+          label: Router
+          sublabel: trained classifier
+          model: false
+          description: "A small classifier trained on preference data. It predicts the chance the strong model is needed, in milliseconds."
+        - id: small
+          kind: llm
+          label: Small model
+          description: "The cheap model, which answers every query the router predicts it can handle."
+        - id: large
+          kind: llm
+          label: Large model
+          description: "The strong model, which answers only the queries the router predicts are hard."
+        - id: out
+          kind: io
+          label: Answer
+          description: "The single answer generated for the query, from whichever model the router chose."
+      edges:
+        - id: in
+          from: user
+          to: router
+          description: "The question goes to the router before any model is called."
+          example: "Why does my VPN drop only on 5 GHz since the last firmware update?"
+        - id: easy
+          from: router
+          to: small
+          label: easy
+          description: "When the predicted need for the strong model is below the threshold, the cheap model answers."
+          example: "'How do I reset my router?' p(strong needed) = 0.07 < 0.5: small model."
+        - id: hard
+          from: router
+          to: large
+          label: hard
+          description: "When it is above the threshold, the query goes straight to the strong model, skipping the cheap attempt."
+          example: "'VPN drops only on 5 GHz since the firmware update' p(strong needed) = 0.86 > 0.5: large model."
+        - id: s-out
+          from: small
+          to: out
+          description: "The cheap model's answer is returned without any scoring step."
+          example: "Hold the reset button for 10 seconds until the light blinks amber, then set it up again in the app."
+        - id: l-out
+          from: large
+          to: out
+          description: "The strong model's answer is returned; it is the only model call this query made."
+          example: "Firmware 3.2 enables DFS channels on 5 GHz; pin channel 36 or update to 3.2.1."
+      scenarios:
+        - id: two-queries
+          label: One easy, one hard
+          steps:
+            - id: easy
+              caption: "'How do I reset my router?' scores 0.07, so the router sends it to the small model alone."
+              duration: 3000
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.25] }
+                - { type: branch, node: router, taken: easy, notTaken: [hard], at: [0.25, 0.35] }
+                - { type: send, edge: easy, token: { kind: prompt, label: "0.07" }, at: [0.35, 0.6] }
+                - { type: activate, node: small, status: thinking, at: [0.6, 0.75] }
+                - { type: send, edge: s-out, token: { kind: result, label: answer }, at: [0.75, 1] }
+            - id: hard
+              caption: The VPN question scores 0.86, so it goes straight to the large model; no cheap attempt is wasted.
+              duration: 3000
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.25] }
+                - { type: branch, node: router, taken: hard, notTaken: [easy], at: [0.25, 0.35] }
+                - { type: send, edge: hard, token: { kind: prompt, label: "0.86" }, at: [0.35, 0.6] }
+                - { type: activate, node: large, status: thinking, at: [0.6, 0.75] }
+                - { type: send, edge: l-out, token: { kind: result, label: answer }, at: [0.75, 1] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
+  - id: draft-and-verify
+    name: Draft and verify
+    summary: "The small model always drafts; the large model accepts or rewrites it. Unlike speculative decoding, this saves money but costs time: two calls in sequence."
+    origin:
+      by: Yaniv Leviathan et al.
+      org: Google Research
+      year: 2022
+      url: https://arxiv.org/abs/2211.17192
+      kind: introduced
+      uncertain: true
+      note: "Inspired by speculative decoding (Leviathan et al., 2022), which works inside the inference server, is lossless and saves time. No paper introduced this call-level version, which is lossy (the accept is a judgement), saves money and adds latency."
+    build:
+      goal: "Have a cheap model draft every answer and a strong model verify it in one call, accepting the draft unchanged when it is right and rewriting it only when it is not."
+      steps:
+        - "Call the small model with the {{prompt:answer}} to draft an answer."
+        - "Call the large model with the {{prompt:verify}}, passing the question, the documents and the draft."
+        - "Parse its JSON reply. If verdict is accept, return the draft; if it is rewrite, return the large model's answer instead."
+        - "Record the verdict, so you can track how often drafts are accepted."
+      stop: "Every query makes two calls (three if the verifier's reply is retried). If the verifier's reply cannot be parsed, retry once, then return the draft flagged as unverified."
+      requirements:
+        - "Keep the verifier's output short when it accepts: accepting must cost far fewer output tokens than rewriting, or the pattern saves nothing."
+        - "Track the acceptance rate; below about half, call the large model directly instead."
+        - "Log both calls' token counts per query."
+        - "Add a test with a stub verifier that accepts the first draft and rewrites the second; assert the first returned answer equals the draft and the second equals the verifier's rewrite."
+    prompts:
+      - id: answer
+        title: Draft prompt
+        lang: markdown
+        source: |
+          You are a support assistant for {{product}}. Answer the customer's question
+          accurately and concisely, using the documentation below.
+
+          <docs>{{docs}}</docs>
+          <question>{{question}}</question>
+      - id: verify
+        title: Verify prompt
+        lang: markdown
+        source: |
+          A junior assistant drafted an answer. Check it against the documentation.
+
+          <docs>{{docs}}</docs>
+          <question>{{question}}</question>
+          <draft>{{draft}}</draft>
+
+          If the draft is correct and complete, reply exactly: {"verdict": "accept"}
+          Otherwise reply: {"verdict": "rewrite", "answer": "<your corrected answer>"}
+    diagram:
+      nodes:
+        - id: user
+          kind: io
+          label: Question
+          description: "A support question; every one gets a cheap draft first."
+        - id: small
+          kind: llm
+          label: Small model
+          sublabel: drafts
+          description: "The cheap model writes a full draft answer to every question."
+        - id: large
+          kind: llm
+          label: Large model
+          sublabel: accepts or rewrites
+          description: "The strong model reads the draft and replies with a short accept, or with a corrected answer. Reading is cheaper than writing."
+        - id: out
+          kind: io
+          label: Answer
+          description: "The draft if the large model accepted it, or the large model's rewrite if not."
+      edges:
+        - id: in
+          from: user
+          to: small
+          description: "The question goes to the small model for a draft."
+          example: "How do I reset my router?"
+        - id: draft
+          from: small
+          to: large
+          label: draft
+          description: "The draft goes to the large model with the question and documents, to accept or rewrite."
+          example: "Hold the reset button for 10 seconds until the light blinks amber, then set it up again in the app."
+        - id: final
+          from: large
+          to: out
+          description: "Either the accepted draft or the rewrite leaves; a short accept costs the large model only a few output tokens."
+          example: '{"verdict": "accept"}  (returning the draft unchanged)'
+      scenarios:
+        - id: accepted
+          label: Draft accepted
+          steps:
+            - id: draft
+              caption: The small model drafts an answer to an easy question.
+              duration: 2000
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.4] }
+                - { type: activate, node: small, status: thinking, at: [0.4, 1] }
+            - id: verify
+              caption: The large model reads the draft, finds it correct, and replies with a short accept; the draft ships.
+              duration: 2800
+              events:
+                - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0, 0.35] }
+                - { type: activate, node: large, status: thinking, at: [0.35, 0.6] }
+                - { type: send, edge: final, token: { kind: result, label: accept }, at: [0.6, 0.95] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
+        - id: rewritten
+          label: Draft rewritten
+          steps:
+            - id: draft
+              caption: The small model drafts a generic answer to the hard VPN question.
+              duration: 2000
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.4] }
+                - { type: activate, node: small, status: thinking, at: [0.4, 1] }
+            - id: verify
+              caption: The large model spots that the draft ignores the firmware change and writes the correct answer itself.
+              duration: 3000
+              events:
+                - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0, 0.3] }
+                - { type: activate, node: large, status: thinking, at: [0.3, 0.65] }
+                - { type: send, edge: final, token: { kind: result, label: rewrite }, at: [0.65, 0.95] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }

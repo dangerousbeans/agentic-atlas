@@ -1,0 +1,197 @@
+slug: ambient-agent
+name: Ambient Agent
+family: reliability-runtime
+aliases: [Event-driven agent, Background agent, Always-on agent, Trigger-based agent]
+summary: An agent woken by events rather than chat messages, working in the background and reaching people only to notify, ask or get a review.
+badges: { autonomy: high, cost: medium, latency: high }
+sources:
+  - title: "Introducing ambient agents (Harrison Chase, LangChain, 2025)"
+    url: https://www.langchain.com/blog/introducing-ambient-agents
+related:
+  composesWith: [human-in-the-loop, durable-execution, routing, guardrails]
+  confusedWith:
+    - slug: react
+      difference: "A ReAct agent is started by a user and answers while they wait. An ambient agent is started by events and works in the background, contacting a person only when it needs to."
+    - slug: human-in-the-loop
+      difference: "Human-in-the-loop is a single approval gate in a flow. An ambient agent is an operating mode that uses notify, question and review interrupts asynchronously, through an inbox."
+origin:
+  by: Harrison Chase
+  org: LangChain
+  year: 2025
+  url: https://www.langchain.com/blog/introducing-ambient-agents
+  kind: popularized
+  note: "Coined the term 'ambient agents' and named the notify, question and review interaction patterns, with an agent inbox as the interface."
+build:
+  goal: "Run an agent in the background on a stream of events, so it handles routine items on its own and reaches a person only through notify, question and review cards in an inbox."
+  steps:
+    - "Subscribe to the event source (a mail webhook, a queue, a schedule) and start one run per event, keyed by the event id so a redelivered event is not handled twice."
+    - "Call a triage model with the {{prompt:triage}} to label each event ignore, notify or act. Archive ignored events; post notify events to the inbox as an information card."
+    - "For act events, run the agent loop with the {{prompt:agent}} and its tools, which are split into safe tools (draft, search, read calendar) and review-gated tools (send to a new contact, accept a meeting, pay)."
+    - "When the agent calls ask_user, post a question card to the inbox, save the run's state, and stop. When it calls a review-gated tool, post a review card with the exact arguments instead of running it."
+    - "When the person answers or decides, resume the run from its saved state with the answer, or with the approved, edited or rejected tool call, and continue the loop."
+    - "Record every action the agent took on its own in an activity log the person can browse and undo."
+  stop: "Each run stops when the agent replies DONE, after a step cap (default 15), or when it is waiting on an inbox card. Cards that go unanswered for a set time (default 3 days) expire and the run is closed with a notify card saying what was left undone."
+  requirements:
+    - "Persist pending runs and inbox cards in durable storage, so a question can wait days and survive restarts."
+    - "Make the list of review-gated tools configuration, not prompt text; the code, not the model, decides what needs approval."
+    - "De-duplicate events by id and rate-limit runs per sender, so a mail loop or a flood of alerts cannot start thousands of runs."
+    - "Log every event with its triage label, every tool call, and every card with how long it waited for a person."
+    - "Add a test with a stub LLM where triage labels a meeting invite act and the agent calls accept_invite; assert a review card is created, the calendar tool is not called, and it is called exactly once after the card is approved."
+prompts:
+  - id: triage
+    title: Triage prompt
+    lang: markdown
+    source: |
+      You screen incoming email for {{user_name}}. Label the email with exactly one of:
+
+      - ignore: newsletters, marketing, automated notices that need nothing
+      - notify: {{user_name}} should know, but no action is needed
+      - act: it needs a reply, a scheduling decision or another action
+
+      <preferences>{{triage_preferences}}</preferences>
+      <email>{{email}}</email>
+
+      Reply in JSON: {"label": "ignore|notify|act", "reason": "one sentence"}
+  - id: agent
+    title: Background agent prompt
+    lang: markdown
+    source: |
+      You handle email for {{user_name}} in the background. They are not watching,
+      so act on routine items yourself and use the inbox only when you must.
+
+      <email>{{email}}</email>
+      <preferences>{{preferences}}</preferences>
+
+      - Use the tools to draft replies, look up context and check the calendar.
+      - If you need a fact only {{user_name}} knows, call ask_user with one short question.
+      - Some tools need {{user_name}}'s approval; call them normally and the system
+        will ask. Do not try to work around a rejection.
+      - When the email is fully handled, reply DONE with one line on what you did.
+diagram:
+  nodes:
+    - id: events
+      kind: io
+      label: Email feed
+      description: "The event stream that wakes the agent: here, every new message in a manager's inbox, delivered by webhook."
+    - id: triage
+      kind: router
+      label: Triage
+      description: "A cheap model call that labels each event ignore, notify or act. Notify events go to the inbox as information cards directly; only act events wake the agent."
+    - id: archive
+      kind: io
+      label: Archived
+      description: "Events triage decided need nothing, such as newsletters, filed away without waking the agent."
+    - id: agent
+      kind: agent
+      label: Email agent
+      description: "Runs in the background on each event that needs work: drafts replies, checks the calendar, and decides when it needs a person."
+    - id: tools
+      kind: tool
+      label: Mail & calendar
+      description: "The agent's tools. Safe ones run at once; review-gated ones, such as accepting a meeting, run only after approval."
+    - id: inbox
+      kind: human
+      label: Agent inbox
+      description: "Where the person meets the agent: a queue of notify, question and review cards they handle when they choose."
+  edges:
+    - id: feed
+      from: events
+      to: triage
+      description: "Each new event is delivered to triage the moment it arrives; no one has to start a chat."
+      example: "From: Dana (Northwind). Subject: Sync on the Q4 rollout? Body: Could we meet Thursday at 15:00 for 30 minutes?"
+    - id: ignore
+      from: triage
+      to: archive
+      style: dashed
+      label: ignore
+      description: "Events that need nothing are archived without starting the agent."
+      example: '{"label": "ignore", "reason": "Weekly marketing newsletter from a SaaS vendor."}'
+    - id: act
+      from: triage
+      to: agent
+      label: act
+      description: "Events that need work start an agent run in the background."
+      example: '{"label": "act", "reason": "A customer is proposing a meeting time that needs a decision."}'
+    - id: call
+      from: agent
+      to: tools
+      label: action
+      description: "The agent calls its tools to draft, send, search or schedule; a review-gated call is held until approved."
+      example: "calendar.accept_invite(event_id='evt_88', note='See you Thursday.')"
+    - id: ask
+      from: agent
+      to: inbox
+      style: dashed
+      label: card
+      description: "When the agent needs a person, it posts a card (notify, question or review) and its run pauses until it is answered."
+      example: "Review: accept 'Sync on the Q4 rollout' with Dana, Thu 15:00 to 15:30? It overlaps nothing. [Approve] [Edit] [Reject]"
+    - id: answer
+      from: inbox
+      to: agent
+      style: loop
+      label: decision
+      description: "The person's answer or decision resumes the paused run, which carries on from where it stopped."
+      example: "Approved, but make it 30 minutes earlier: Thu 14:30."
+  scenarios:
+    - id: three-emails
+      label: Three emails arrive
+      steps:
+        - id: newsletter
+          caption: A newsletter arrives; triage labels it ignore and it is archived without waking the agent.
+          duration: 2200
+          events:
+            - { type: send, edge: feed, token: { kind: prompt, label: newsletter }, at: [0, 0.35] }
+            - { type: activate, node: triage, status: thinking, at: [0.35, 0.55] }
+            - { type: branch, node: triage, taken: ignore, notTaken: [act], at: [0.55, 0.65] }
+            - { type: send, edge: ignore, token: { kind: result, label: ignore }, at: [0.65, 1] }
+        - id: support
+          caption: A customer asks where an order is. The agent looks it up and sends a routine reply on its own.
+          duration: 2800
+          events:
+            - { type: send, edge: feed, token: { kind: prompt, label: support }, at: [0, 0.25] }
+            - { type: branch, node: triage, taken: act, notTaken: [ignore], at: [0.25, 0.35] }
+            - { type: send, edge: act, token: { kind: prompt, label: act }, at: [0.35, 0.55] }
+            - { type: activate, node: agent, status: thinking, at: [0.55, 0.75] }
+            - { type: send, edge: call, token: { kind: tool-call, label: send reply }, at: [0.75, 1] }
+        - id: invite
+          caption: A meeting invite arrives. Accepting is review-gated, so the agent posts a review card and pauses.
+          duration: 2800
+          events:
+            - { type: send, edge: feed, token: { kind: prompt, label: invite }, at: [0, 0.25] }
+            - { type: branch, node: triage, taken: act, notTaken: [ignore], at: [0.25, 0.35] }
+            - { type: send, edge: act, token: { kind: prompt, label: act }, at: [0.35, 0.55] }
+            - { type: activate, node: agent, status: thinking, at: [0.55, 0.7] }
+            - { type: send, edge: ask, token: { kind: feedback, label: review }, at: [0.7, 1] }
+        - id: approve
+          caption: Hours later the manager approves the card; the run resumes and accepts the meeting.
+          duration: 2600
+          events:
+            - { type: activate, node: inbox, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: answer, token: { kind: feedback, label: approved }, at: [0.3, 0.6] }
+            - { type: send, edge: call, token: { kind: tool-call, label: accept }, at: [0.65, 0.95] }
+            - { type: activate, node: tools, status: done, at: [0.9, 1] }
+    - id: question
+      label: The agent asks a question
+      steps:
+        - id: arrive
+          caption: A supplier asks which project code to put on an invoice.
+          duration: 2000
+          events:
+            - { type: send, edge: feed, token: { kind: prompt, label: supplier }, at: [0, 0.4] }
+            - { type: branch, node: triage, taken: act, notTaken: [ignore], at: [0.4, 0.5] }
+            - { type: send, edge: act, token: { kind: prompt, label: act }, at: [0.5, 1] }
+        - id: ask
+          caption: "The agent cannot know the code, so it posts a question card: 'Which project code for the Northwind invoice?'"
+          duration: 2400
+          events:
+            - { type: activate, node: agent, status: thinking, at: [0, 0.35] }
+            - { type: send, edge: ask, token: { kind: feedback, label: question }, at: [0.35, 0.75] }
+            - { type: activate, node: agent, status: waiting, at: [0.75, 1] }
+        - id: answer
+          caption: The manager answers 'NW-2026-14'; the agent resumes and sends the supplier the code.
+          duration: 2600
+          events:
+            - { type: send, edge: answer, token: { kind: feedback, label: NW-2026-14 }, at: [0, 0.4] }
+            - { type: activate, node: agent, status: thinking, at: [0.4, 0.6] }
+            - { type: send, edge: call, token: { kind: tool-call, label: send reply }, at: [0.6, 0.95] }
+            - { type: activate, node: tools, status: done, at: [0.9, 1] }

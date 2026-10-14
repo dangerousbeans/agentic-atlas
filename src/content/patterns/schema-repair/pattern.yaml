@@ -1,0 +1,183 @@
+slug: schema-repair
+name: Schema Validation & Repair
+family: reliability-runtime
+aliases: [Validate-and-reask, Structured output retry, Output parser with repair, Instructor reask]
+summary: Check the model's output against a schema and rules; on failure, send the exact error back and ask again, up to N tries.
+badges: { autonomy: low, cost: low, latency: medium }
+sources:
+  - title: "Instructor docs: Retry Logic with Tenacity"
+    url: https://python.useinstructor.com/concepts/retrying/
+  - title: "Instructor on GitHub (started by Jason Liu as jxnl/instructor)"
+    url: https://github.com/567-labs/instructor
+related:
+  composesWith: [prompt-chaining, augmented-llm, model-fallback]
+  confusedWith:
+    - slug: evaluator-optimizer
+      difference: "Evaluator-optimizer asks an LLM judge whether the work is good enough. Schema repair runs a deterministic check, and the validator's own error text is the feedback."
+    - slug: critic
+      difference: "CRITIC verifies an answer's claims with tools such as search or code. Schema repair checks format and business rules with plain code, and feeds the validator's error back."
+    - slug: guardrails
+      difference: "Guardrails block unsafe or off-topic content. Schema repair does not judge content; it fixes output that downstream code cannot parse or that breaks a business rule."
+origin:
+  by: Jason Liu
+  org: Instructor
+  year: 2023
+  url: https://github.com/567-labs/instructor
+  kind: popularized
+  uncertain: true
+  note: "No single inventor: the same validate-and-reask loop ships as LangChain's OutputFixingParser and in Guardrails AI. Jason Liu's Instructor (repository started as jxnl/instructor in June 2023) made it popular."
+build:
+  goal: "Turn unstructured input into an object that passes a typed schema and every business rule, feeding the exact validation error back to the model until it passes or a retry budget runs out."
+  steps:
+    - "Define the target as a schema with types and required fields, plus named rule functions for checks a schema cannot express (ranges, dates in order, totals that add up)."
+    - "Call the model with the {{prompt:extract}}, filling in the input and the schema rendered as JSON Schema."
+    - "Parse the reply as JSON, then validate it against the schema and run every rule. Collect each failure as a field path plus a message."
+    - "If there are no failures, return the typed object."
+    - "Otherwise call the model with the {{prompt:repair}}, passing the input, the previous reply and the list of failures verbatim, and validate the new reply the same way."
+  stop: "Stop when a reply passes validation, or after 3 attempts in total. If the budget runs out, raise a validation error that carries the last reply and its failures, so the caller can queue the item for a person instead of storing bad data."
+  requirements:
+    - "Make the attempt cap a parameter (default 3); never loop without one."
+    - "Treat a reply that is not valid JSON as a validation failure whose message is the parser's error, not as a crash."
+    - "Send every failure in one repair call, each with its field path, so the model can fix them all at once."
+    - "Log each attempt with the raw reply, the failures and the token counts."
+    - "Add a test with a stub LLM whose first reply has due_date \"next Friday\" and whose second has a valid date; assert two model calls, that the repair prompt contains the text \"due_date\", and that the returned object has the second date."
+prompts:
+  - id: extract
+    title: Extraction prompt
+    lang: markdown
+    source: |
+      Extract the fields below from the document. Reply with one JSON object that
+      matches this schema exactly, and nothing else.
+
+      <schema>{{json_schema}}</schema>
+      <rules>{{rules}}</rules>
+      <document>{{document}}</document>
+
+      If a field is missing from the document, use null rather than guessing.
+  - id: repair
+    title: Repair prompt
+    lang: markdown
+    source: |
+      Your previous reply failed validation. Fix every error listed below and reply
+      with the corrected JSON object only.
+
+      <schema>{{json_schema}}</schema>
+      <rules>{{rules}}</rules>
+      <document>{{document}}</document>
+      <previous_reply>{{previous_reply}}</previous_reply>
+      <errors>
+      {{errors}}
+      </errors>
+
+      Keep every field that had no error exactly as it was.
+diagram:
+  nodes:
+    - id: doc
+      kind: io
+      label: Invoice
+      description: "The input to extract from: here, the OCR text of a scanned supplier invoice dated 2026-03-02."
+    - id: llm
+      kind: llm
+      label: Extractor
+      description: "Reads the document and replies with JSON for vendor, total, currency and due_date; on a repair round it also sees its last reply and the errors."
+    - id: validator
+      kind: guard
+      label: Validator
+      sublabel: schema + rules
+      model: false
+      description: "Plain code: parses the JSON, checks types and required fields, then runs business rules such as 'due_date is after the invoice date'."
+    - id: out
+      kind: io
+      label: Typed data
+      description: "The validated object, safe to hand to accounting code that expects a real date and a decimal total."
+    - id: fail
+      kind: io
+      label: Rejected
+      description: "After the last attempt fails, the item and its errors go to a review queue instead of into the database."
+  edges:
+    - id: in
+      from: doc
+      to: llm
+      description: "The document and the schema go to the model with the extraction prompt."
+      example: "ACME Tools Ltd. Invoice 4471, dated 2 March 2026. Total due: 1,240.00 EUR. Payment due next Friday."
+    - id: json
+      from: llm
+      to: validator
+      label: JSON
+      description: "The model's reply goes to the validator as raw text, before any code trusts it."
+      example: '{"vendor": "ACME Tools Ltd.", "total": 1240.00, "currency": "EUR", "due_date": "next Friday"}'
+    - id: repair
+      from: validator
+      to: llm
+      style: loop
+      label: error
+      description: "On failure, the validator's exact error messages go back to the model with its previous reply, so it knows which field to fix."
+      example: "due_date: 'next Friday' is not a valid date (expected YYYY-MM-DD, after invoice date 2026-03-02)"
+    - id: ok
+      from: validator
+      to: out
+      label: valid
+      description: "When every check passes, the parsed object leaves as typed data."
+      example: '{"vendor": "ACME Tools Ltd.", "total": 1240.00, "currency": "EUR", "due_date": "2026-03-06"}'
+    - id: giveup
+      from: validator
+      to: fail
+      style: dashed
+      label: 3rd failure
+      description: "If the third attempt still fails, the loop stops and raises an error carrying the last reply and its failures."
+      example: "ValidationError after 3 attempts: total: -1240.0 must be positive. Sent to review queue with invoice 4471."
+  scenarios:
+    - id: repaired-once
+      label: Repaired once
+      steps:
+        - id: extract
+          caption: The model extracts the fields, but copies the due date as the words 'next Friday'.
+          duration: 2200
+          events:
+            - { type: send, edge: in, token: { kind: prompt, label: invoice }, at: [0, 0.3] }
+            - { type: activate, node: llm, status: thinking, at: [0.3, 0.65] }
+            - { type: send, edge: json, token: { kind: result, label: JSON }, at: [0.65, 1] }
+        - id: reject
+          caption: "The validator rejects the date and sends its exact error back: 'due_date: invalid date' (attempt 1 of 3)."
+          duration: 2200
+          events:
+            - { type: activate, node: validator, status: error, at: [0, 0.35] }
+            - { type: branch, node: validator, taken: repair, notTaken: [ok, giveup], at: [0.35, 0.5] }
+            - { type: send, edge: repair, token: { kind: feedback, label: due_date bad }, at: [0.5, 1] }
+        - id: fixed
+          caption: The model resolves 'next Friday' to 2026-03-06; every check passes and the typed object is returned.
+          duration: 2800
+          events:
+            - { type: activate, node: llm, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: json, token: { kind: result, label: JSON }, at: [0.3, 0.55] }
+            - { type: branch, node: validator, taken: ok, notTaken: [repair, giveup], at: [0.55, 0.7] }
+            - { type: send, edge: ok, token: { kind: result, label: valid }, at: [0.7, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
+    - id: gives-up
+      label: Gives up after 3 tries
+      steps:
+        - id: extract
+          caption: A smudged scan arrives; the model reads the total as a negative number.
+          duration: 1800
+          events:
+            - { type: send, edge: in, token: { kind: prompt, label: invoice }, at: [0, 0.4] }
+            - { type: activate, node: llm, status: thinking, at: [0.4, 1] }
+        - id: loop
+          caption: Each reply fails the rule 'total must be positive', and the error goes back for another try.
+          duration: 2600
+          repeat: 2
+          events:
+            - { type: send, edge: json, token: { kind: result, label: JSON }, at: [0, 0.3] }
+            - { type: activate, node: validator, status: error, at: [0.3, 0.5] }
+            - { type: branch, node: validator, taken: repair, notTaken: [ok, giveup], at: [0.5, 0.6] }
+            - { type: send, edge: repair, token: { kind: feedback, label: total < 0 }, at: [0.6, 0.85] }
+            - { type: activate, node: llm, status: thinking, at: [0.85, 1] }
+        - id: reject
+          caption: The third reply fails too, so the loop stops and the invoice goes to a review queue with its errors.
+          duration: 2400
+          events:
+            - { type: send, edge: json, token: { kind: result, label: JSON }, at: [0, 0.3] }
+            - { type: activate, node: validator, status: error, at: [0.3, 0.5] }
+            - { type: branch, node: validator, taken: giveup, notTaken: [ok, repair], at: [0.5, 0.6] }
+            - { type: send, edge: giveup, token: { kind: feedback, label: 3 failures }, at: [0.6, 0.9] }
+            - { type: activate, node: fail, status: error, at: [0.85, 1] }

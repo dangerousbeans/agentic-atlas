@@ -1,0 +1,258 @@
+slug: batch-processing
+name: Batch & Throttled Fan-out
+family: efficiency-cost
+aliases: [Batch API, Async fan-out, Rate-limited parallelism, Bulk inference]
+summary: Run thousands of independent requests through a rate limiter with retries, or submit them as one provider batch at half price.
+badges: { autonomy: low, cost: low, latency: high }
+sources:
+  - title: "OpenAI Cookbook: api_request_parallel_processor.py"
+    url: https://github.com/openai/openai-cookbook/blob/main/examples/api_request_parallel_processor.py
+  - title: "Anthropic docs: Batch processing"
+    url: https://platform.claude.com/docs/en/docs/build-with-claude/batch-processing
+  - title: "Introducing the Message Batches API (Anthropic, 2024)"
+    url: https://claude.com/blog/message-batches-api
+related:
+  composesWith: [caching, model-fallback, schema-repair]
+  confusedWith:
+    - slug: sectioning
+      difference: "Sectioning splits one task into parts and merges them into one answer. Batching runs many unrelated items side by side, and its constraints are rate limits, throughput and cost."
+origin:
+  by: OpenAI Cookbook
+  org: OpenAI
+  year: 2023
+  url: https://github.com/openai/openai-cookbook/blob/main/examples/api_request_parallel_processor.py
+  kind: popularized
+  uncertain: true
+  note: "No single inventor: rate-limited worker pools are standard engineering. The OpenAI Cookbook's parallel processor (added January 2023) popularized throttling requests and tokens per minute with retries for LLM APIs."
+defaultVariantName: Throttled fan-out
+build:
+  goal: "Process a large list of independent items through a model as fast as the account's rate limits allow, retrying transient failures, and collect one result per item."
+  steps:
+    - "Load the items into a queue, each with a stable id, and build each request from the {{prompt:classify}}."
+    - "Estimate each request's token count, and run a limiter with two token buckets: requests per minute and tokens per minute, set just below your account's limits."
+    - "Start a fixed pool of concurrent workers. Each takes the next item, waits until the limiter has capacity for it, and calls the model."
+    - "On a 429 or 5xx, put the item back in the queue with exponential backoff and jitter, and pause the whole pool briefly so the other workers do not hit the same limit."
+    - "Parse each reply and write it to the results file under the item's id as soon as it arrives; record items that fail permanently in a separate errors file."
+  stop: "Stop when the queue is empty and no worker is busy. Items that fail 5 times go to the errors file with their last error; the run reports counts of succeeded and failed items."
+  requirements:
+    - "Make the request and token limits, the concurrency and the retry cap parameters."
+    - "Write results incrementally, keyed by item id, so a crashed run can skip items that are already done when restarted."
+    - "Never let results depend on completion order: match each reply to its item by id."
+    - "Log throughput (items and tokens per minute), the 429 rate and the total cost as the run progresses."
+    - "Add a test with a stub model that returns 429 on the first call for item 7 and succeeds otherwise; for 20 items, assert 20 results, that item 7 was called twice, and that every result carries the right id."
+prompts:
+  - id: classify
+    title: Per-item classification prompt
+    lang: markdown
+    source: |
+      Classify the support ticket into exactly one category.
+
+      <categories>
+      {{categories}}
+      </categories>
+      <ticket id="{{ticket_id}}">
+      {{ticket_text}}
+      </ticket>
+
+      Reply in JSON: {"id": "{{ticket_id}}", "category": "<one category>", "confidence": 0.0-1.0}
+diagram:
+  nodes:
+    - id: jobs
+      kind: io
+      label: Tickets
+      sublabel: 10,000 items
+      description: "10,000 support tickets to classify into 12 categories overnight; each one is independent of the others."
+    - id: limiter
+      kind: guard
+      label: Rate limiter
+      sublabel: 500 RPM, 200k TPM
+      model: false
+      description: "Plain code: token buckets for requests and tokens per minute. A request goes out only when both buckets have room."
+    - id: w1
+      kind: llm
+      label: Worker 1
+      description: "One concurrent call to the model, made by one of a fixed pool of code workers: it takes the next ticket and returns its label."
+    - id: w2
+      kind: llm
+      label: Worker 2
+      description: "A second concurrent call to the same model. When the provider pushes back with a 429, its ticket goes back to the queue."
+    - id: w3
+      kind: llm
+      label: Worker 3
+      description: "A third concurrent call to the same model. Real runs keep tens in flight; the limiter, not the pool size, sets the pace."
+    - id: results
+      kind: aggregator
+      label: Results
+      description: "Collects one label per ticket, keyed by ticket id, written to disk as each reply arrives so a crash loses nothing."
+  edges:
+    - id: in
+      from: jobs
+      to: limiter
+      description: "Tickets leave the queue only as fast as the limiter allows."
+      example: "ticket 4512: 'App crashes when I upload a photo larger than 10 MB.' (~180 tokens)"
+    - id: d1
+      from: limiter
+      to: w1
+      description: "When both buckets have room, the next ticket goes to a free worker."
+      example: "bucket: 312/500 requests, 141k/200k tokens this minute; dispatching ticket 4512"
+    - id: d2
+      from: limiter
+      to: w2
+      description: "Another ticket goes to the next free worker, in parallel."
+      example: "dispatching ticket 4513"
+    - id: d3
+      from: limiter
+      to: w3
+      description: "A third ticket goes out in parallel."
+      example: "dispatching ticket 4514"
+    - id: retry
+      from: w2
+      to: limiter
+      style: loop
+      label: "429"
+      description: "A rate-limit error sends the ticket back through the limiter after a backoff, and briefly slows the whole pool."
+      example: "ticket 4513: HTTP 429; retry 1 of 5 in 4 s; pool paused 4 s"
+    - id: r1
+      from: w1
+      to: results
+      description: "Each worker's label is written under its ticket's id as soon as it arrives."
+      example: '{"id": "4512", "category": "bug: uploads", "confidence": 0.94}'
+    - id: r2
+      from: w2
+      to: results
+      description: "The retried ticket's label arrives later; order does not matter because results are keyed by id."
+      example: '{"id": "4513", "category": "billing", "confidence": 0.88}'
+    - id: r3
+      from: w3
+      to: results
+      description: "The third worker's label joins the results."
+      example: '{"id": "4514", "category": "feature request", "confidence": 0.79}'
+  scenarios:
+    - id: throttled
+      label: Throttled run with a 429
+      steps:
+        - id: dispatch
+          caption: Tickets flow through the rate limiter to three workers at once.
+          duration: 2200
+          events:
+            - { type: send, edge: in, token: { kind: prompt, label: tickets }, at: [0, 0.35] }
+            - { type: send, edge: d1, token: { kind: prompt, label: "4512" }, at: [0.35, 0.7] }
+            - { type: send, edge: d2, token: { kind: prompt, label: "4513" }, at: [0.4, 0.75] }
+            - { type: send, edge: d3, token: { kind: prompt, label: "4514" }, at: [0.45, 0.8] }
+        - id: limit
+          caption: Two workers return labels; worker 2 hits a 429, so its ticket goes back through the limiter after a backoff.
+          duration: 2800
+          events:
+            - { type: activate, node: w1, status: thinking, at: [0, 0.3] }
+            - { type: activate, node: w3, status: thinking, at: [0, 0.4] }
+            - { type: activate, node: w2, status: error, at: [0.1, 0.3] }
+            - { type: send, edge: retry, token: { kind: feedback, label: "429" }, at: [0.3, 0.6] }
+            - { type: send, edge: r1, token: { kind: result, label: label }, at: [0.35, 0.65] }
+            - { type: send, edge: r3, token: { kind: result, label: label }, at: [0.45, 0.75] }
+            - { type: activate, node: limiter, status: waiting, at: [0.6, 1] }
+        - id: retry
+          caption: After the backoff, the ticket is dispatched again and succeeds; its label lands under its own id.
+          duration: 2400
+          events:
+            - { type: send, edge: d2, token: { kind: prompt, label: "4513" }, at: [0, 0.35] }
+            - { type: activate, node: w2, status: thinking, at: [0.35, 0.6] }
+            - { type: send, edge: r2, token: { kind: result, label: label }, at: [0.6, 0.95] }
+            - { type: activate, node: results, status: done, at: [0.9, 1] }
+variants:
+  - id: provider-batch
+    name: Provider batch
+    summary: "Submit every request in one asynchronous batch job; the provider runs it within a day at half price, with no per-minute throttling on your side."
+    origin:
+      by: OpenAI and Anthropic
+      year: 2024
+      url: https://platform.claude.com/docs/en/docs/build-with-claude/batch-processing
+      kind: popularized
+      note: "No single inventor: the OpenAI Batch API (April 2024) and the Anthropic Message Batches API (October 2024) made asynchronous bulk inference at a 50% discount, within 24 hours, a standard option."
+    build:
+      goal: "Process a large list of independent items through the provider's asynchronous batch API at the batch discount, and match every result back to its item."
+      steps:
+        - "Build one request per item from the {{prompt:classify}}, each tagged with a custom id equal to the item's id."
+        - "Split the requests into batches under the provider's limits on count and size, and submit each batch."
+        - "Poll each batch's status at a modest interval (every few minutes) until it has ended."
+        - "Download the results and match each one to its item by custom id; never by position."
+        - "Collect the requests that errored or expired and submit them again as a new, smaller batch."
+      stop: "Stop when every item has a succeeded result, or after 2 resubmissions. Items still failing go to an errors file with their last error."
+      requirements:
+        - "Persist the batch ids as soon as they are created, so a restarted script polls existing batches instead of submitting duplicates."
+        - "Treat a batch that is still running after the provider's deadline as expired and resubmit only its unfinished items."
+        - "Log each batch's id, request count, status changes, and the counts of succeeded, errored and expired results."
+        - "Add a test with a stub batch client that returns results out of order with one errored item; assert every result is matched to the right item and exactly one item is resubmitted."
+    diagram:
+      nodes:
+        - id: jobs
+          kind: io
+          label: Tickets
+          sublabel: 10,000 items
+          description: "The same 10,000 tickets, turned into 10,000 requests, each tagged with its ticket id."
+        - id: batch
+          kind: tool
+          label: Batch API
+          sublabel: async, -50% cost
+          description: "The provider's batch endpoint. It accepts the whole set at once, runs it when it has capacity, and finishes most batches within an hour."
+        - id: results
+          kind: aggregator
+          label: Results
+          description: "The downloaded results, matched back to tickets by custom id; errored or expired requests are picked out for resubmission."
+        - id: out
+          kind: io
+          label: Labels
+          description: "One category per ticket, ready for the morning report."
+      edges:
+        - id: submit
+          from: jobs
+          to: batch
+          label: submit
+          description: "All requests go to the provider in one job; there is no rate limiter or worker pool to run."
+          example: "POST /batches: 10,000 requests, custom_id 'ticket-0001' ... 'ticket-10000'"
+        - id: fetch
+          from: batch
+          to: results
+          label: when done
+          description: "When the batch has ended, its results are downloaded in one file."
+          example: "status: ended. succeeded 9,987, errored 13, expired 0. Results file ready."
+        - id: resubmit
+          from: results
+          to: jobs
+          style: loop
+          label: errored
+          description: "Requests that errored or expired go back as a new, smaller batch."
+          example: "Resubmitting 13 errored requests as batch 2."
+        - id: done
+          from: results
+          to: out
+          description: "Every succeeded result becomes a label on its ticket."
+          example: '{"custom_id": "ticket-4512", "category": "bug: uploads"}'
+      scenarios:
+        - id: overnight
+          label: Overnight batch
+          steps:
+            - id: submit
+              caption: All 10,000 requests are submitted as one batch at half the normal price.
+              duration: 1800
+              events:
+                - { type: send, edge: submit, token: { kind: prompt, label: 10k requests } }
+            - id: wait
+              caption: The provider works through the batch when it has capacity; the script just polls now and then.
+              duration: 2400
+              events:
+                - { type: activate, node: batch, status: waiting }
+            - id: fetch
+              caption: The batch ends; 13 requests errored and go back as a small second batch.
+              duration: 2800
+              events:
+                - { type: send, edge: fetch, token: { kind: result, label: results }, at: [0, 0.4] }
+                - { type: activate, node: results, status: thinking, at: [0.4, 0.6] }
+                - { type: send, edge: resubmit, token: { kind: feedback, label: 13 errored }, at: [0.6, 1] }
+            - id: done
+              caption: The second batch succeeds, and every ticket has its label by morning.
+              duration: 2800
+              events:
+                - { type: send, edge: submit, token: { kind: prompt, label: 13 requests }, at: [0, 0.3] }
+                - { type: send, edge: fetch, token: { kind: result, label: results }, at: [0.35, 0.65] }
+                - { type: send, edge: done, token: { kind: result, label: labels }, at: [0.65, 0.95] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
