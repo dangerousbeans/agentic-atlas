@@ -1,0 +1,36 @@
+## Problem
+
+Every model API fails some of the time. Providers rate-limit you at peak hours, return 503s during incidents, time out on long generations, and reject inputs that exceed the context window. If your support chat calls one model directly, each of those failures becomes an error message in front of a customer. A single outage at one provider can take your whole product down even though other models could have answered just as well.
+
+## How it works
+
+Every model call goes through a <NodeRef id="gateway">gateway</NodeRef>: a thin layer of plain code with an ordered list of models. It sends the customer's <NodeRef id="user">message</NodeRef> to the <NodeRef id="m1">primary</NodeRef> model first. When the call fails with an error that might clear on its own, such as a 429 rate limit, a 503 or a timeout, the gateway waits and tries again, doubling the wait each time and honouring any Retry-After header the provider sends.
+
+If the primary keeps failing after its retry budget, the gateway puts it in cooldown for a minute and sends the same request to the <NodeRef id="m2">fallback</NodeRef>, ideally a model from a different provider so one incident cannot take out both. The cooldown is shared, so the next customer's request skips the broken model at once instead of paying for its own retries.
+
+Some failures are predictable. If the input is bigger than the normal models' context window, the gateway sends it straight to a <NodeRef id="m3">long-context</NodeRef> model rather than waiting for an overflow error. And some failures are not worth retrying at all: a malformed request will fail on every model, so the gateway raises it immediately.
+
+Whichever model answers, the <NodeRef id="out">reply</NodeRef> looks the same to the customer, and the logs record which model served it.
+
+## When to use
+
+- The feature has an availability target, and a single provider's outage would breach it.
+- You already use, or can use, more than one model or provider.
+- Some inputs occasionally exceed a model's context window and need a bigger one.
+
+## When to avoid
+
+- Outputs must come from one exact model, for reproducibility, compliance or an evaluation you cannot rerun.
+- The task depends on features only one provider has, such as a specific tool or output format, so a fallback would answer differently.
+- The call is in an offline batch job that can simply be rerun later.
+
+## Trade-offs
+
+Fallback trades consistency for availability. The fallback model writes in a different style, follows instructions differently and may score worse on your evaluations, so you need one prompt that works on all of them and tests that run against each. Retries add latency, sometimes many seconds, which is acceptable for a chat reply but not for an autocomplete. Every retry also costs money if the provider bills partial work.
+
+## Failure modes
+
+- **Retry storm:** every request retries a provider that is already overloaded, making the outage worse. Use backoff with jitter, cap the retries and share cooldown state.
+- **Silent degradation:** the fallback serves most traffic for days and nobody notices the quality drop. Alert when the fallback rate rises.
+- **Retrying the unfixable:** a 400 error or a bad prompt is retried on every model. Classify errors and raise fatal ones at once.
+- **Prompt drift:** the prompt is tuned for the primary and the fallback ignores half of it. Keep one portable prompt and evaluate it on every model in the list.
