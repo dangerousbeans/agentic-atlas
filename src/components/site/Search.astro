@@ -2,7 +2,7 @@
 import { getCatalog } from '../../lib/catalog';
 const cat = await getCatalog();
 ---
-<button type="button" class="search-btn" data-search-open aria-haspopup="dialog">Search <kbd data-kbd>Ctrl K</kbd></button>
+<button type="button" class="btn btn-sm search-btn" data-search-open aria-haspopup="dialog">Search <kbd data-kbd>Ctrl K</kbd></button>
 <dialog class="search" aria-label="Search patterns">
   <div class="search-head">
     <input type="search" aria-label="Search" placeholder="Search patterns, e.g. 'loop', 'memory', 'tools'" autocomplete="off" />
@@ -60,8 +60,7 @@ const cat = await getCatalog();
   fam.addEventListener('change', run);
 </script>
 <style>
-  .search-btn { display: inline-flex; align-items: center; gap: 10px; min-height: 36px; background: transparent; color: var(--text); border: 1px solid var(--line-strong); border-radius: 0; padding: 6px 12px; font: 500 14px var(--font-ui); cursor: pointer; white-space: nowrap; }
-  .search-btn:hover { border-color: var(--text-2); background: var(--bg-1); }
+  .search-btn { padding-inline: 12px; font-weight: 500; }
   kbd { font: 11px var(--font-mono); color: var(--text-2); }
   dialog.search { width: min(640px, 92vw); border: 1px solid var(--line-strong); border-top: 2px solid var(--accent); border-radius: 0; background: var(--bg-1); color: var(--text); padding: 0; margin-top: 12vh; }
   dialog.search::backdrop { background: #120F0Ecc; backdrop-filter: blur(4px); }

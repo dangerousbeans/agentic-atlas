@@ -4,12 +4,16 @@ import Search from './Search.astro';
 
 const base = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');
 const raw = Astro.url.pathname;
-const path = (base && raw.startsWith(base) ? raw.slice(base.length) : raw) || '/';
+// Normalise to a leading and trailing slash so /about and /about/ compare equal.
+const norm = (p: string) => ('/' + p.replace(/^\/+|\/+$/g, '') + '/').replace(/^\/\/$/, '/');
+const path = norm(base && raw.startsWith(base) ? raw.slice(base.length) : raw);
 const links = [
-  { label: 'Atlas', to: '/', active: path === '/' || path.startsWith('/patterns/') },
-  { label: 'Families', to: '/#families', active: path.startsWith('/families') },
-  { label: 'About', to: '/about/', active: path.startsWith('/about') },
+  { label: 'Atlas', to: '/', page: '/', active: path === '/' || path.startsWith('/patterns/') },
+  { label: 'Families', to: '/#families', page: '/families/', active: path.startsWith('/families/') },
+  { label: 'About', to: '/about/', page: '/about/', active: path.startsWith('/about/') },
 ];
+// Exact page -> aria-current="page"; inside the section (e.g. Atlas on /patterns/*) -> "true".
+const current = (l: (typeof links)[number]) => (!l.active ? undefined : path === l.page ? 'page' : 'true');
 ---
 <header class="site-header">
   <div class="bar">
@@ -17,7 +21,7 @@ const links = [
     <nav aria-label="Primary">
       <ul>
         {links.map(l => (
-          <li><a href={href(l.to)} class:list={{ active: l.active }} aria-current={l.active && path === l.to ? 'page' : undefined}>{l.label}</a></li>
+          <li><a href={href(l.to)} class:list={{ active: l.active }} aria-current={current(l)}>{l.label}</a></li>
         ))}
       </ul>
       <Search />
@@ -35,6 +39,7 @@ const links = [
   .bar {
     display: flex; align-items: center; justify-content: space-between; gap: 24px;
     min-height: var(--header-h); padding: 0 var(--gutter);
+    max-width: var(--max); margin: 0 auto;
   }
   .brand {
     display: inline-flex; align-items: center; gap: 12px;
