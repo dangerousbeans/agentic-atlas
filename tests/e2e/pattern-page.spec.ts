@@ -244,8 +244,9 @@ test.describe('neighbour nav', () => {
     const base = test.info().project.use.baseURL!;
     await page.goto(base + at('routing'));
     await expect(page.locator('[data-nav="random"]')).toHaveAttribute('href', /sectioning\/$/);
-    await page.goto(base + at('guardrails'));
-    await expect(page.locator('[data-nav="random"]')).toHaveAttribute('href', /human-in-the-loop\/$/);
+    const last = order[order.length - 1], beforeLast = order[order.length - 2];
+    await page.goto(base + at(last));
+    await expect(page.locator('[data-nav="random"]')).toHaveAttribute('href', new RegExp(`${beforeLast}/$`));
     await ctx.close();
   });
 });
