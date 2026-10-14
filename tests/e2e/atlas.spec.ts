@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { catalogOrder, visibleFamilies } from '../catalog-fixture';
 
 const tiles = (page: Page) => page.locator('a.atlas-tile');
 const focusedSlug = (page: Page) => page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.slug ?? null);
@@ -13,7 +14,7 @@ test.describe('/atlas/', () => {
   test('the map fills the viewport below the header', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await open(page);
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('The atlas · 21 patterns · 6 families');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText(`The atlas · ${catalogOrder().length} patterns · ${visibleFamilies().length} families`);
     const header = (await page.locator('header.site-header').boundingBox())!;
     const v = (await page.locator('.atlas-viewport').boundingBox())!;
     expect(v.height).toBeGreaterThanOrEqual(900 - header.height - 120);
@@ -59,11 +60,11 @@ test.describe('/atlas/', () => {
     expect(r.violations).toEqual([]);
   });
 
-  test('without JS the 21 pattern links are a plain list', async ({ browser }) => {
+  test('without JS the pattern links are a plain list', async ({ browser }) => {
     const ctx = await browser.newContext({ javaScriptEnabled: false });
     const page = await ctx.newPage();
     await page.goto(test.info().project.use.baseURL! + '/atlas/');
-    await expect(tiles(page)).toHaveCount(21);
+    await expect(tiles(page)).toHaveCount(catalogOrder().length);
     await ctx.close();
   });
 

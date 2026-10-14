@@ -1,0 +1,229 @@
+slug: codeact
+name: CodeAct
+family: agent-loops
+aliases: [Code as action, Code agent, Executable code actions, Programmatic tool calling]
+summary: The agent acts by writing code. One snippet can call many tools, loop and filter, and only its printed output comes back to the model.
+badges: { autonomy: high, cost: medium, latency: medium }
+sources:
+  - title: "Executable Code Actions Elicit Better LLM Agents (Wang et al., 2024)"
+    url: https://arxiv.org/abs/2402.01030
+  - title: Introducing advanced tool use on the Claude Developer Platform (Anthropic, 2025)
+    url: https://www.anthropic.com/engineering/advanced-tool-use
+related:
+  composesWith: [react]
+  confusedWith:
+    - { slug: react, difference: "ReAct makes one tool call per model turn, and every result returns to the context. CodeAct packs many calls, loops and filters into one action, and only what the code prints comes back." }
+    - { slug: augmented-llm, difference: "The augmented LLM calls tools as JSON, one call per request. CodeAct gives the model an interpreter in which tools are ordinary functions it can compose with code." }
+origin:
+  by: Xingyao Wang et al.
+  org: University of Illinois Urbana-Champaign, Apple
+  year: 2024
+  url: https://arxiv.org/abs/2402.01030
+  kind: introduced
+  note: "Published at ICML 2024. Anthropic's Programmatic Tool Calling (2025) applies the same idea: the model writes code that calls tools inside a sandbox, and intermediate results stay out of its context."
+build:
+  goal: "Let a model answer a task by writing code that runs in a sandboxed interpreter, where the available tools are plain functions, looping on the printed output or error until it gives a final answer."
+  steps:
+    - "Wrap each tool as a function inside the sandbox, with a docstring giving its arguments and return value, and list those signatures in the {{prompt:system}}."
+    - "Call the model with the system prompt, the task and the transcript so far."
+    - "If the reply contains a code block, run it in the sandbox. Keep one interpreter session per task, so variables defined in one step are still there in the next."
+    - "Capture stdout and any error with its traceback, truncate it to a size limit, and append it to the transcript in the format of the {{prompt:observation}}."
+    - "Call the model again with the longer transcript; it can fix an error, keep working with the variables it made, or finish."
+    - "If the reply contains a final answer and no code block, return the answer."
+  stop: "Stop when the model gives a final answer, or after 10 code executions. On the cap, return the last output with a status saying the agent did not finish."
+  requirements:
+    - "Run the code in a sandbox with no file system or network access except through the tool functions, and with CPU, memory and wall-clock limits on each execution."
+    - "Truncate each observation (default 2,000 characters) and tell the model it was truncated, so large data stays in variables and out of the context."
+    - "Return errors to the model as observations, with the traceback, rather than ending the run."
+    - "Log every code block, its output, and the tool calls made from inside it."
+    - "Add a test with a stub LLM whose first code block raises a KeyError and whose second prints the fixed result, then answers; assert two executions, that the second observation holds the printed result, and that the answer is returned."
+prompts:
+  - id: system
+    title: System prompt
+    lang: markdown
+    source: |
+      You solve tasks by writing Python, which runs in a sandbox where these
+      functions are already defined:
+
+      {{tool_signatures}}
+
+      To act, reply with one fenced python code block. Use print() for anything
+      you need to see: only printed output comes back to you, truncated to
+      {{max_chars}} characters. Variables persist between your code blocks.
+
+      Keep large data in variables and print only summaries.
+      If your code raises an error, read the traceback and fix the code.
+
+      When you have the answer, reply with "Final answer:" followed by it, and no code block.
+  - id: observation
+    title: Observation format
+    lang: markdown
+    source: |
+      <execution>
+      <stdout>{{stdout}}</stdout>
+      {{#if error}}<error>{{traceback}}</error>{{/if}}
+      {{#if truncated}}(output truncated to {{max_chars}} characters){{/if}}
+      </execution>
+diagram:
+  groups:
+    - id: sandbox
+      label: Sandbox
+      children: [interp, crm, billing]
+  nodes:
+    - id: user
+      kind: io
+      label: Question
+      description: "The task: 'Which 3 of our 40 SaaS vendors raised prices the most this year?'"
+    - id: llm
+      kind: llm
+      label: Model
+      description: "Writes Python as its action, reads what the code printed, and either fixes the code, writes more, or answers."
+    - id: interp
+      kind: tool
+      label: Interpreter
+      sublabel: Python
+      description: "Runs the model's code with the tools as ordinary functions, and keeps variables between steps."
+    - id: crm
+      kind: tool
+      label: Vendors
+      sublabel: CRM API
+      description: "A tool exposed as a function, list_vendors(), called from inside the code rather than by the model."
+    - id: billing
+      kind: tool
+      label: Invoices
+      sublabel: billing API
+      description: "A tool exposed as a function, get_invoices(vendor, year), called once per vendor inside the code's loop."
+    - id: out
+      kind: io
+      label: Answer
+      description: "The final answer, given once the printed results are enough."
+  edges:
+    - id: ask
+      from: user
+      to: llm
+      description: "The question goes to the model with the system prompt listing the tool functions."
+      example: "Which 3 of our 40 SaaS vendors raised prices the most this year?"
+    - id: code
+      from: llm
+      to: interp
+      label: code
+      description: "The model's action is a code block, not a JSON tool call."
+      example: "for v in list_vendors(): rise[v['name']] = get_invoices(v['id'], 2026)[-1]['amount'] / get_invoices(v['id'], 2025)[-1]['amount'] - 1"
+    - id: list
+      from: interp
+      to: crm
+      style: dashed
+      description: "The code calls the vendor tool as a function; the model does not see this call."
+      example: "list_vendors()"
+    - id: vendors
+      from: crm
+      to: interp
+      style: dashed
+      description: "The vendor list lands in a variable, not in the model's context."
+      example: "[{'id': 'v01', 'name': 'Acme Analytics'}, ... 40 vendors]"
+    - id: invoices
+      from: interp
+      to: billing
+      style: dashed
+      description: "Inside the loop, the code calls the billing tool for each vendor and year, 80 calls in one action."
+      example: "get_invoices('v01', 2026)"
+    - id: rows
+      from: billing
+      to: interp
+      style: dashed
+      description: "Invoice rows return into the code, which computes each vendor's price rise."
+      example: "[{'month': '2026-09', 'amount': 1450.00}, ...]"
+    - id: stdout
+      from: interp
+      to: llm
+      style: loop
+      label: stdout
+      description: "Only what the code printed, or its error, returns to the model as the observation."
+      example: "[('Acme Analytics', 0.31), ('Pipely', 0.24), ('Formbase', 0.19)]"
+    - id: answer
+      from: llm
+      to: out
+      description: "With the result printed, the model writes the final answer."
+      example: "Final answer: Acme Analytics (+31%), Pipely (+24%) and Formbase (+19%) raised prices the most."
+  scenarios:
+    - id: one-shot-script
+      label: One script, many calls
+      steps:
+        - id: ask
+          caption: The question reaches the model.
+          duration: 1000
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: write
+          caption: The model writes one script that lists vendors and loops over their invoices.
+          duration: 2200
+          events:
+            - { type: activate, node: llm, status: thinking, at: [0, 0.55] }
+            - { type: send, edge: code, token: { kind: tool-call, label: for v in vs }, at: [0.55, 1] }
+        - id: run
+          caption: Inside the sandbox, the code calls the CRM once and billing 80 times, without going back to the model.
+          duration: 3400
+          events:
+            - { type: activate, node: interp, status: calling, at: [0, 1] }
+            - { type: send, edge: list, token: { kind: tool-call, label: list }, at: [0, 0.15] }
+            - { type: send, edge: vendors, token: { kind: result, label: 40 vendors }, at: [0.15, 0.3] }
+            - { type: send, edge: invoices, token: { kind: tool-call, label: x40 }, at: [0.3, 0.5] }
+            - { type: send, edge: rows, token: { kind: result, label: rows }, at: [0.5, 0.65] }
+            - { type: send, edge: invoices, token: { kind: tool-call, label: x40 }, at: [0.6, 0.8] }
+            - { type: send, edge: rows, token: { kind: result, label: rows }, at: [0.8, 0.95] }
+        - id: print
+          caption: Only the printed top three come back to the model, not the thousands of invoice rows.
+          duration: 1800
+          events:
+            - { type: send, edge: stdout, token: { kind: result, label: top3 }, at: [0, 0.6] }
+            - { type: activate, node: llm, status: thinking, at: [0.6, 1] }
+        - id: answer
+          caption: The model answers from the printed result.
+          duration: 1600
+          events:
+            - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0, 0.7] }
+            - { type: activate, node: out, status: done, at: [0.6, 1] }
+    - id: error-then-fix
+      label: Error, then fix
+      steps:
+        - id: ask
+          caption: The question reaches the model.
+          duration: 1000
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: write
+          caption: The model writes a script, but it reads a field the invoice rows do not have.
+          duration: 2200
+          events:
+            - { type: activate, node: llm, status: thinking, at: [0, 0.55] }
+            - { type: send, edge: code, token: { kind: tool-call, label: for v in vs }, at: [0.55, 1] }
+        - id: crash
+          caption: The first invoice rows come back without a 'total' field, so the code fails with KeyError and the traceback returns as the observation.
+          duration: 3200
+          events:
+            - { type: send, edge: list, token: { kind: tool-call, label: list }, at: [0, 0.15] }
+            - { type: send, edge: vendors, token: { kind: result, label: 40 vendors }, at: [0.15, 0.3] }
+            - { type: send, edge: invoices, token: { kind: tool-call, label: v01 }, at: [0.3, 0.45] }
+            - { type: send, edge: rows, token: { kind: result, label: rows }, at: [0.45, 0.6] }
+            - { type: activate, node: interp, status: error, at: [0.6, 0.8] }
+            - { type: send, edge: stdout, token: { kind: feedback, label: KeyError }, at: [0.75, 1] }
+        - id: fix
+          caption: The model reads the traceback and sends a patched snippet that uses 'amount'. The vendor list is still in memory.
+          duration: 2400
+          events:
+            - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: code, token: { kind: tool-call, label: patched }, at: [0.5, 1] }
+        - id: rerun
+          caption: The patched code runs the invoice loop and prints the top three.
+          duration: 2600
+          events:
+            - { type: activate, node: interp, status: calling, at: [0, 0.7] }
+            - { type: send, edge: invoices, token: { kind: tool-call, label: x80 }, at: [0, 0.35] }
+            - { type: send, edge: rows, token: { kind: result, label: rows }, at: [0.35, 0.65] }
+            - { type: send, edge: stdout, token: { kind: result, label: top3 }, at: [0.7, 1] }
+        - id: answer
+          caption: The model answers from the printed result.
+          duration: 1600
+          events:
+            - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0, 0.7] }
+            - { type: activate, node: out, status: done, at: [0.6, 1] }
