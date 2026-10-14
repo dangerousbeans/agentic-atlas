@@ -12,6 +12,8 @@ related:
   confusedWith:
     - slug: routing
       difference: "Routing picks a model by the input's category before any call is made. Fallback picks the next model only after a call has failed."
+    - slug: model-cascade
+      difference: "A cascade escalates when a call succeeds but its answer scores too low. Fallback moves on only when a call fails with an error."
 origin:
   by: BerriAI (LiteLLM)
   org: BerriAI
@@ -25,16 +27,16 @@ build:
   steps:
     - "Configure an ordered list of deployments (provider plus model), each with its context-window size, plus one long-context deployment for oversized inputs. Send every deployment the same {{prompt:system}}."
     - "Before a call, count the input tokens. If they exceed the first deployment's window, skip straight to the long-context deployment."
-    - "Call the first deployment that is not cooling down. On a retryable error (rate limit, 5xx, timeout), wait with exponential backoff and jitter, honouring any Retry-After header, and try the same deployment again."
-    - "After the retry budget for a deployment is spent, or on a content-policy refusal, put it in cooldown and move to the next deployment in the list."
-    - "On a non-retryable error such as a malformed request, stop and raise it at once: another model will not fix a bad request."
+    - "Call the first deployment that is not cooling down. On a retryable error (rate limit, 5xx, timeout), wait with exponential backoff and jitter, honouring any Retry-After header that fits the remaining time budget, and try the same deployment again."
+    - "After the retry budget for a deployment is spent, put it in cooldown and move to the next deployment in the list."
+    - "On a fatal error, stop and return it to the caller at once, without failing over or cooling anything down: a malformed request fails on every model, and a model's refusal is an answer, not an outage."
     - "Return the response together with the deployment that served it and the number of attempts."
   stop: "Stop at the first successful response. If every deployment fails or is cooling down, raise one error that lists each deployment and its last error, so the caller can show a graceful message."
   requirements:
     - "Make retries per deployment (default 2), base backoff (default 1 s) and cooldown length (default 60 s) parameters."
-    - "Classify errors in one function with a table of status codes, so retryable, fail-over and fatal errors are tested in one place."
-    - "Keep cooldown state shared across requests in the process, so one outage does not cost every request its own retries."
-    - "Log every attempt with the deployment, error class, wait time and latency, and count how often each fallback serves traffic."
+    - "Classify errors in one function with a table of status codes, so retryable, fail-over and fatal errors are tested in one place; content refusals are fatal and logged."
+    - "Cap the total time across all attempts (default 30 s): if Retry-After exceeds the remaining budget, fail over instead of waiting. Never retry a streamed response once tokens have reached the user."
+    - "Keep cooldown state shared across requests in the process, so one outage does not cost every request its own retries. Log every attempt with its deployment, error class and wait."
     - "Add a test with stub models where the primary returns 429 three times; assert three primary calls, one fallback call, the fallback's text returned, and that a second request goes straight to the fallback."
 prompts:
   - id: system

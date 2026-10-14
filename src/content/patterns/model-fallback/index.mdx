@@ -4,11 +4,11 @@ Every model API fails some of the time. Providers rate-limit you at peak hours, 
 
 ## How it works
 
-Every model call goes through a <NodeRef id="gateway">gateway</NodeRef>: a thin layer of plain code with an ordered list of models. It sends the customer's <NodeRef id="user">message</NodeRef> to the <NodeRef id="m1">primary</NodeRef> model first. When the call fails with an error that might clear on its own, such as a 429 rate limit, a 503 or a timeout, the gateway waits and tries again, doubling the wait each time and honouring any Retry-After header the provider sends.
+Every model call goes through a <NodeRef id="gateway">gateway</NodeRef>: a thin layer of plain code with an ordered list of models. It sends the customer's <NodeRef id="user">message</NodeRef> to the <NodeRef id="m1">primary</NodeRef> model first. When the call fails with an error that might clear on its own, such as a 429 rate limit, a 503 or a timeout, the gateway waits and tries again, doubling the wait each time and honouring any Retry-After header the provider sends, as long as it fits the request's overall time budget.
 
 If the primary keeps failing after its retry budget, the gateway puts it in cooldown for a minute and sends the same request to the <NodeRef id="m2">fallback</NodeRef>, ideally a model from a different provider so one incident cannot take out both. The cooldown is shared, so the next customer's request skips the broken model at once instead of paying for its own retries.
 
-Some failures are predictable. If the input is bigger than the normal models' context window, the gateway sends it straight to a <NodeRef id="m3">long-context</NodeRef> model rather than waiting for an overflow error. And some failures are not worth retrying at all: a malformed request will fail on every model, so the gateway raises it immediately.
+Some failures are predictable. If the input is bigger than the normal models' context window, the gateway sends it straight to a <NodeRef id="m3">long-context</NodeRef> model rather than waiting for an overflow error. And some failures are not worth retrying at all. A malformed request will fail on every model, so the gateway raises it immediately. A model that declines a request on content grounds has answered, not failed, so the refusal goes back to the caller as is: shopping it around other providers until one complies is not reliability engineering.
 
 Whichever model answers, the <NodeRef id="out">reply</NodeRef> looks the same to the customer, and the logs record which model served it.
 
@@ -32,5 +32,6 @@ Fallback trades consistency for availability. The fallback model writes in a dif
 
 - **Retry storm:** every request retries a provider that is already overloaded, making the outage worse. Use backoff with jitter, cap the retries and share cooldown state.
 - **Silent degradation:** the fallback serves most traffic for days and nobody notices the quality drop. Alert when the fallback rate rises.
-- **Retrying the unfixable:** a 400 error or a bad prompt is retried on every model. Classify errors and raise fatal ones at once.
+- **Retrying the unfixable:** a 400 error, a bad prompt or a refusal is retried on every model. Classify errors and return fatal ones at once.
+- **Unbounded waits:** a provider sends Retry-After: 120 and the chat reply stalls for two minutes. Cap the total time and fail over when the wait does not fit.
 - **Prompt drift:** the prompt is tuned for the primary and the fallback ignores half of it. Keep one portable prompt and evaluate it on every model in the list.
