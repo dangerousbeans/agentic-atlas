@@ -11,7 +11,7 @@ related:
   composesWith: [routing]
   confusedWith:
     - { slug: voting, difference: "Voting runs independent answers and picks the majority without any model seeing the others; in Mixture-of-Agents each layer reads every earlier answer and synthesizes a better one." }
-    - { slug: debate, difference: "In a debate the same agents revise their own answers over rounds and a judge rules; in Mixture-of-Agents each layer is a fresh set of calls, and the end is a synthesis, not a verdict." }
+    - { slug: debate, difference: "In a debate the same agents revise their own answers over rounds and converge by majority or a judge; in Mixture-of-Agents each layer is a fresh set of calls, and the end is a synthesis, not a verdict." }
     - { slug: sectioning, difference: "Sectioning splits a task into different parts for different calls; in Mixture-of-Agents every model answers the whole prompt." }
 origin:
   by: Junlin Wang et al.
@@ -27,9 +27,9 @@ build:
     - "Configure a list of proposer models, ideally from different model families, the number of proposer layers (default 2) and one aggregator model."
     - "Layer 1: send the user's prompt to every proposer in parallel, with no other context."
     - "Each later layer: call every proposer again in parallel with the {{prompt:aggregate}}, containing the user's prompt and all of the previous layer's responses, numbered."
-    - "If a proposer call fails or times out, drop it from that layer and carry on, as long as at least two responses remain."
+    - "If a proposer call fails or times out, drop it from that layer and carry on with the responses that remain; see the stop rule for when too few survive."
     - "Finally, call the aggregator model with the {{prompt:aggregate}} over the last layer's responses, and return its output."
-  stop: "The run has a fixed number of layers and no loop: it ends when the aggregator answers. If fewer than two responses survive a layer, skip straight to the aggregator; if only one survives, return it with a status of degraded."
+  stop: "The run has a fixed number of layers and no loop: it ends when the aggregator answers. If a layer ends with fewer than two responses, stop layering: with exactly one, return it with a status of degraded; with none, fail with an error naming the timed-out models. If the aggregator call fails, retry it once, then return the best-ranked last-layer response with a status of degraded."
   requirements:
     - "Run each layer's calls in parallel, each with its own timeout, so one slow model does not stall the layer."
     - "Make the model list, the layer count and the aggregator configurable, and log the cost: a run makes one call per proposer per layer, plus one."
@@ -138,7 +138,7 @@ diagram:
 variants:
   - id: moa-lite
     name: MoA-Lite
-    summary: "One proposer layer feeds the aggregator directly: half the calls of the full version, for a smaller gain."
+    summary: "One proposer layer feeds the aggregator directly: about half the calls of the full version, for a smaller gain."
     origin:
       by: Junlin Wang et al.
       org: Together AI, Duke University, University of Chicago, Stanford University
@@ -151,9 +151,9 @@ variants:
       steps:
         - "Configure a list of proposer models, ideally from different model families, and one aggregator model."
         - "Send the user's prompt to every proposer in parallel, with no other context."
-        - "If a proposer call fails or times out, drop it and carry on, as long as at least two responses remain."
+        - "If a proposer call fails or times out, drop it and carry on with the responses that remain; see the stop rule for when too few survive."
         - "Call the aggregator model with the {{prompt:aggregate}}, containing the user's prompt and every proposer's response, numbered, and return its output."
-      stop: "The run ends when the aggregator answers. If only one proposer response survives, return it directly with a status of degraded."
+      stop: "The run ends when the aggregator answers. If only one proposer response survives, return it directly with a status of degraded; with none, fail with an error naming the timed-out models. If the aggregator call fails, retry it once, then return the first proposer response with a status of degraded."
       requirements:
         - "Run the proposer calls in parallel, each with its own timeout."
         - "Label responses by number, never by model name, so the aggregator judges the content rather than the brand."
