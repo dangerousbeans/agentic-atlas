@@ -50,6 +50,10 @@ describe('content', () => {
       expect(missing).toEqual([]);
     });
   }
+  it('pattern prose never mentions the removed pseudocode', () => {
+    const hits = slugs.filter(s => /pseudocode/i.test(readFileSync(`${root}/patterns/${s}/index.mdx`, 'utf8')));
+    expect(hits).toEqual([]);
+  });
   it('content YAML has no comments (an unquoted " #" silently truncates a value)', () => {
     const files = [
       ...readdirSync(`${root}/families`).map(f => `${root}/families/${f}`),

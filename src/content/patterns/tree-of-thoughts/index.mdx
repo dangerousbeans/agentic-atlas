@@ -12,7 +12,7 @@ The search then expands the promising branch, here producing <NodeRef id="t2a">T
 
 Pruning and backtracking are different. Pruning discards a candidate the evaluator already rates impossible, before spending anything on it. Backtracking happens after a branch looked fine and then failed.
 
-The paper explores breadth-first and depth-first variants. The pseudocode uses depth-first, with backtracking falling out of the recursion.
+The paper explores breadth-first and depth-first variants. The scenario here is depth-first: when a branch returns nothing, the search falls back to its parent.
 
 ## When to use
 

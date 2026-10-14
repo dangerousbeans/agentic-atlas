@@ -29,6 +29,6 @@ ReAct buys flexibility with predictability. Cost and latency grow with the numbe
 ## Failure modes
 
 - **Loops:** the agent repeats the same failing action. Cap the steps and detect repeated actions.
-- **Hallucinated observations:** the model writes its own "Observation:" line. Stop generation at that token, as the pseudocode does.
+- **Hallucinated observations:** the model writes its own "Observation:" line. Stop generation at that token.
 - **Context bloat:** long tool outputs crowd out the task. Truncate or summarize observations.
 - **Early quitting:** the agent answers from memory without verifying. Tell it explicitly to check facts with a tool.

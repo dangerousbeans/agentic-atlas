@@ -27,5 +27,5 @@ Routing is the cheapest workflow to add. It adds one cheap, fast call before the
 ## Failure modes
 
 - **Misrouting:** a billing complaint phrased as a bug report lands with tech support. Evaluate the classifier on labelled real traffic and log its choices.
-- **No fallback:** an unexpected label crashes the flow. Always default to a general handler, as the pseudocode does.
+- **No fallback:** an unexpected label crashes the flow. Always default to a general handler.
 - **Category drift:** products change, but the category list does not. Review misrouted examples regularly and update the labels.
