@@ -1,6 +1,6 @@
 import { test, expect, type Page, type Locator, type CDPSession } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { catalogOrder, visibleFamilies } from '../catalog-fixture';
+import { catalogOrder, visibleFamilies, familyPatterns } from '../catalog-fixture';
 
 const viewport = (page: Page) => page.locator('.atlas-viewport');
 const tiles = (page: Page) => page.locator('a.atlas-tile');
@@ -92,11 +92,12 @@ test.describe('atlas map', () => {
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowRight');
-    expect(await focusedSlug(page)).toBe('augmented-llm');
-    await expect.poll(() => fullyInView(page, tile(page, 'augmented-llm'))).toBe(true);
-    await expect(page.locator('a.atlas-tile[tabindex="0"]')).toHaveAttribute('data-slug', 'augmented-llm');
+    const next = familyPatterns(visibleFamilies()[1])[0];
+    expect(await focusedSlug(page)).toBe(next);
+    await expect.poll(() => fullyInView(page, tile(page, next))).toBe(true);
+    await expect(page.locator('a.atlas-tile[tabindex="0"]')).toHaveAttribute('data-slug', next);
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/\/patterns\/augmented-llm\/$/);
+    await expect(page).toHaveURL(new RegExp(`/patterns/${next}/$`));
   });
 
   test('search dims non-matches, then Enter flies to and focuses the match', async ({ page }) => {
