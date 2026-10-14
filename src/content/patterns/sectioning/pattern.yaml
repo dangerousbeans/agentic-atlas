@@ -56,7 +56,7 @@ diagram:
     - { id: aggregator, kind: aggregator, label: Merge, description: "Combines the three independent reviews into one comment, grouped by severity and de-duplicated." }
     - { id: out, kind: io, label: Review, description: "The single merged review comment posted on the pull request." }
   edges:
-    - { id: in, from: user, to: splitter, description: "The pull request's diff enters the splitter.", example: "diff --git a/api/users.py b/api/users.py  @@ -12,6 +12,9 @@ def get_user(id): ..." }
+    - { id: in, from: user, to: splitter, description: "The pull request's diff enters the splitter.", example: "diff --git a/api/users.py b/api/users.py  @@ -10,6 +10,28 @@ def get_user(id): ..." }
     - { id: s1, from: splitter, to: llm1, description: "The diff goes to the security reviewer with its security-only prompt.", example: "You review pull requests for security problems only. <diff>diff --git a/api/users.py ...</diff>" }
     - { id: s2, from: splitter, to: llm2, description: "The same diff goes to the performance reviewer in parallel.", example: "You review pull requests for performance problems only. <diff>diff --git a/api/users.py ...</diff>" }
     - { id: s3, from: splitter, to: llm3, description: "The same diff goes to the tests reviewer in parallel.", example: "You review pull requests for test coverage problems only. <diff>diff --git a/api/users.py ...</diff>" }

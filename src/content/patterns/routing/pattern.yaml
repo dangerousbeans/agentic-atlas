@@ -57,10 +57,10 @@ diagram:
     - { id: output, kind: io, label: Reply, description: "The reply written by whichever specialist handled the message." }
   edges:
     - { id: in, from: input, to: router, description: "The raw customer message is placed in the classifier prompt.", example: "Classify the customer message into exactly one category. <message>The app crashes on login</message>" }
-    - { id: to-billing, from: router, to: billing, description: "Taken when the label is billing; the original message goes to the billing prompt.", example: "{\"label\": \"billing\"} then: I was charged twice for my March invoice" }
-    - { id: to-tech, from: router, to: tech, description: "Taken when the label is tech; the original message goes to the tech-support prompt.", example: "{\"label\": \"tech\"} then: The app crashes on login" }
-    - { id: to-general, from: router, to: general, description: "Taken for any other or unclear label; the message goes to the general handler.", example: "{\"label\": \"general\"} then: Do you have an office in Berlin?" }
-    - { id: billing-out, from: billing, to: output, description: "The billing specialist's reply goes back to the customer.", example: "Sorry about that. I can see two charges of $29 on March 3. I have refunded the duplicate; it should appear in 3-5 days." }
+    - { id: to-billing, from: router, to: billing, description: "Taken when the label is billing; the original message goes to the billing prompt.", example: "I was charged twice for my March invoice" }
+    - { id: to-tech, from: router, to: tech, description: "Taken when the label is tech; the original message goes to the tech-support prompt.", example: "The app crashes on login" }
+    - { id: to-general, from: router, to: general, description: "Taken for any other or unclear label; the message goes to the general handler.", example: "Do you have an office in Berlin?" }
+    - { id: billing-out, from: billing, to: output, description: "The billing specialist's reply goes back to the customer.", example: "Sorry about that. I can see two charges of $29 on March 3. I've flagged the duplicate charge for a refund; you'll hear from us within 3 days." }
     - { id: tech-out, from: tech, to: output, description: "The tech-support reply goes back to the customer.", example: "1. Update to version 4.2.1. 2. Clear the app cache. 3. Log in again. If it still crashes, send us the log from Settings > Help." }
     - { id: general-out, from: general, to: output, description: "The general handler's reply goes back to the customer.", example: "Thanks for reaching out. We are a fully remote team, so we do not have a Berlin office, but you can book a call at any time." }
   scenarios:

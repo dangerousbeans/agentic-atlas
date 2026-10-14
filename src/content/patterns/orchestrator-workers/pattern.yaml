@@ -69,7 +69,7 @@ diagram:
     - { id: r1, from: w1, to: orchestrator, style: dashed, description: "Worker 1's finished change and note go back to the orchestrator.", example: "Renamed getUser to fetchUser in a.ts (def + 2 call sites). Nothing left undone." }
     - { id: r2, from: w2, to: orchestrator, style: dashed, description: "Worker 2's finished change and note go back to the orchestrator.", example: "Updated the import and 3 usages in b.ts. Nothing left undone." }
     - { id: r3, from: w3, to: orchestrator, style: dashed, description: "Worker 3's finished change and note go back to the orchestrator.", example: "Updated mock and assertions in c.ts. Note: one snapshot test still references the old name." }
-    - { id: done, from: orchestrator, to: output, description: "The orchestrator's synthesis becomes the final result, with worker conflicts flagged and resolved.", example: "Combined diff: a.ts, b.ts, c.ts renamed to fetchUser. Resolved: the c.ts snapshot now uses the new name." }
+    - { id: done, from: orchestrator, to: output, description: "The orchestrator's synthesis becomes the final result, with worker conflicts flagged and resolved.", example: "Combined diff: a.ts, b.ts, c.ts renamed to fetchUser. Flagged: a snapshot test still uses the old name." }
   scenarios:
     - id: three-files
       label: '"Rename the API across the repo"'
