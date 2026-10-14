@@ -1,6 +1,7 @@
 import { frameAt, type FrameState, type TokenState } from '../../lib/diagram/state';
 import type { Timeline } from '../../lib/diagram/compile';
 import type { DiagramSpec } from '../../lib/diagram/types';
+import { pickLayout } from '../../lib/diagram/fit';
 
 interface Payload { spec: DiagramSpec; timelines: Timeline[] }
 interface Rect { x: number; y: number; w: number; h: number }
@@ -91,12 +92,27 @@ class FlowPlayer extends HTMLElement {
     const stage = this.querySelector<HTMLElement>('.diagram-stage');
     if (stage && !this.compact) {
       let centred = false;
+      const wide = stage.querySelector<SVGSVGElement>('svg[data-layout="wide"]');
+      // Show the wide layout only while its labels stay readable at this stage width, else the narrow one
+      // (CSS keys off data-fit; without JS the 640px container query decides). Views follow via their observers.
+      const fit = () => {
+        if (!wide) return;
+        const cs = getComputedStyle(stage), vb = wide.viewBox.baseVal;
+        const avail = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        const maxHeight = parseFloat(getComputedStyle(wide).maxHeight) || Infinity;
+        const pick = pickLayout(avail, { width: vb.width, height: vb.height, maxHeight });
+        if (this.dataset.fit !== pick) this.dataset.fit = pick;
+      };
+      fit();
       const sync = () => {
+        fit();
         const max = stage.scrollWidth - stage.clientWidth;
         if (max > 1 && !centred) { stage.scrollLeft = max / 2; centred = true; }
         if (max <= 1) centred = false;
-        stage.toggleAttribute('data-more-left', max > 1 && stage.scrollLeft > 2);
-        stage.toggleAttribute('data-more-right', max > 1 && stage.scrollLeft < max - 2);
+        // a wide layout only ever overflows by its empty margin (fit.ts), so there is nothing to point at
+        const more = max > 1 && this.dataset.fit !== 'wide';
+        stage.toggleAttribute('data-more-left', more && stage.scrollLeft > 2);
+        stage.toggleAttribute('data-more-right', more && stage.scrollLeft < max - 2);
       };
       stage.addEventListener('scroll', sync, { passive: true });
       const ro = new ResizeObserver(sync);

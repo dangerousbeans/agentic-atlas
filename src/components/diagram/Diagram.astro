@@ -2,6 +2,7 @@
 import type { DiagramSpec } from '../../lib/diagram/types';
 import { layoutDiagram } from '../../lib/diagram/layout';
 import { compileDiagram } from '../../lib/diagram/compile';
+import { spansPage } from '../../lib/diagram/fit';
 import { KIND_LABEL, nodeDescription, edgeDescription, edgeTitle, nodeMap } from '../../lib/diagram/kinds';
 import DiagramSvg from './DiagramSvg.astro';
 import Frame from '../site/Frame.astro';
@@ -19,7 +20,7 @@ const labels = nodeMap(spec);
 // Full diagrams sit in the viewfinder frame (Frame.astro). Only the stage is framed: tabs, caption, steps and parts
 // follow below it, so the corner brackets never sit on the controls. Pages must not wrap Diagram in another Frame.
 ---
-<flow-player data-uid={uid} compact={compact ? '' : undefined} class:list={['diagram', { 'diagram--compact': compact }]}>
+<flow-player data-uid={uid} compact={compact ? '' : undefined} data-wide={!compact && spansPage(wide.width) ? '' : undefined} class:list={['diagram', { 'diagram--compact': compact }]}>
   {compact ? (
     <div class="diagram-stage">
       <DiagramSvg uid={uid} spec={spec} layout={wide} variant="wide" title={title} compact />

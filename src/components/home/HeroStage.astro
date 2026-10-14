@@ -37,9 +37,10 @@ const json = JSON.stringify(list).replace(/</g, '\\u003c');
   /* Hero size: a tall, centred stage inside Diagram's own frame. */
   .hero-stage :global(.diagram-stage) {
     display: flex; flex-direction: column; justify-content: center;
-    min-height: clamp(300px, 42vw, 540px); padding: clamp(16px, 3vw, 40px);
+    min-height: clamp(300px, 42vw, 540px); padding: clamp(16px, 2vw, 24px) clamp(16px, 3vw, 40px);
   }
-  .hero-stage :global(.diagram-svg) { max-height: min(56vh, 520px); }
+  /* Tall enough that the narrow layout of the default pattern reads (flow-player picks whichever layout does). */
+  .hero-stage :global(.diagram-svg[data-layout]) { max-height: min(66vh, 600px); }
   /* Step captions stay available to screen readers (the SVG desc points to them) and appear when focused. */
   .hero-stage :global(.fp-steps:not(:focus-within)) {
     position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
@@ -64,6 +65,6 @@ const json = JSON.stringify(list).replace(/</g, '\\u003c');
   [data-hero][aria-busy='true'] .hero-stage { opacity: .55; transition: opacity .2s; }
   @media (max-width: 600px) {
     .hero-stage :global(.diagram-stage) { min-height: 0; padding: 28px 16px; }
-    .hero-stage :global(.diagram-svg) { max-height: 46vh; }
+    .hero-stage :global(.diagram-svg[data-layout]) { max-height: 46vh; }
   }
 </style>

@@ -98,6 +98,25 @@ describe('layoutDiagram behaviour', () => {
       expect(Math.hypot(d1.x - r1.x, d1.y - r1.y)).toBeLessThan(14);
     }
   });
+  it('hub: a return lane never runs on top of the neighbouring pair\'s dispatch (ReAct shape)', async () => {
+    // agent -> two tools with observation returns, plus a final answer: three out-ports on one hub
+    const s = spec([{ id: 'q', kind: 'io', label: 'Q' }, llm('agent'), { id: 't1', kind: 'tool', label: 'Search' }, { id: 't2', kind: 'tool', label: 'Calculator' }, { id: 'out', kind: 'io', label: 'Answer' }],
+      [e('ask', 'q', 'agent'), e('a1', 'agent', 't1', { label: 'action' }), e('o1', 't1', 'agent', { style: 'dashed', label: 'observation' }),
+       e('a2', 'agent', 't2', { label: 'action' }), e('o2', 't2', 'agent', { style: 'dashed', label: 'observation' }), e('fin', 'agent', 'out', { label: 'final' })]);
+    const L = await layoutDiagram(s, 'RIGHT');
+    const pts = (d: string) => [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map(m => ({ x: +m[1], y: +m[2] }));
+    const horiz = (d: string) => { const p = pts(d); return p.slice(1).map((q, i) => [p[i], q]).filter(([a, b]) => Math.abs(a.y - b.y) < 0.5 && Math.abs(a.x - b.x) > 4); };
+    // every horizontal run of one pair keeps >= 8px from any overlapping horizontal run of another pair
+    const pairs = [['a1', 'o1'], ['a2', 'o2'], ['fin']];
+    for (let i = 0; i < pairs.length; i++) for (let j = i + 1; j < pairs.length; j++)
+      for (const p of pairs[i]) for (const q of pairs[j]) for (const [a, b] of horiz(L.edges[p].d)) for (const [c, d] of horiz(L.edges[q].d)) {
+        const overlap = Math.min(Math.max(a.x, b.x), Math.max(c.x, d.x)) - Math.max(Math.min(a.x, b.x), Math.min(c.x, d.x));
+        if (overlap > 4) expect(Math.abs(a.y - c.y), `${p} / ${q}`).toBeGreaterThanOrEqual(8);
+      }
+    // and each return lane carries its own label
+    expect(L.edges.o2.label).toBeDefined();
+    expect(shownLabelIds(s).has('o2')).toBe(true);
+  });
   it('hub: lays out input, then hub, then workers (the forward flow wins cycle breaking)', async () => {
     const L = await layoutDiagram(hub, 'RIGHT');
     expect(L.nodes.in.x).toBeLessThan(L.nodes.hub.x);

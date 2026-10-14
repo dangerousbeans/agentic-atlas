@@ -65,6 +65,15 @@ const stats = patternStats(p.diagram as DiagramSpec);
   .prose { font-size: 17px; color: var(--text-2); max-width: 40rem; }
   .prose :global(strong) { color: var(--text); font-weight: 500; }
   .prose :global(li) { margin: 6px 0; }
+  /* Diagrams too wide to read beside the info column (fit.ts spansPage) take the full width; the title and
+     measurements move above them as a band. */
+  @media (min-width: 961px) {
+    .instrument:has(flow-player[data-wide]) { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+    .instrument:has(flow-player[data-wide]) :global(.diagram-stage) { padding-inline: 0; }
+    .instrument:has(flow-player[data-wide]) .info { order: -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 56px; align-items: start; }
+    .instrument:has(flow-player[data-wide]) .info :global(.spec) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 28px; }
+    .instrument:has(flow-player[data-wide]) .info :global(h2.spec-h) { margin-top: 14px; }
+  }
   @media (max-width: 960px) {
     .instrument, .body { grid-template-columns: minmax(0, 1fr); }
     .side { position: static; max-height: none; overflow: visible; }
