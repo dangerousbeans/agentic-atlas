@@ -14,7 +14,7 @@ related:
   confusedWith:
     - { slug: supervisor, difference: "A supervisor delegates tasks and each result comes back to it privately; in a group chat every message goes to the shared thread, and the manager only picks the next speaker." }
     - { slug: debate, difference: "In a debate every agent answers the same question each round in parallel; in a group chat one agent speaks per turn, chosen for what the conversation needs next." }
-    - { slug: blackboard, difference: "A blackboard holds structured partial results that specialists add to when they can help; a group chat is a linear transcript in which the manager calls on one agent at a time." }
+    - { slug: blackboard, difference: "A group chat is an append-only transcript where the manager calls on one agent per turn; a blackboard is a shared workspace of partial results, where a control unit can activate several specialists per round and entries can be revised or removed." }
 origin:
   by: Qingyun Wu et al.
   org: Microsoft Research, Penn State University, University of Washington, Xidian University
@@ -37,7 +37,7 @@ build:
     - "Tag every message with its speaker's name, and give every participant the whole thread; when it grows past the context budget, keep the task message and trim from the oldest replies."
     - "Validate the selector's choice against the participant list, and do not let the same agent speak twice in a row unless that is explicitly allowed."
     - "Log each turn: the selected speaker, the message, and the token counts for both the selector and the participant call."
-    - "Add a test with a stub LLM whose selector returns planner, budget, planner, then TERMINATE; assert that the participants were called in exactly that order and the thread holds 4 messages."
+    - "Add a test with a stub LLM whose selector returns planner, budget, planner, then TERMINATE; the participant stubs return fixed text without TERMINATE. Assert that the participants were called in exactly that order and the thread holds 4 messages."
 prompts:
   - id: selector
     title: Speaker selector prompt
@@ -75,7 +75,7 @@ diagram:
   nodes:
     - { id: user, kind: io, label: Task, description: "The request that opens the chat, such as 'Plan a 3-day Tokyo trip for under $1,500'." }
     - { id: thread, kind: memory, label: Shared thread, description: "The one transcript everyone shares. Every message is appended here, tagged with its speaker, and every agent sees all of it." }
-    - { id: manager, kind: router, label: Chat manager, description: "Reads the thread and picks the next speaker, or says TERMINATE. It never writes content itself; it only chooses who talks." }
+    - { id: manager, kind: router, label: Chat manager, description: "Reads the thread and picks the next speaker. It never writes content itself; it only chooses who talks." }
     - { id: planner, kind: agent, label: Planner, description: "Drafts and revises the day-by-day itinerary from what the others have said." }
     - { id: local, kind: agent, label: Local expert, description: "Knows Tokyo: suggests neighbourhoods, transit passes and which sights to pair on the same day." }
     - { id: budget, kind: agent, label: Budget checker, description: "Prices every item in the plan and flags it when the total goes over the limit." }
@@ -89,7 +89,7 @@ diagram:
     - { id: say-planner, from: planner, to: thread, description: "The planner's reply is broadcast: appended to the thread, where every agent will see it.", example: "planner: Day 1 Shinjuku, Day 2 Asakusa and Ueno, Day 3 Shibuya. Hotel: Shinjuku business hotel, $180/night." }
     - { id: say-local, from: local, to: thread, description: "The local expert's reply is appended to the shared thread.", example: "local: Pair Asakusa with Ueno on foot. A 72-hour subway pass is about $10 each." }
     - { id: say-budget, from: budget, to: thread, description: "The budget checker's reply is appended to the shared thread.", example: "budget: Hotel $540, food $420, transit $60, sights $680. Total $1,700: over by $200." }
-    - { id: done, from: manager, to: out, label: TERMINATE, description: "When the thread answers the task, the manager ends the chat and the latest plan is returned.", example: "TERMINATE. Final: 3-day plan, Ueno hotel at $120/night, total $1,420." }
+    - { id: done, from: manager, to: out, label: done, description: "A termination check after each message ends the chat: a TERMINATE in the last message, or the turn cap.", example: "planner: Swapped to an Ueno hotel at $120/night; total $1,420, under budget. TERMINATE" }
   scenarios:
     - id: three-turns
       label: Three turns, then done
@@ -121,23 +121,21 @@ diagram:
             - { type: send, edge: say-budget, token: { kind: feedback, label: over $200 }, at: [0.75, 0.95] }
             - { type: write, node: thread, at: [0.9, 1] }
         - id: turn-fix
-          caption: Because everyone saw the overrun, the manager sends the turn back to the planner, which swaps the hotel.
+          caption: Because everyone saw the overrun, the manager sends the turn back to the planner, which swaps the hotel and ends with TERMINATE.
           duration: 3200
           events:
             - { type: send, edge: history, token: { kind: prompt, label: thread }, at: [0, 0.2] }
             - { type: activate, node: manager, status: thinking, at: [0.2, 0.35] }
             - { type: branch, node: manager, taken: pick-planner, notTaken: [pick-local, pick-budget, done], at: [0.35, 0.5] }
             - { type: activate, node: planner, status: thinking, at: [0.5, 0.75] }
-            - { type: send, edge: say-planner, token: { kind: result, label: revised }, at: [0.75, 0.95] }
+            - { type: send, edge: say-planner, token: { kind: result, label: TERMINATE }, at: [0.75, 0.95] }
             - { type: write, node: thread, at: [0.9, 1] }
         - id: finish
-          caption: The thread now answers the task, so the manager says TERMINATE and the plan is returned.
+          caption: The termination check finds TERMINATE in the last message, so the chat stops and the plan is returned.
           duration: 2400
           events:
-            - { type: send, edge: history, token: { kind: prompt, label: thread }, at: [0, 0.3] }
-            - { type: activate, node: manager, status: thinking, at: [0.3, 0.5] }
-            - { type: branch, node: manager, taken: done, notTaken: [pick-planner, pick-local, pick-budget], at: [0.5, 0.65] }
-            - { type: send, edge: done, token: { kind: result, label: plan }, at: [0.65, 0.95] }
+            - { type: branch, node: manager, taken: done, notTaken: [pick-planner, pick-local, pick-budget], at: [0, 0.3] }
+            - { type: send, edge: done, token: { kind: result, label: plan }, at: [0.3, 0.9] }
             - { type: activate, node: out, status: done, at: [0.9, 1] }
     - id: max-turns
       label: Hits the turn cap
