@@ -153,7 +153,8 @@ class FlowPlayer extends HTMLElement {
     }
     // A full player is "visible" when its diagram stage is (not its step list and parts below), so a diagram that is
     // on screen plays even when the page puts tabs or a summary above it.
-    const io = new IntersectionObserver(([e]) => { this.visible = e.isIntersecting; this.sync(); }, { threshold: 0.3 });
+    // A busy main thread can deliver several entries for the stage in one callback, oldest first: the last is current.
+    const io = new IntersectionObserver(es => { this.visible = es[es.length - 1].isIntersecting; this.sync(); }, { threshold: 0.3 });
     io.observe((!this.compact && stage) || this); this.observers.push(io);
   }
 

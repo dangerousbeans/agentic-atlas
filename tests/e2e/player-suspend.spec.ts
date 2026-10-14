@@ -25,3 +25,18 @@ test('a player that starts suspended never plays', async ({ page }) => {
   await page.waitForTimeout(500);
   await expect(fp).toHaveAttribute('data-playing', 'false');
 });
+
+// A busy main thread can batch several IntersectionObserver entries for one target into one callback, oldest first.
+// Replay that deterministically: every delivery is preceded by a stale "out of view" entry for the same target.
+test('a batched visibility callback is read by its latest entry', async ({ page }) => {
+  await page.addInitScript(() => {
+    const IO = window.IntersectionObserver;
+    window.IntersectionObserver = class extends IO {
+      constructor(cb: IntersectionObserverCallback, opts?: IntersectionObserverInit) {
+        super((es, ob) => cb([...es.map(e => ({ target: e.target, isIntersecting: false, intersectionRatio: 0 }) as IntersectionObserverEntry), ...es], ob), opts);
+      }
+    };
+  });
+  await page.goto('/patterns/evaluator-optimizer/');
+  await expect(page.locator('flow-player').first()).toHaveAttribute('data-playing', 'true');
+});
