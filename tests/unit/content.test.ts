@@ -21,6 +21,7 @@ describe('content', () => {
       expect(existsSync(`${root}/patterns/${slug}/index.mdx`)).toBe(true);
     });
   }
+  it('has all 21 v1 patterns', () => expect(slugs).toHaveLength(21));
   it('catalog cross-references are consistent (Review Focus 3)', () => {
     const patterns = slugs.map(s => patternSchema.parse(parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8'))));
     expect(() => buildCatalog(families, patterns)).not.toThrow();

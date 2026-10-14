@@ -12,6 +12,9 @@ export function mount(host: HTMLElement, data: ConstellationData, opts: { focus?
   const W = () => host.clientWidth, H = () => host.clientHeight;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, W() / H(), 0.1, 200);
+  // Wide, unfocused hero: shift the scene right so the copy block on the left stays clear.
+  const shift = () => { if (opts.focus || W() < 900) camera.clearViewOffset(); else camera.setViewOffset(W(), H(), -W() * 0.17, 0, W(), H()); };
+  shift();
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(W(), H());
   renderer.domElement.setAttribute('aria-hidden', 'true');
@@ -97,7 +100,7 @@ export function mount(host: HTMLElement, data: ConstellationData, opts: { focus?
   renderer.domElement.addEventListener('pointerleave', onLeave);
   renderer.domElement.addEventListener('pointerdown', onDown);
   renderer.domElement.addEventListener('click', onClick);
-  const onResize = () => { camera.aspect = W() / H(); camera.updateProjectionMatrix(); renderer.setSize(W(), H()); composer.setSize(W(), H()); labels.setSize(W(), H()); };
+  const onResize = () => { camera.aspect = W() / H(); shift(); camera.updateProjectionMatrix(); renderer.setSize(W(), H()); composer.setSize(W(), H()); labels.setSize(W(), H()); };
   addEventListener('resize', onResize);
 
   let visible = true;
