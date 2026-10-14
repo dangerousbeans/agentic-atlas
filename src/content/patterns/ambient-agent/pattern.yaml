@@ -76,7 +76,7 @@ diagram:
     - id: triage
       kind: router
       label: Triage
-      description: "A cheap model call that labels each event ignore, notify or act, so the agent only runs on events that need work."
+      description: "A cheap model call that labels each event ignore, notify or act. Notify events go to the inbox as information cards directly; only act events wake the agent."
     - id: archive
       kind: io
       label: Archived

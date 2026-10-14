@@ -4,7 +4,7 @@ Most agents wait for someone to type. That fits questions, but much useful work 
 
 ## How it works
 
-An ambient agent is woken by events, not messages. Here the <NodeRef id="events">email feed</NodeRef> delivers every new message to <NodeRef id="triage">triage</NodeRef>: a cheap model call that labels each one ignore, notify or act. Newsletters go straight to the <NodeRef id="archive">archive</NodeRef>; the agent never runs on them, which keeps costs in line with the events that matter.
+An ambient agent is woken by events, not messages. Here the <NodeRef id="events">email feed</NodeRef> delivers every new message to <NodeRef id="triage">triage</NodeRef>: a cheap model call that labels each one ignore, notify or act. Newsletters go straight to the <NodeRef id="archive">archive</NodeRef>, and notices that need no action, such as a shipping update, go straight to the inbox as a notify card. The agent never runs on either, which keeps costs in line with the events that matter.
 
 For events that need work, the <NodeRef id="agent">email agent</NodeRef> runs in the background with its <NodeRef id="tools">mail and calendar tools</NodeRef>. Routine items it finishes on its own: a customer asking where an order is gets a looked-up, sent reply. Nobody is waiting on it, so a run can take its time.
 
