@@ -1,12 +1,13 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { catalogOrder, visibleFamilies } from '../catalog-fixture';
 
-test('index has 6 family sections and 21 pattern cards', async ({ page }) => {
+test('index has a section per visible family and a card per pattern', async ({ page }) => {
   await page.goto('/families/');
   await expect(page.locator('h1')).toHaveText('Families of agentic patterns');
-  await expect(page.locator('section.family-section')).toHaveCount(6);
-  await expect(page.locator('a.pattern-card')).toHaveCount(21);
-  await expect(page.locator('flow-player[compact]')).toHaveCount(21);
+  await expect(page.locator('section.family-section')).toHaveCount(visibleFamilies().length);
+  await expect(page.locator('a.pattern-card')).toHaveCount(catalogOrder().length);
+  await expect(page.locator('flow-player[compact]')).toHaveCount(catalogOrder().length);
 });
 
 test('header Families link points at /families/ and is current', async ({ page }) => {
@@ -19,8 +20,8 @@ test('header Families link points at /families/ and is current', async ({ page }
 test('family page shows a compact diagram per pattern', async ({ page }) => {
   await page.goto('/families/workflows/');
   await expect(page.locator('h1')).toHaveText('Workflows');
-  await expect(page.locator('flow-player[compact]')).toHaveCount(6);
-  await expect(page.locator('a.pattern-card')).toHaveCount(6);
+  await expect(page.locator('flow-player[compact]')).toHaveCount(visibleFamilies().length);
+  await expect(page.locator('a.pattern-card')).toHaveCount(visibleFamilies().length);
   await expect(page.locator('.other a')).toHaveCount(5);
 });
 
@@ -37,7 +38,7 @@ test('cards are readable and linked without JS', async ({ browser }) => {
   const ctx = await browser.newContext({ javaScriptEnabled: false });
   const page = await ctx.newPage();
   await page.goto('/families/');
-  await expect(page.locator('a.pattern-card')).toHaveCount(21);
+  await expect(page.locator('a.pattern-card')).toHaveCount(catalogOrder().length);
   await expect(page.locator('a.pattern-card h3').first()).toBeVisible();
   await expect(page.locator('a.pattern-card .stats').first()).toContainText('nodes');
   await ctx.close();

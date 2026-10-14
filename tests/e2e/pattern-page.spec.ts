@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { catalogOrder, patternsWithoutVariants } from '../catalog-fixture';
 import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
@@ -131,7 +132,9 @@ test.describe('variants', () => {
   });
 
   test('pages without variants have no variant tabs', async ({ page }) => {
-    await page.goto('/patterns/routing/');
+    const [slug] = patternsWithoutVariants();
+    expect(slug, 'at least one pattern without variants').toBeDefined();
+    await page.goto(`/patterns/${slug}/`);
     await expect(page.locator('[data-variant-tabs]')).toHaveCount(0);
     await expect(page.locator('.variant-h')).toHaveCount(0);
   });
@@ -213,21 +216,21 @@ test('spec tooltips: hover shows, Escape dismisses without leaving the page', as
   expect(await shown()).toBe('block');
 });
 
-// Catalog order: family rank, then family order. 21 patterns.
-const order = ['prompt-chaining', 'routing', 'sectioning', 'voting', 'orchestrator-workers', 'evaluator-optimizer', 'augmented-llm', 'react', 'reflexion', 'plan-and-execute', 'rewoo', 'llm-compiler', 'tree-of-thoughts', 'agentic-rag', 'corrective-rag', 'hierarchical-memory', 'supervisor', 'handoffs', 'debate', 'human-in-the-loop', 'guardrails'];
+// Catalog order: family rank, then family order, derived from the content files.
+const order = catalogOrder();
 const at = (slug: string) => `/patterns/${slug}/`;
 const pathOf = (page: import('@playwright/test').Page) => new URL(page.url()).pathname;
 
 test.describe('neighbour nav', () => {
-  for (const slug of ['prompt-chaining', 'evaluator-optimizer', 'guardrails']) {
+  for (const slug of ['prompt-chaining', 'evaluator-optimizer', order[order.length - 1]]) {
     test(`position and ends for ${slug}`, async ({ page }) => {
       await page.goto(at(slug));
       const i = order.indexOf(slug);
-      await expect(page.locator('.pattern-nav .pos')).toHaveText(`${i + 1} of 21`);
+      await expect(page.locator('.pattern-nav .pos')).toHaveText(`${i + 1} of ${order.length}`);
       const prev = page.locator('[data-nav="prev"]'), next = page.locator('[data-nav="next"]');
       if (i === 0) { await expect(prev).toHaveAttribute('aria-disabled', 'true'); await expect(prev).not.toHaveAttribute('href', /.+/); }
       else await expect(prev).toHaveAttribute('href', new RegExp(`${order[i - 1]}/$`));
-      if (i === 20) { await expect(next).toHaveAttribute('aria-disabled', 'true'); await expect(next).not.toHaveAttribute('href', /.+/); }
+      if (i === order.length - 1) { await expect(next).toHaveAttribute('aria-disabled', 'true'); await expect(next).not.toHaveAttribute('href', /.+/); }
       else await expect(next).toHaveAttribute('href', new RegExp(`${order[i + 1]}/$`));
     });
   }
