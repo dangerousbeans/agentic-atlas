@@ -13,6 +13,30 @@ related:
   composesWith: [react, routing, orchestrator-workers]
   confusedWith:
     - { slug: react, difference: "An augmented LLM answers one request, using whatever tools it needs along the way; ReAct is the open-ended loop of many such steps that runs until the model decides the goal is met." }
+origin:
+  by: Erik Schluntz and Barry Zhang
+  org: Anthropic
+  year: 2024
+  url: https://www.anthropic.com/engineering/building-effective-agents
+  kind: popularized
+  note: "Anthropic named the augmented LLM as the building block of agentic systems in 2024. Earlier tool-using systems include MRKL (Karpas et al., AI21 Labs, 2022) and Toolformer (Schick et al., 2023)."
+build:
+  goal: "Answer one request with a single model that can call tools (document search, a calculator, a note store) whenever it needs them, and return a plain-language answer once it needs no more."
+  steps:
+    - "Load the user's saved notes from the memory store and fill them into the {{prompt:system}}; send it with the tool definitions and the user's message."
+    - "Read the model's reply. For each tool call in it, check the arguments against that tool's schema, run the tool, and append the result to the messages as a tool result."
+    - "If a tool call has bad arguments, fails or times out, append the error text as its tool result instead of raising, so the model can correct itself."
+    - "Write any fact passed to save_note to the memory store, keyed by user, so later conversations can recall it."
+    - "Call the model again with the extended messages, and repeat while its replies contain tool calls."
+    - "Return the text of the first reply that contains no tool calls as the answer."
+  stop: "Stop at the first reply with no tool calls, or after 5 tool rounds. At the cap, make one last call with tools disabled and return that answer, flagged as having hit the tool limit."
+  requirements:
+    - "Make the tool-round cap (default 5) and the per-tool timeout (default 10 seconds) parameters."
+    - "Give every tool a one-line description that says when to use it; the model picks tools from these descriptions alone."
+    - "Keep tools that change state (save_note) separate from read-only ones in configuration, so they can be audited or disabled."
+    - "Log every model call and tool call with its arguments, result and token counts."
+    - "Add a test with a stub LLM that first calls calculator(\"240*29/30\") and then replies in plain text; assert the calculator ran exactly once, its result 232 is in the second call's messages, and the plain text is returned."
+defaultVariantName: Tools in context
 prompts:
   - id: system
     title: System prompt with tools
@@ -152,3 +176,156 @@ diagram:
           events:
             - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
             - { type: send, edge: answer, token: { kind: result, label: reply }, at: [0.5, 1] }
+variants:
+  - id: tool-search
+    name: Deferred tool search
+    summary: "Tool definitions stay out of the prompt. The model first searches a tool catalog, and only the schemas it finds are loaded."
+    origin:
+      by: Anthropic
+      org: Anthropic
+      year: 2025
+      url: https://www.anthropic.com/engineering/advanced-tool-use
+      kind: popularized
+      note: "Anthropic's tool search tool, announced with its advanced tool use features in November 2025, for agents with hundreds of tools."
+    build:
+      goal: "Let one model use a large tool library without putting every tool definition in its prompt: it searches a catalog, and only the tools it finds are loaded for the rest of the request."
+      steps:
+        - "Store every tool's name, one-line description and full schema in a catalog, indexed for keyword or embedding search."
+        - "Start each request with one tool defined, tool_search(query), and a system-prompt line telling the model to search for a tool before assuming none exists."
+        - "When the model calls tool_search, return the names and schemas of the top 3 matches, and add those schemas to the tool list for every later call in this request."
+        - "Run any loaded tool the model calls and append its result, or its error text, to the messages as a tool result."
+        - "Call the model again, and return the text of the first reply that contains no tool calls."
+      stop: "Stop at the first reply with no tool calls, or after 6 tool rounds, searches included. At the cap, make one last call with tools disabled and return that answer, flagged as having hit the limit."
+      requirements:
+        - "Make the schemas returned per search (default 3) and the round cap (default 6) parameters."
+        - "If the model calls a tool that has not been loaded, return an error naming tool_search as the way to load it, and do not run it."
+        - "Allow a short, configurable list of always-loaded tools for the ones most requests use."
+        - "Log every search query with the tools it returned, so weak catalog descriptions show up."
+        - "Add a test with a stub LLM that calls tool_search(\"refund\") and then refund_quote; assert the first call's tool list holds only tool_search and the second call's includes refund_quote."
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, description: "The customer's message, such as 'What would a 30-day refund on my $240 plan be?'." }
+        - { id: llm, kind: llm, label: LLM, description: "Starts with only the tool-search tool, finds the tool it needs, then calls it once its schema is loaded." }
+        - { id: search, kind: tool, label: Tool search, description: "The one tool always in context: it matches a query against the descriptions of every tool in the catalog." }
+        - { id: catalog, kind: memory, label: Tool catalog, sublabel: 200 tool schemas, description: "Every tool's name, description and full schema, kept outside the prompt until a search returns it." }
+        - { id: refund, kind: tool, label: Refund quote, hidden: true, description: "A tool loaded by the search: it computes a prorated refund from the plan price and the days used." }
+        - { id: out, kind: io, label: Answer, description: "The model's plain-language reply, sent once it needs no more tool calls." }
+      edges:
+        - { id: ask, from: user, to: llm, description: "The question arrives with only tool_search defined; the other tools' schemas are not in the context.", example: "What would a 30-day refund on my $240 plan be?" }
+        - { id: find, from: llm, to: search, label: find tool, description: "The model searches for a tool that fits the job instead of guessing at one.", example: "tool_search(query=\"prorated refund calculation\")" }
+        - { id: lookup, from: search, to: catalog, label: match, description: "The search matches the query against the name and description of every tool in the catalog.", example: "match 'prorated refund calculation' over 200 tool descriptions: top hit refund_quote" }
+        - { id: schemas, from: catalog, to: llm, style: dashed, label: schemas, description: "Only the matching tool definitions are loaded into the model's tool list for the rest of the request.", example: "Loaded: refund_quote(plan_price: number, days_used: integer, term_days: integer)" }
+        - { id: call, from: llm, to: refund, label: call, description: "With its schema loaded, the model calls the tool it found.", example: "refund_quote(plan_price=240, days_used=1, term_days=30)" }
+        - { id: result, from: refund, to: llm, style: dashed, label: result, description: "The tool's result is appended to the messages for the next model call.", example: "{\"refund\": 232.00}" }
+        - { id: answer, from: llm, to: out, description: "A reply with no tool calls is the final answer, returned as plain text.", example: "Your 30-day refund would be $232.00." }
+      scenarios:
+        - id: finds-a-tool
+          label: Finds the refund tool, then uses it
+          steps:
+            - id: ask
+              caption: The question reaches the model, which can see only the tool-search tool.
+              duration: 1000
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: "refund?" } }
+            - id: search
+              caption: The model searches the catalog for a tool that can compute a prorated refund.
+              duration: 2600
+              events:
+                - { type: activate, node: llm, status: thinking, at: [0, 0.25] }
+                - { type: send, edge: find, token: { kind: tool-call, label: refund tool }, at: [0.25, 0.5] }
+                - { type: activate, node: search, status: calling, at: [0.5, 0.6] }
+                - { type: send, edge: lookup, token: { kind: tool-call, label: match }, at: [0.6, 0.8] }
+                - { type: read, node: catalog, at: [0.8, 1] }
+            - id: load
+              caption: Only the matching schema is loaded, and the refund tool becomes available.
+              duration: 2000
+              events:
+                - { type: send, edge: schemas, token: { kind: result, label: 1 schema }, at: [0, 0.6] }
+                - { type: appear, node: refund, at: [0.6, 1] }
+            - id: call
+              caption: The model calls the newly loaded tool for the exact amount.
+              duration: 2600
+              events:
+                - { type: activate, node: llm, status: thinking, at: [0, 0.25] }
+                - { type: send, edge: call, token: { kind: tool-call, label: "240, 1 day" }, at: [0.25, 0.5] }
+                - { type: activate, node: refund, status: calling, at: [0.5, 0.7] }
+                - { type: send, edge: result, token: { kind: result, label: "232.00" }, at: [0.7, 1] }
+            - id: answer
+              caption: No more tools are needed, so the model writes the final answer.
+              duration: 1800
+              events:
+                - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: answer, token: { kind: result, label: $232 refund }, at: [0.5, 1] }
+  - id: forced-output
+    name: Forced output tool
+    summary: "The model must call exactly one tool whose parameters are the output schema, so the reply is a structured record and there is no tool loop."
+    build:
+      goal: "Turn free text into one record that matches a fixed schema by forcing the model to call a single tool whose parameters are that schema."
+      steps:
+        - "Define one tool, record_request, whose parameter schema is the record you want: field names, types, allowed values and which fields are required."
+        - "Call the model once with the input text and that single tool, with tool choice forced to record_request, so it cannot reply in prose."
+        - "Take the arguments of the tool call as the record. Never execute the tool itself."
+        - "Validate the arguments against the schema. If they pass, return the record."
+        - "If they fail, return a rejection holding the validation errors and the raw arguments."
+      stop: "Stop after one model call: one forced tool call, one validation, then either a record or a rejection."
+      requirements:
+        - "Keep the schema in one place and generate both the tool definition and the validator from it."
+        - "Treat a reply with no tool call, or with more than one, as a rejection with the reason 'no single tool call'."
+        - "Describe every field in the schema; the model fills each field from its description."
+        - "Leave repair out of this step: if rejections need fixing, add a separate repair step after it."
+        - "Add a test with a stub LLM whose forced call sets plan_price to the string \"$240\"; assert the result is a rejection whose errors name plan_price and that the model was called exactly once."
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Email, description: "Free text to turn into a record, such as a customer email asking for a refund on their annual plan." }
+        - { id: llm, kind: llm, label: LLM, description: "Must call the one record tool; it reads the email and fills that tool's parameters, which form the output." }
+        - { id: schema, kind: guard, label: Schema check, model: false, description: "Plain code: validates the tool call's arguments against the record schema before anything uses them." }
+        - { id: out, kind: io, label: Record, description: "The validated record, ready to store or pass to the next step." }
+        - { id: reject, kind: io, label: Rejected, description: "A rejection holding the validation errors and the raw arguments, for a repair step or a person." }
+      edges:
+        - { id: ask, from: user, to: llm, description: "The text goes to the model with one tool definition and tool choice forced to that tool.", example: "Hi, I cancelled my $240 annual plan yesterday. Can I get a refund? Dana" }
+        - { id: emit, from: llm, to: schema, label: tool call, description: "The model's single forced tool call. Its arguments are the record; the tool is never run.", example: "record_request(intent=\"refund\", plan_price=240, days_since_cancel=1, customer=\"Dana\")" }
+        - { id: valid, from: schema, to: out, label: valid, description: "Arguments that match the schema are returned as the record.", example: "{\"intent\": \"refund\", \"plan_price\": 240, \"days_since_cancel\": 1, \"customer\": \"Dana\"}" }
+        - { id: invalid, from: schema, to: reject, label: invalid, description: "Arguments that break the schema are rejected with the validation errors; this variant does not repair them.", example: "plan_price: expected number, got \"$240\"" }
+      scenarios:
+        - id: valid-record
+          label: The email becomes a valid record
+          steps:
+            - id: ask
+              caption: The email reaches the model, which is forced to answer with the record tool.
+              duration: 1000
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: email } }
+            - id: emit
+              caption: The model fills the tool's parameters from the email; no tool runs.
+              duration: 2200
+              events:
+                - { type: activate, node: llm, status: thinking, at: [0, 0.45] }
+                - { type: send, edge: emit, token: { kind: tool-call, label: record }, at: [0.45, 1] }
+            - id: check
+              caption: Every field matches the schema, so the arguments are returned as the record.
+              duration: 2000
+              events:
+                - { type: activate, node: schema, status: thinking, at: [0, 0.35] }
+                - { type: branch, node: schema, taken: valid, notTaken: [invalid], at: [0.35, 0.5] }
+                - { type: send, edge: valid, token: { kind: result, label: record }, at: [0.5, 1] }
+        - id: invalid-record
+          label: A field has the wrong type
+          steps:
+            - id: ask
+              caption: The email reaches the model, which is forced to answer with the record tool.
+              duration: 1000
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: email } }
+            - id: emit
+              caption: The model writes the price as the text "$240" instead of a number.
+              duration: 2200
+              events:
+                - { type: activate, node: llm, status: thinking, at: [0, 0.45] }
+                - { type: send, edge: emit, token: { kind: tool-call, label: record }, at: [0.45, 1] }
+            - id: check
+              caption: Validation fails on plan_price, so the record is rejected with the error rather than passed on.
+              duration: 2000
+              events:
+                - { type: activate, node: schema, status: error, at: [0, 0.35] }
+                - { type: branch, node: schema, taken: invalid, notTaken: [valid], at: [0.35, 0.5] }
+                - { type: send, edge: invalid, token: { kind: feedback, label: plan_price }, at: [0.5, 1] }
