@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { parse, parseDocument, visit } from 'yaml';
 import { patternSchema, familySchema } from '../../src/lib/schema';
 import { buildCatalog } from '../../src/lib/catalog';
-import { catalogOrder } from '../catalog-fixture';
+import { catalogOrder, visibleFamilies } from '../catalog-fixture';
 
 const root = 'src/content';
 const families = readdirSync(`${root}/families`).map(f => familySchema.parse(parse(readFileSync(`${root}/families/${f}`, 'utf8'))));
@@ -83,5 +83,14 @@ describe('content', () => {
 describe('buildCatalog', () => {
   it('throws listing issues', () => {
     expect(() => buildCatalog(families, [])).toThrow(/order lists unknown pattern/);
+  });
+});
+
+// The README is static text, so it cannot derive the catalog's counts: hold its numbers to the content instead.
+describe('README', () => {
+  it('states the current pattern and family counts', () => {
+    const intro = readFileSync('README.md', 'utf8').split('\n').find(l => l.startsWith('A visual field guide'))!;
+    expect(intro).toContain(`It covers ${catalogOrder().length} ways`);
+    expect(intro).toContain(`grouped into ${visibleFamilies().length} families`);
   });
 });

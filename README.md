@@ -1,6 +1,6 @@
 # Agentic Atlas
 
-A visual field guide to agentic AI patterns. It covers 21 ways to build with LLMs, from a single augmented call to teams of agents, grouped into families. Each pattern has:
+A visual field guide to agentic AI patterns. It covers 52 ways to build with LLMs, from a single augmented call to teams of agents, grouped into 9 families. Each pattern has:
 
 - a **live diagram** that plays a scripted run, with prompts, tool calls, loops and branches moving through it;
 - **hover explanations** for every node and edge, and an example payload on each edge;
