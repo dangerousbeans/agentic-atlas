@@ -28,14 +28,14 @@ build:
     - "To retrieve for a query, score every memory as the sum of recency (exponential decay since last access, factor 0.995 per hour), importance and relevance (cosine similarity to the query embedding), each normalized to 0..1."
     - "Return the top k memories (default 5), update their last-access time, and pass them to the agent model with the current situation."
     - "Keep a running total of importance since the last reflection. When it exceeds the threshold (default 150), reflect."
-    - "To reflect, call the reflector model with the {{prompt:reflect}} on the 100 most recent memories, and append each insight it returns to the stream as a memory with pointers to the memories it cites."
-  stop: "Retrieval and reflection never end the agent's run; each retrieval stops at k memories, and each reflection at one pass over the recent memories. The importance total resets to 0 after every reflection."
+    - "To reflect, call the reflector model with the {{prompt:questions}} on the 100 most recent memories. Run each of the 3 questions it returns through the retriever as a query over the whole stream, then call the reflector with the {{prompt:insights}} on the retrieved memories, numbered, and append each insight to the stream with pointers to the memories it cites."
+  stop: "Retrieval and reflection never end the agent's run; each retrieval stops at k memories, and each reflection at one questions call, one retrieval per question and one insights call. The importance total resets to 0 after every reflection."
   requirements:
     - "Store reflections in the same stream as observations, so later reflections can build on earlier ones."
     - "Make the three weights (default 1 each), the decay factor, k and the reflection threshold configurable."
     - "If the rater's reply is not an integer from 1 to 10, retry once, then store the memory with importance 5 and log it."
     - "Keep every reflection's evidence pointers, so an insight can be traced to the observations behind it."
-    - "Add a test with a fake clock, a fake embedder and stub importance scores in which an old but important, relevant memory beats a recent trivial one; assert it ranks first, and that crossing the threshold triggers exactly one reflection call."
+    - "Add a test with a fake clock, a fake embedder and stub importance scores in which an old but important, relevant memory beats a recent trivial one; assert it ranks first, and that crossing the threshold triggers one questions call, exactly 3 retriever calls (one per question) and one insights call."
 prompts:
   - id: importance
     title: Importance rating prompt
@@ -49,18 +49,28 @@ prompts:
       <memory>{{observation}}</memory>
 
       Reply with a single integer.
-  - id: reflect
-    title: Reflection prompt
+  - id: questions
+    title: Reflection questions prompt
     lang: markdown
     source: |
-      Here are {{agent_name}}'s recent memories, numbered:
+      Here are {{agent_name}}'s most recent memories:
 
-      <memories>{{numbered_memories}}</memories>
+      <memories>{{recent_memories}}</memories>
 
-      First, write the 3 most salient high-level questions these memories can
-      answer about the people and events in them. Then, for those questions,
-      write up to 5 high-level insights you can infer, each citing the
-      memories it rests on, in the form:
+      Given only the information above, what are the 3 most salient high-level
+      questions we can answer about the subjects in the statements?
+      Return one question per line, with no numbering.
+  - id: insights
+    title: Reflection insights prompt
+    lang: markdown
+    source: |
+      Statements about {{agent_name}}, retrieved for the questions
+      {{questions}}:
+
+      <statements>{{numbered_retrieved_memories}}</statements>
+
+      What 5 high-level insights can you infer from the above statements?
+      Cite the statements each one rests on, in the form:
       insight (because of 1, 5, 3)
   - id: act
     title: Agent prompt with retrieved memories
@@ -79,9 +89,9 @@ diagram:
     - { id: env, kind: io, label: Observation, size: md, description: "What the agent perceives or is asked, such as Isabella inviting Maria to a party, or someone asking Maria about tonight." }
     - { id: rater, kind: llm, label: Rater, sublabel: importance 1 to 10, description: "Rates how important each new observation is, from 1 (mundane) to 10 (poignant)." }
     - { id: stream, kind: memory, label: Memory stream, description: "One flat, timestamped log of every observation and reflection, each with its importance score and embedding." }
+    - { id: reflector, kind: llm, label: Reflector, description: "When enough important things have happened, asks 3 questions about recent memories, retrieves evidence for each, and writes insights back into the stream." }
     - { id: retriever, kind: evaluator, label: Retriever, sublabel: "score: rec + imp + rel", description: "Scores every memory for the current query by recency, importance and relevance, and returns the top few." }
     - { id: agent, kind: llm, label: Agent, description: "Decides what to say or do from the current situation and the memories retrieved for it." }
-    - { id: reflector, kind: llm, label: Reflector, description: "When enough important things have happened, reads recent memories and writes higher-level insights back into the stream." }
     - { id: out, kind: io, label: Action, description: "What the agent says or does next, consistent with what it remembers." }
   edges:
     - { id: observe, from: env, to: rater, description: "Each new observation is sent to be rated before it is stored.", example: "Isabella invited me to her Valentine's Day party at Hobbs Cafe, Feb 14, 5pm." }
@@ -90,8 +100,8 @@ diagram:
     - { id: candidates, from: stream, to: retriever, description: "Every memory is read with its timestamp, importance and embedding, so it can be scored.", example: "412 memories, e.g. 'Ate breakfast' (t=08:01, imp=1), 'Isabella invited me to a party' (t=Feb 13, imp=7)" }
     - { id: topk, from: retriever, to: agent, label: top 5, description: "The highest-scoring memories, ranked by the sum of the three scores.", example: "1. Isabella invited me to her party at 5pm (rec 0.62 + imp 0.70 + rel 0.91 = 2.23)  2. I want to ask Klaus to the party (2.05) ..." }
     - { id: act, from: agent, to: out, description: "The agent's next action or reply.", example: "\"I'm going to Isabella's Valentine's Day party at Hobbs Cafe at 5. Want to come?\"" }
-    - { id: recent, from: stream, to: reflector, label: sum > 150, description: "When recent importance scores add up past the threshold, the most recent memories go to the reflector.", example: "100 most recent memories; importance since last reflection: 156" }
-    - { id: insight, from: reflector, to: stream, style: loop, label: reflection, description: "Each insight is written back as a new memory, pointing to the memories it rests on.", example: "{\"text\": \"Maria has a crush on Klaus\", \"importance\": 8, \"evidence\": [12, 31, 47]}" }
+    - { id: recent, from: stream, to: reflector, label: sum > 150, description: "When importance passes the threshold, the 100 most recent memories go to the reflector; then, for each of its 3 questions, the memories retrieved from the whole stream.", example: "Q: How does Maria feel about Klaus? -> 12. Maria studied with Klaus at the library  31. Maria laughed at Klaus's joke  47. Maria wants to ask Klaus to the party" }
+    - { id: insight, from: reflector, to: stream, style: loop, description: "Each insight is written back as a new memory, pointing to the memories it rests on.", example: "{\"text\": \"Maria wants to spend more time with Klaus\", \"importance\": 8, \"evidence\": [12, 31, 47]}" }
   scenarios:
     - id: retrieve
       label: Remember what matters
@@ -135,16 +145,23 @@ diagram:
             - { type: activate, node: rater, status: thinking, at: [0.35, 0.6] }
             - { type: send, edge: store, token: { kind: result, label: "imp 8" }, at: [0.6, 0.85] }
             - { type: write, node: stream, at: [0.85, 1] }
-        - id: read
-          caption: The reflector reads the most recent memories and asks what they say about the people in them.
+        - id: ask
+          caption: The reflector reads the 100 most recent memories and asks 3 questions about the people in them.
           duration: 2600
           events:
             - { type: read, node: stream, at: [0, 0.3] }
             - { type: send, edge: recent, token: { kind: result, label: recent }, at: [0.3, 0.65] }
             - { type: activate, node: reflector, status: thinking, at: [0.65, 1] }
-        - id: write
-          caption: "It writes 'Maria has a crush on Klaus' back into the stream as a new memory, citing the memories behind it."
-          duration: 2600
+        - id: retrieve
+          caption: Each question is scored against the whole stream like any query, so older memories and earlier reflections come back as evidence.
+          duration: 3000
           events:
-            - { type: send, edge: insight, token: { kind: feedback, label: reflection }, at: [0, 0.6] }
-            - { type: write, node: stream, at: [0.6, 1] }
+            - { type: read, node: stream, at: [0, 0.4] }
+            - { type: send, edge: recent, token: { kind: result, label: evidence }, at: [0.4, 1] }
+        - id: write
+          caption: "It writes 'Maria wants to spend more time with Klaus' back into the stream as a new memory, citing the memories behind it."
+          duration: 2800
+          events:
+            - { type: activate, node: reflector, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: insight, token: { kind: feedback, label: reflection }, at: [0.3, 0.75] }
+            - { type: write, node: stream, at: [0.75, 1] }
