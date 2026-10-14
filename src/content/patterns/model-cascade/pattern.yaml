@@ -12,7 +12,7 @@ sources:
   - title: "Fast Inference from Transformers via Speculative Decoding (Leviathan et al., 2022)"
     url: https://arxiv.org/abs/2211.17192
 related:
-  composesWith: [caching, model-fallback, evaluator-optimizer]
+  composesWith: [caching, model-fallback, evaluator-optimizer, llm-as-judge]
   confusedWith:
     - slug: routing
       difference: "Routing picks among peer handlers by topic before any answer exists. A cascade picks by difficulty, and escalates only after it has seen a cheap answer and found it weak."

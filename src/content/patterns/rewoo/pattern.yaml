@@ -14,6 +14,7 @@ related:
   confusedWith:
     - { slug: react, difference: "ReAct calls the model again after every observation to choose the next action; ReWOO writes the whole plan once, runs it with no model calls in between, and never revisits the planner." }
     - { slug: plan-and-execute, difference: "Plan-and-Execute has a replanner that revises the plan after each step; ReWOO's plan is final and the tools run blind." }
+    - { slug: llm-compiler, difference: "LLMCompiler plans a dependency graph, runs independent calls in parallel and lets a joiner trigger a replan. ReWOO runs its planned calls in order, and its plan is final." }
 origin:
   by: Binfeng Xu et al.
   year: 2023

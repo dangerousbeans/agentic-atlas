@@ -11,6 +11,9 @@ related:
   composesWith: [reflexion]
   confusedWith:
     - { slug: react, difference: "ReAct commits to one line of thought and acts on it; Tree of Thoughts holds several candidate lines at once, scores them, and abandons the ones that look hopeless." }
+    - { slug: graph-of-thoughts, difference: "Graph of Thoughts can also merge several thoughts into one and loop on a single thought to refine it. Tree of Thoughts only branches and prunes, so every thought has one parent." }
+    - { slug: lats, difference: "LATS runs each candidate action in a real environment and backs the observed score up the tree. Tree of Thoughts searches over thoughts the model only imagines, and the model scores them itself." }
+    - { slug: chain-of-thought, difference: "Chain-of-thought follows one line of reasoning in one call. Tree of Thoughts holds several candidate steps, scores them over many calls, and backtracks from dead ends." }
 origin:
   by: Shunyu Yao et al.
   org: Princeton University, Google DeepMind

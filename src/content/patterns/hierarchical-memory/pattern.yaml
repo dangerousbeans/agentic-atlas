@@ -7,11 +7,15 @@ badges: { autonomy: high, cost: medium, latency: medium }
 sources:
   - title: "MemGPT: Towards LLMs as Operating Systems (Packer et al., 2023)"
     url: https://arxiv.org/abs/2310.08560
-  - title: "Generative Agents: Interactive Simulacra of Human Behavior (Park et al., 2023)"
-    url: https://arxiv.org/abs/2304.03442
 related:
   composesWith: [agentic-rag]
-  confusedWith: []
+  confusedWith:
+    - slug: memory-stream
+      difference: "A memory stream is one flat, timestamped log, scored by recency, importance and relevance when it is read, plus reflections the agent writes. Hierarchical memory pages facts between tiers with explicit tool calls."
+    - slug: durable-execution
+      difference: "Checkpoints hold execution state: where the run is and what each step already did. Hierarchical memory holds what the model knows, across conversations."
+    - slug: caching
+      difference: "A cache stores computation or finished answers; the model would see the same content without it, only slower and at a higher price. Memory changes what the model knows."
 origin:
   by: Charles Packer et al.
   org: UC Berkeley

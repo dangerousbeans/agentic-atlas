@@ -14,6 +14,8 @@ related:
   confusedWith:
     - { slug: orchestrator-workers, difference: "Orchestrator-workers hands subtasks to plain LLM calls; a supervisor delegates to full agents that have their own tools and loops." }
     - { slug: handoffs, difference: "A supervisor keeps control and every result returns to it; with handoffs the conversation itself moves to another agent, with no manager." }
+    - { slug: group-chat, difference: "In a group chat every message goes to a shared thread and a manager only picks the next speaker. A supervisor delegates tasks and gets each result back privately." }
+    - { slug: blackboard, difference: "On a blackboard the control unit only decides who acts, and every result goes to a shared board that all specialists read. A supervisor assigns each task and every result comes back to it." }
 origin:
   by: OpenAI and LangChain
   org: OpenAI; LangChain

@@ -9,7 +9,11 @@ sources:
     url: https://arxiv.org/abs/2501.09136
 related:
   composesWith: [routing]
-  confusedWith: []
+  confusedWith:
+    - slug: multi-query-rag
+      difference: "Multi-query RAG is a fixed, one-shot fan-out: it always searches, with every query, once. Agentic RAG decides whether, where and how often to search, in a loop."
+    - slug: graph-rag
+      difference: "GraphRAG does its distinctive work offline, building an entity graph and community summaries before any question arrives. Agentic RAG decides at query time whether and where to search."
 origin:
   by: Aditi Singh et al.
   org: Cleveland State University, Kent State University, Northeastern University, University of Agder

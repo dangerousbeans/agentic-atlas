@@ -13,7 +13,17 @@ sources:
     url: https://arxiv.org/abs/2305.11738
 related:
   composesWith: [routing]
-  confusedWith: []
+  confusedWith:
+    - slug: critic
+      difference: "CRITIC is one model checking its own answer: it picks which claims to verify and which tools to ask, with no rubric beyond the evidence. Evaluator-Optimizer is a workflow in which a separate judge applies criteria you wrote; its Tool-checked variant hands that judge tools."
+    - slug: chain-of-verification
+      difference: "Chain-of-verification makes one pass: it checks the draft's claims with independent questions and rewrites once. Evaluator-Optimizer loops, revising until a judge passes the work."
+    - slug: llm-as-judge
+      difference: "An LLM judge sits outside the system and scores many outputs to gate a release or rank candidates. Here the evaluator sits inside the loop, and its feedback drives revisions of one output."
+    - slug: schema-repair
+      difference: "Schema repair runs a deterministic check, and the validator's own error text is the feedback. Here an LLM judge decides whether the work is good enough, by criteria code cannot check."
+    - slug: reflexion
+      difference: "Reflexion lets an attempt fail, saves a lesson to memory, and starts a fresh attempt. Evaluator-Optimizer critiques and revises one draft inside a single run."
 origin:
   by: Erik Schluntz and Barry Zhang
   org: Anthropic
@@ -288,7 +298,7 @@ variants:
       year: 2023
       url: https://arxiv.org/abs/2305.11738
       kind: introduced
-      note: "CRITIC (ICLR 2024): the critique step calls tools such as search or a code interpreter, and the revision works from what they return."
+      note: "This variant applies the CRITIC pattern (Gou et al. 2023, ICLR 2024) inside an evaluator-optimizer workflow. In CRITIC the model checks its own claims with tools such as search or a code interpreter and revises from what they return; here a separate evaluator does the checking, against criteria you wrote."
     build:
       goal: "Revise an output until an evaluator that verifies its checkable claims with tools passes it, so that every critique quotes evidence from a tool result."
       steps:

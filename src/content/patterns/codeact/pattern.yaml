@@ -10,10 +10,11 @@ sources:
   - title: Introducing advanced tool use on the Claude Developer Platform (Anthropic, 2025)
     url: https://www.anthropic.com/engineering/advanced-tool-use
 related:
-  composesWith: [react]
+  composesWith: [react, sandboxed-execution]
   confusedWith:
     - { slug: react, difference: "ReAct makes one tool call per model turn, and every result returns to the context. CodeAct packs many calls, loops and filters into one action, and only what the code prints comes back." }
     - { slug: augmented-llm, difference: "The augmented LLM calls tools as JSON, one call per request. CodeAct gives the model an interpreter in which tools are ordinary functions it can compose with code." }
+    - { slug: program-aided-reasoning, difference: "Program-aided reasoning writes one program whose output is the answer, with no loop. CodeAct runs code as the agent's action, turn after turn, reading the output each time." }
 origin:
   by: Xingyao Wang et al.
   org: University of Illinois Urbana-Champaign, Apple

@@ -14,6 +14,7 @@ related:
   confusedWith:
     - { slug: human-in-the-loop, difference: "Human-in-the-loop is the approval step itself. A permission policy decides most calls automatically by rule and sends only the ask lane to a person." }
     - { slug: guardrails, difference: "Guardrails check content: the text going in and coming out. A permission policy checks actions: which tool, with which arguments, and what it costs." }
+    - { slug: sandboxed-execution, difference: "A sandbox lets commands run freely but limits what they can reach. A permission policy decides before each call, by rule, whether it may run at all. The two are often combined." }
 origin:
   by: OpenAI and Anthropic
   org: OpenAI; Anthropic

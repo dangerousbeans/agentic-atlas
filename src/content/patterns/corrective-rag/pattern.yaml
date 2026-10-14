@@ -11,7 +11,13 @@ sources:
     url: https://arxiv.org/abs/2310.11511
 related:
   composesWith: [agentic-rag, evaluator-optimizer]
-  confusedWith: []
+  confusedWith:
+    - slug: chain-of-verification
+      difference: "Chain-of-verification checks the model's own claims after it has answered. Corrective RAG grades the retrieved documents before answering."
+    - slug: retrieve-and-rerank
+      difference: "A reranker only reorders and truncates what retrieval found. Corrective RAG grades the results and, if they fail, rewrites the query and falls back to web search."
+    - slug: hyde
+      difference: "HyDE reshapes the search before retrieving, on every query. Corrective RAG rewrites the query only after a grader has rejected what came back."
 origin:
   by: Shi-Qi Yan et al.
   org: University of Science and Technology of China, UCLA, Google DeepMind

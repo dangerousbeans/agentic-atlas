@@ -9,7 +9,13 @@ sources:
     url: https://www.anthropic.com/engineering/building-effective-agents
 related:
   composesWith: [evaluator-optimizer, orchestrator-workers]
-  confusedWith: []
+  confusedWith:
+    - slug: model-cascade
+      difference: "A cascade picks by difficulty, escalating only after it has seen a cheap answer and found it weak. Routing picks by the input's category, before any answer exists."
+    - slug: model-fallback
+      difference: "Fallback picks the next model only after a call has failed. Routing picks a model by the input's category before any call is made."
+    - slug: handoffs
+      difference: "With handoffs control keeps moving: the receiving agent talks to the user and can hand off again mid-conversation. Routing classifies once and dispatches to a handler that answers."
 origin:
   by: Erik Schluntz and Barry Zhang
   org: Anthropic

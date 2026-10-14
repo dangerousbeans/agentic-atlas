@@ -11,6 +11,9 @@ related:
   composesWith: [react]
   confusedWith:
     - { slug: evaluator-optimizer, difference: "Evaluator-Optimizer critiques and revises one draft inside a single run; Reflexion distills each failed trial into a lesson saved in memory, so a fresh attempt starts smarter." }
+    - { slug: lats, difference: "LATS keeps a whole tree of attempts and returns to the most promising one. Reflexion retries in a line, one fresh attempt after another, carrying only its lessons forward." }
+    - { slug: critic, difference: "CRITIC corrects the same answer within one attempt, using tool evidence, and keeps nothing afterwards. Reflexion lets an attempt fail, writes a lesson to memory, and starts a fresh one." }
+    - { slug: memory-stream, difference: "A memory stream logs everything the agent observes and reflects whenever enough has happened, to build a lasting picture of its world. Reflexion writes a lesson only after a failed attempt, to do the same task better." }
 origin:
   by: Noah Shinn et al.
   org: Northeastern University, MIT and Princeton University

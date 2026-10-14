@@ -10,11 +10,12 @@ sources:
   - title: "Program of Thoughts Prompting: Disentangling Computation from Reasoning for Numerical Reasoning Tasks (Chen et al., 2022)"
     url: https://arxiv.org/abs/2211.12588
 related:
-  composesWith: [chain-of-thought, voting]
+  composesWith: [chain-of-thought, voting, sandboxed-execution]
   confusedWith:
     - { slug: augmented-llm, difference: "An augmented LLM may call any tool and then keep talking; here the model writes one program and the interpreter's output is the answer." }
     - { slug: react, difference: "ReAct deliberates over many turns and tools; program-aided reasoning generates code once and runs it, with no loop in the original form." }
     - { slug: chain-of-thought, difference: "Chain-of-thought does the arithmetic in text, where the model can slip; here the reasoning is code and the computer does the arithmetic." }
+    - { slug: codeact, difference: "CodeAct runs code as the agent's action in a multi-turn loop, reading the output and acting again. Program-aided reasoning writes one program whose output is the answer." }
 origin:
   by: Luyu Gao, Aman Madaan, Shuyan Zhou et al.
   org: Carnegie Mellon University, Inspired Cognition

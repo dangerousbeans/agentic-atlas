@@ -14,6 +14,7 @@ related:
   confusedWith:
     - { slug: prompt-chaining, difference: "Prompt chaining makes several model calls, with your code between them; chain-of-thought is one call whose output contains the steps." }
     - { slug: tree-of-thoughts, difference: "Tree of Thoughts branches, scores and backtracks over many calls; chain-of-thought follows one line of reasoning in one call." }
+    - { slug: program-aided-reasoning, difference: "Program-aided reasoning writes the reasoning as code and lets an interpreter do the arithmetic. Chain-of-thought does it in text, where the model can slip." }
 origin:
   by: Jason Wei et al.
   org: Google Research, Brain Team

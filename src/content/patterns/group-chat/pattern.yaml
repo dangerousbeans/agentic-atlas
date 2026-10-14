@@ -15,6 +15,7 @@ related:
     - { slug: supervisor, difference: "A supervisor delegates tasks and each result comes back to it privately; in a group chat every message goes to the shared thread, and the manager only picks the next speaker." }
     - { slug: debate, difference: "In a debate every agent answers the same question each round in parallel; in a group chat one agent speaks per turn, chosen for what the conversation needs next." }
     - { slug: blackboard, difference: "A group chat is an append-only transcript where the manager calls on one agent per turn; a blackboard is a shared workspace of partial results, where a control unit can activate several specialists per round and entries can be revised or removed." }
+    - { slug: sop-team, difference: "An SOP team exchanges structured documents in an order the procedure fixes, with no open chat. In a group chat agents talk freely in one thread, and a manager picks who speaks next." }
 origin:
   by: Qingyun Wu et al.
   org: Microsoft Research, Penn State University, University of Washington, Xidian University

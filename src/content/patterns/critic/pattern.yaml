@@ -14,6 +14,8 @@ related:
   confusedWith:
     - { slug: evaluator-optimizer, difference: "Evaluator-Optimizer is a workflow: a judge scores a draft against criteria you wrote, and its Tool-checked variant hands that judge tools. In CRITIC the model checks its own answer, decides which claims to verify and which tool to use, and has no rubric beyond the evidence." }
     - { slug: reflexion, difference: "Reflexion stores a lesson after a failed trial and starts a fresh attempt. CRITIC corrects the same answer within one attempt, using tool evidence, and keeps no memory between tasks." }
+    - { slug: chain-of-verification, difference: "Chain-of-verification checks claims by asking the model itself independent questions, without the draft in view. CRITIC checks them against outside evidence from tools such as search or a code interpreter." }
+    - { slug: schema-repair, difference: "Schema repair checks format and business rules with plain code and feeds the validator's error back. CRITIC checks whether the answer's claims are true, using evidence from tools." }
 origin:
   by: Zhibin Gou et al.
   org: Tsinghua University, Microsoft Research Asia, Microsoft Azure AI

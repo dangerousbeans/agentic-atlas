@@ -14,6 +14,9 @@ related:
   confusedWith:
     - { slug: orchestrator-workers, difference: "Orchestrator-Workers hands subtasks to plain LLM workers once and synthesizes; Plan-and-Execute keeps an explicit, persistent plan that a replanner revises after every step." }
     - { slug: react, difference: "ReAct chooses one action at a time with no written plan; Plan-and-Execute writes the whole plan first, then lets a replanner adjust it as results arrive." }
+    - { slug: least-to-most, difference: "Least-to-most has no tools and no replanner: the model solves its subquestions in order, carrying each answer forward in the prompt. Plan-and-execute runs its steps with tools and revises the plan as results arrive." }
+    - { slug: dual-llm, difference: "Dual LLM also plans first, but its executor is plain code and the goal is keeping untrusted text away from the planner. In plan-and-execute the executor is an agent and the goal is efficiency." }
+    - { slug: rewoo, difference: "ReWOO's plan is final: its tools run with no model calls in between and nothing is revised. Plan-and-execute has a replanner that revises the remaining steps after each one." }
 origin:
   by: LangChain team
   org: LangChain

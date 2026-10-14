@@ -11,6 +11,10 @@ related:
   composesWith: [evaluator-optimizer]
   confusedWith:
     - { slug: routing, difference: "Routing picks one fixed path; the orchestrator invents the subtasks at run time and uses several workers." }
+    - { slug: skeleton-of-thought, difference: "In skeleton-of-thought each worker only expands its own outline point, and the results are simply concatenated. Orchestrator-workers ends with an LLM that synthesizes the workers' results." }
+    - { slug: plan-and-execute, difference: "Plan-and-execute keeps an explicit, persistent plan that a replanner revises after every step. An orchestrator decides the subtasks once, hands them to workers and synthesizes." }
+    - { slug: sectioning, difference: "Sectioning splits the work into parts fixed in advance. An orchestrator decides the parts at run time, from the input." }
+    - { slug: supervisor, difference: "A supervisor delegates to full agents that have their own tools and loops. Orchestrator-workers hands subtasks to plain LLM calls." }
 origin:
   by: Erik Schluntz and Barry Zhang
   org: Anthropic

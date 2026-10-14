@@ -11,6 +11,8 @@ related:
   composesWith: [evaluator-optimizer]
   confusedWith:
     - { slug: evaluator-optimizer, difference: "Evaluator-optimizer has one generator revising against one critic; in a debate several peers answer the same question and update by reading each other." }
+    - { slug: group-chat, difference: "In a group chat one agent speaks per turn, chosen for what the conversation needs next. In a debate every agent answers the same question each round, in parallel." }
+    - { slug: mixture-of-agents, difference: "Mixture-of-Agents uses a fresh set of calls in each layer and ends with an aggregator's synthesis. In a debate the same agents revise their own answers over rounds and converge by majority or a judge." }
 origin:
   by: Yilun Du et al.
   org: MIT CSAIL and Google Brain

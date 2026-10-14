@@ -13,6 +13,8 @@ related:
   composesWith: [react, routing, orchestrator-workers]
   confusedWith:
     - { slug: react, difference: "An augmented LLM answers one request, using whatever tools it needs along the way; ReAct is the open-ended loop of many such steps that runs until the model decides the goal is met." }
+    - { slug: program-aided-reasoning, difference: "In program-aided reasoning the model writes one program and the interpreter's output is the answer. An augmented LLM may call any tool and keeps talking after each result comes back." }
+    - { slug: codeact, difference: "CodeAct gives the model an interpreter in which tools are ordinary functions it can compose with code. An augmented LLM calls tools as structured JSON, one call at a time." }
 origin:
   by: Erik Schluntz and Barry Zhang
   org: Anthropic

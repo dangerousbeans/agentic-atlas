@@ -9,7 +9,13 @@ sources:
     url: https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf
 related:
   composesWith: [human-in-the-loop, supervisor, handoffs]
-  confusedWith: []
+  confusedWith:
+    - slug: permission-policies
+      difference: "A permission policy checks actions: which tool, with which arguments, and at what cost. Guardrails check content: the text going in and coming out."
+    - slug: dual-llm
+      difference: "Dual LLM assumes injections get through and isolates them by construction, so the model with tools never reads untrusted text. Guardrails try to detect bad input and can miss some."
+    - slug: schema-repair
+      difference: "Schema repair does not judge content; it re-asks when output cannot be parsed or breaks a business rule. Guardrails block or redirect unsafe or off-topic content."
 origin:
   by: OpenAI
   org: OpenAI

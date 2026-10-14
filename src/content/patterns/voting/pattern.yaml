@@ -10,10 +10,12 @@ sources:
   - title: Self-Consistency Improves Chain of Thought Reasoning in Language Models (Wang et al., 2022)
     url: https://arxiv.org/abs/2203.11171
 related:
-  composesWith: [routing, prompt-chaining]
+  composesWith: [routing, prompt-chaining, chain-of-thought]
   confusedWith:
     - { slug: sectioning, difference: "Voting runs the same task several times and compares answers; sectioning gives each call a different part of the work." }
     - { slug: evaluator-optimizer, difference: "Voting picks among independent attempts; the evaluator-optimizer revises one attempt using feedback, in a loop." }
+    - { slug: mixture-of-agents, difference: "In Mixture-of-Agents each layer reads every earlier answer and an aggregator writes a new one. Voting keeps the attempts independent and picks the most common answer." }
+    - { slug: llm-as-judge, difference: "A judge scores answers against a rubric, and the scores feed a report or a ranking. Voting needs no rubric: it compares the answers themselves and picks the most common one." }
 origin:
   by: Xuezhi Wang et al.
   org: Google Research, Brain Team

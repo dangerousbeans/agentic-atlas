@@ -26,6 +26,8 @@ related:
       difference: "Sectioning splits a task into different subtasks. Multi-query RAG fans out over different wordings of one question, all aimed at the same answer."
     - slug: hyde
       difference: "HyDE writes one answer-shaped passage and searches with its embedding. Multi-query RAG writes several queries and fuses their ranked lists."
+    - slug: self-ask
+      difference: "Self-ask raises one follow-up question at a time, each after seeing the last answer. Multi-query RAG writes all its queries up front and searches with them in parallel."
 origin:
   by: Adrian Raudaschl
   org: Independent (blog post, first published on Medium)

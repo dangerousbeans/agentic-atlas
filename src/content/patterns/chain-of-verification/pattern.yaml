@@ -12,6 +12,8 @@ related:
   confusedWith:
     - { slug: evaluator-optimizer, difference: "Evaluator-optimizer loops until a judge passes the work; chain-of-verification makes one pass and checks claims with independent questions, not a verdict." }
     - { slug: corrective-rag, difference: "Corrective RAG grades retrieved documents before answering; chain-of-verification checks the model's own claims after it has answered." }
+    - { slug: llm-as-judge, difference: "An LLM judge scores finished outputs against a rubric, from outside the system, to gate a release or rank candidates. Chain-of-verification checks the individual claims of one answer and rewrites that answer." }
+    - { slug: critic, difference: "CRITIC checks claims against evidence from tools such as search or code. Chain-of-verification asks the model itself, answering each check question without seeing the draft." }
 origin:
   by: Shehzaad Dhuliawala et al.
   org: Meta AI, ETH Zürich

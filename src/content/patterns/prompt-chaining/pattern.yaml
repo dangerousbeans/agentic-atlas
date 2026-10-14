@@ -11,6 +11,9 @@ related:
   composesWith: [routing, evaluator-optimizer]
   confusedWith:
     - { slug: orchestrator-workers, difference: "A chain runs the same fixed steps in order every time; an orchestrator decides the steps at run time." }
+    - { slug: sop-team, difference: "An SOP team has role agents that publish typed documents to a shared pool and pick up the ones they subscribe to. A chain passes each call's output straight to the next call, in a fixed order." }
+    - { slug: chain-of-thought, difference: "Chain-of-thought is one call whose output contains the steps. Prompt chaining makes several model calls, with your code between them." }
+    - { slug: least-to-most, difference: "In least-to-most the model writes the subquestions for each problem and then solves them in order. In prompt chaining your code fixes the steps in advance." }
 origin:
   by: Erik Schluntz and Barry Zhang
   org: Anthropic

@@ -12,6 +12,7 @@ related:
   confusedWith:
     - { slug: react, difference: "ReAct picks among several tools and free-form actions each turn; self-ask has one tool and a fixed scaffold whose only action is asking a sub-question." }
     - { slug: least-to-most, difference: "Least-to-most writes all its subquestions before solving any; self-ask decides each follow-up after seeing the last answer." }
+    - { slug: multi-query-rag, difference: "Multi-query RAG writes all its queries up front, searches with them in parallel and fuses the results. Self-ask raises one follow-up at a time, each after seeing the last answer." }
 origin:
   by: Ofir Press et al.
   org: University of Washington, MosaicML, Meta AI Research, Allen Institute for AI

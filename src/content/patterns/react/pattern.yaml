@@ -13,6 +13,10 @@ related:
   composesWith: [augmented-llm, reflexion]
   confusedWith:
     - { slug: augmented-llm, difference: "An augmented LLM makes a bounded handful of tool calls for one request; ReAct keeps looping, choosing each next action from the last observation, until it judges the goal met." }
+    - { slug: codeact, difference: "CodeAct packs many tool calls, loops and filters into one code action, and only what the code prints comes back. ReAct makes one tool call per turn, and every result returns to the context." }
+    - { slug: self-ask, difference: "Self-ask has one tool and a fixed scaffold whose only action is asking a follow-up question. ReAct picks among several tools and free-form actions each turn." }
+    - { slug: ambient-agent, difference: "An ambient agent is started by events and works in the background, contacting a person only when it needs to. A ReAct agent is started by a user and answers while they wait." }
+    - { slug: plan-and-execute, difference: "Plan-and-execute writes the whole plan first, then lets a replanner adjust it as results arrive. ReAct chooses one action at a time with no written plan." }
 origin:
   by: Shunyu Yao et al.
   org: Princeton University and Google Research (Brain team)

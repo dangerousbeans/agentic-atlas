@@ -10,8 +10,10 @@ sources:
   - title: Interrupts (LangGraph docs)
     url: https://docs.langchain.com/oss/python/langgraph/interrupts
 related:
-  composesWith: [guardrails, supervisor]
-  confusedWith: []
+  composesWith: [guardrails, supervisor, sop-team, durable-execution, ambient-agent]
+  confusedWith:
+    - slug: permission-policies
+      difference: "A permission policy decides most tool calls automatically by rule and sends only the ask lane to a person. Human-in-the-loop is that approval step itself."
 origin:
   by: OpenAI and LangChain
   org: OpenAI; LangChain

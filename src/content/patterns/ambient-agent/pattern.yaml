@@ -8,7 +8,7 @@ sources:
   - title: "Introducing ambient agents (Harrison Chase, LangChain, 2025)"
     url: https://www.langchain.com/blog/introducing-ambient-agents
 related:
-  composesWith: [human-in-the-loop, durable-execution, routing, guardrails]
+  composesWith: [human-in-the-loop, durable-execution, routing, guardrails, permission-policies]
   confusedWith:
     - slug: react
       difference: "A ReAct agent is started by a user and answers while they wait. An ambient agent is started by events and works in the background, contacting a person only when it needs to."
