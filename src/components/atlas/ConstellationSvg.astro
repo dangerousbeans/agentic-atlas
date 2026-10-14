@@ -1,20 +1,20 @@
 ---
 import { project, type ConstellationData } from '../../lib/constellation';
 import { href } from '../../lib/url';
-interface Props { data: ConstellationData; focus?: string }
-const { data, focus } = Astro.props;
+interface Props { data: ConstellationData; focus?: string; uid?: string }
+const { data, focus, uid = 'c' } = Astro.props;
 const yaw = 0.35, pitch = -0.18, S = 60, W = 1000, H = 560;
 const pt = (s: { x: number; y: number; z: number }) => { const q = project(s, yaw, pitch); return { x: W / 2 + 120 + q.x * S, y: H / 2 - q.y * S, d: q.depth }; };
 const pos = new Map(data.stars.map(s => [s.slug, pt(s)]));
 const dim = (fam: string) => (focus && focus !== fam ? 0.25 : 1);
 ---
 <svg class="constellation-svg" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Constellation map of agentic patterns">
-  <defs>{data.families.map(f => <radialGradient id={`cg-${f.slug}`}><stop offset="0" stop-color={f.color} stop-opacity=".7" /><stop offset="1" stop-color={f.color} stop-opacity="0" /></radialGradient>)}</defs>
+  <defs>{data.families.map(f => <radialGradient id={`cg-${uid}-${f.slug}`}><stop offset="0" stop-color={f.color} stop-opacity=".7" /><stop offset="1" stop-color={f.color} stop-opacity="0" /></radialGradient>)}</defs>
   {data.links.map(([a, b]) => { const s = data.stars.find(x => x.slug === a)!; const p = pos.get(a)!, q = pos.get(b)!; return <line x1={p.x} y1={p.y} x2={q.x} y2={q.y} stroke={s.color} stroke-opacity={0.3 * dim(s.family)} />; })}
   {data.families.map(f => { const c = pt(f); return <text class="fam" x={c.x} y={c.y - 70} fill={f.color} opacity={dim(f.slug)} text-anchor="middle">{f.name}</text>; })}
   {data.stars.map(s => { const p = pos.get(s.slug)!; return (
     <a href={href(`/patterns/${s.slug}/`)} aria-label={s.name} style={`opacity:${dim(s.family)}`}>
-      <circle cx={p.x} cy={p.y} r="16" fill={`url(#cg-${s.family})`} />
+      <circle cx={p.x} cy={p.y} r="16" fill={`url(#cg-${uid}-${s.family})`} />
       <circle cx={p.x} cy={p.y} r="3.2" fill={s.color} />
       <text class="star-label" x={p.x} y={p.y + 18} text-anchor="middle">{s.name}</text>
     </a>

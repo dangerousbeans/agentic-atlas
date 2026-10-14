@@ -5,6 +5,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import { joinBase } from '../../lib/url';
 import type { ConstellationData } from '../../lib/constellation';
 
 export function mount(host: HTMLElement, data: ConstellationData, opts: { focus?: string; baseHref: string }): () => void {
@@ -27,9 +28,10 @@ export function mount(host: HTMLElement, data: ConstellationData, opts: { focus?
   controls.target.copy(target);
 
   const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(new UnrealBloomPass(new THREE.Vector2(W(), H()), 1.1, 0.6, 0.05));
-  composer.addPass(new OutputPass());
+  const renderPass = new RenderPass(scene, camera);
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(W(), H()), 1.1, 0.6, 0.05);
+  const outputPass = new OutputPass();
+  composer.addPass(renderPass); composer.addPass(bloomPass); composer.addPass(outputPass);
 
   const disposables: { dispose(): void }[] = [];
   const track = <T extends { dispose(): void }>(x: T) => (disposables.push(x), x);
@@ -82,9 +84,15 @@ export function mount(host: HTMLElement, data: ConstellationData, opts: { focus?
   let hovered: THREE.Mesh | null = null;
   const onMove = (e: PointerEvent) => { const r = renderer.domElement.getBoundingClientRect(); mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); };
   const onLeave = () => mouse.set(-9, -9);
-  let downAt = 0;
-  const onDown = () => (downAt = performance.now());
-  const onClick = () => { if (hovered && performance.now() - downAt < 300) location.href = `${opts.baseHref}patterns/${hovered.userData.slug}/`; };
+  let downX = 0, downY = 0;
+  const onDown = (e: PointerEvent) => { downX = e.clientX; downY = e.clientY; };
+  const onClick = (e: MouseEvent) => {
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) >= 5) return;
+    const r = renderer.domElement.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+    const h = ray.intersectObjects(hits)[0]?.object;
+    if (h) location.href = joinBase(opts.baseHref, `patterns/${h.userData.slug}/`);
+  };
   renderer.domElement.addEventListener('pointermove', onMove);
   renderer.domElement.addEventListener('pointerleave', onLeave);
   renderer.domElement.addEventListener('pointerdown', onDown);
@@ -111,7 +119,12 @@ export function mount(host: HTMLElement, data: ConstellationData, opts: { focus?
 
   return () => {
     renderer.setAnimationLoop(null); io.disconnect(); removeEventListener('resize', onResize);
-    controls.dispose(); composer.dispose(); disposables.forEach(d => d.dispose()); renderer.dispose();
+    renderer.domElement.removeEventListener('pointermove', onMove);
+    renderer.domElement.removeEventListener('pointerleave', onLeave);
+    renderer.domElement.removeEventListener('pointerdown', onDown);
+    renderer.domElement.removeEventListener('click', onClick);
+    controls.dispose(); renderPass.dispose(); bloomPass.dispose(); outputPass.dispose(); composer.dispose();
+    disposables.forEach(d => d.dispose()); renderer.dispose(); renderer.forceContextLoss();
     renderer.domElement.remove(); labels.domElement.remove();
   };
 }
