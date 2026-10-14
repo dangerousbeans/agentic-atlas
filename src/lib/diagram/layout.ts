@@ -117,7 +117,8 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   const edgePort = (e: { id: string; from: string }) => hubs.has(e.from) ? `${e.from}__out__${e.id}` : outPort(e.from);
   const spreadAt = (id: string, i: number, k: number): Pt => {
     const { w, h } = dims(id);
-    if (direction === 'RIGHT') { const S = Math.min(20, (h - 6) / (k - 1)); return { x: w, y: (h + 6) / 2 + (i - (k - 1) / 2) * S }; }
+    // RIGHT: ports stay level with the glyph (above the label at y~52), so fan legs never cross the node label
+    if (direction === 'RIGHT') { const S = Math.min(14, 44 / (k - 1)); return { x: w, y: SHAPE_CY + (i - (k - 1) / 2) * S }; }
     const S = Math.min(22, (w - 20) / (k - 1));
     return { x: w / 2 + (i - (k - 1) / 2) * S, y: h + 6 };
   };
