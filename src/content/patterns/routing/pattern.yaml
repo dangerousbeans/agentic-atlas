@@ -134,7 +134,7 @@ variants:
         - "Embed the examples and the messages with the same model; re-embed every example when that model changes."
         - "If the embedding call errors or times out, send the message to the general handler instead of failing."
         - "Log the chosen route with its score and best similarity, and the runner-up route with its score, so near-ties can be found and new examples added."
-        - "Add a test with a stub embedder that returns fixed vectors; assert 0.40 to the best example goes to general and 0.92 to a tech example plus four tech matches at 0.50 goes to tech, and that one billing match at 0.93 plus three tech matches at 0.60 goes to general (tech wins at 1.80, but its best is under 0.75)."
+        - "Test with a stub embedder and fixed scores: a best match of 0.40 goes to general; tech matches 0.92 + 4 × 0.50 go to tech; billing 0.93 plus tech 3 × 0.60 goes to general (tech wins 1.80 to 0.93, but its best is under 0.75)."
     diagram:
       nodes:
         - { id: input, kind: io, label: Request, description: "The incoming customer message, such as 'The app crashes on login' or 'I was charged twice'." }
