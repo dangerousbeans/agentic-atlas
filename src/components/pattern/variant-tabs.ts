@@ -52,8 +52,12 @@ function init() {
     select(ids[j], true);
     tabs[j].focus();
   });
-  // Any other hash (empty, unknown, or another anchor on the page) shows the default variant.
-  addEventListener('hashchange', () => select(variantFromHash(location.hash, ids) ?? ids[0], false));
+  // An empty or unknown `#variant-*` hash shows the default variant; other anchors (e.g. the skip link) keep the selection.
+  addEventListener('hashchange', () => {
+    const h = location.hash;
+    if (h && h !== '#' && !h.startsWith('#variant-')) return;
+    select(variantFromHash(h, ids) ?? ids[0], false);
+  });
 
   list.hidden = false;
   root.setAttribute('data-variants-enhanced', '');

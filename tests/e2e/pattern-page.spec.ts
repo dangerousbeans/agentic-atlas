@@ -110,12 +110,12 @@ test.describe('variants', () => {
     expect(errors).toEqual([]);
   });
 
-  test('a hashchange to a variant selects it; to an empty or other hash resets to the default', async ({ page }) => {
+  test('a hashchange to a variant selects it; to an empty hash resets; other anchors keep it', async ({ page }) => {
     await page.goto(url);
     await page.evaluate(() => { location.hash = '#variant-self-critique'; });
     await expect(page.getByRole('tab', { name: 'Same model' })).toHaveAttribute('aria-selected', 'true');
     await page.evaluate(() => { location.hash = '#main'; });
-    await expect(page.getByRole('tab', { name: 'Separate judge' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: 'Same model' })).toHaveAttribute('aria-selected', 'true');
     await page.evaluate(() => { location.hash = '#variant-tool-checked'; });
     await expect(page.getByRole('tab', { name: 'Tool-checked' })).toHaveAttribute('aria-selected', 'true');
     await page.evaluate(() => { location.hash = ''; });
