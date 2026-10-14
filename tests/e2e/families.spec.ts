@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
-import { catalogOrder, visibleFamilies } from '../catalog-fixture';
+import { catalogOrder, visibleFamilies, familyPatterns } from '../catalog-fixture';
 
 test('index has a section per visible family and a card per pattern', async ({ page }) => {
   await page.goto('/families/');
@@ -20,9 +20,9 @@ test('header Families link points at /families/ and is current', async ({ page }
 test('family page shows a compact diagram per pattern', async ({ page }) => {
   await page.goto('/families/workflows/');
   await expect(page.locator('h1')).toHaveText('Workflows');
-  await expect(page.locator('flow-player[compact]')).toHaveCount(visibleFamilies().length);
-  await expect(page.locator('a.pattern-card')).toHaveCount(visibleFamilies().length);
-  await expect(page.locator('.other a')).toHaveCount(5);
+  await expect(page.locator('flow-player[compact]')).toHaveCount(familyPatterns('workflows').length);
+  await expect(page.locator('a.pattern-card')).toHaveCount(familyPatterns('workflows').length);
+  await expect(page.locator('.other a')).toHaveCount(visibleFamilies().length - 1);
 });
 
 test('card link is named by its h3 and navigates', async ({ page }) => {

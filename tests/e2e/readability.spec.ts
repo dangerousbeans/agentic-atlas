@@ -1,3 +1,4 @@
+import { visibleFamilies } from '../catalog-fixture';
 // Readability gate: node labels in the visible diagram must render at a legible size.
 // Effective size = SVG scale (rendered width / viewBox width) x computed font-size.
 import { test, expect, type Page } from '@playwright/test';
@@ -117,6 +118,6 @@ test('atlas island labels wrap onto at most two lines on a phone', async ({ page
     range.setStartBefore(name[0]); range.setEndAfter(name[name.length - 1]);
     return { name: l.textContent, n: new Set([...range.getClientRects()].map(r => Math.round(r.top))).size };
   }));
-  expect(lines).toHaveLength(6);
+  expect(lines).toHaveLength(visibleFamilies().length);
   for (const l of lines) expect(l.n, l.name!).toBeLessThanOrEqual(2);
 });

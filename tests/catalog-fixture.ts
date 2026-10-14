@@ -21,3 +21,6 @@ export const visibleFamilies = (): string[] => families().map(f => f.slug);
 /** Pattern slugs whose pattern.yaml declares no `variants`. */
 export const patternsWithoutVariants = (): string[] =>
   catalogOrder().filter(s => !parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8')).variants);
+
+/** Pattern slugs of one family, in its order. */
+export const familyPatterns = (slug: string): string[] => families().find(f => f.slug === slug)?.order ?? [];
