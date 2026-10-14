@@ -2,6 +2,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import type { DiagramSpec, NodeSize, NodeKind } from './types';
 import { DEFAULT_SIZE } from './types';
 import { roundedPath, cubicPath, boxArc, polylineMid, offsetPath, type Pt, type Box } from './geometry';
+import { WIDE_PAD } from './fit';
 
 export const NODE_DIMS: Record<NodeSize, { w: number; h: number }> = { sm: { w: 96, h: 72 }, md: { w: 136, h: 72 }, lg: { w: 176, h: 72 } };
 /** Vertical centre of the node glyph inside its box (see NodeShape.astro). */
@@ -93,7 +94,7 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
     return { w: NARROW_DIMS[size].w, h: NARROW_DIMS[size].h + LINE * (labelLines(n.label, variant).length - 1) };
   };
   const compact = variant === 'compact';
-  const PAD = compact ? 10 : variant === 'narrow' ? 16 : 28;
+  const PAD = compact ? 10 : variant === 'narrow' ? 16 : WIDE_PAD;
   const grouped = new Set((d.groups ?? []).flatMap(g => g.children));
   const returns = returnEdges(d);
   const forwards = new Set(returns.values());

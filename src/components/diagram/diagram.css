@@ -18,14 +18,21 @@ flow-player {
 
 /* --- stage --- */
 .diagram-stage { position: relative; border: 0; border-radius: 0; background: var(--bg); padding: 20px 16px; container-type: inline-size; overflow-x: auto; }
-.diagram-svg { display: block; width: 100%; height: auto; max-height: 70vh; overflow: visible; }
-.diagram-svg[data-layout="narrow"] { display: none; }
+.diagram-svg { display: block; width: 100%; height: auto; max-height: 70vh; max-width: var(--max-w, none); margin-inline: auto; overflow: visible; }
+.diagram-svg[data-layout="narrow"] { display: none; max-height: none; min-width: var(--min-w, 0); }
+/* Without JS: the narrow (top-to-bottom) layout on small stages. */
 @container (max-width: 640px) {
   .diagram-svg[data-layout="wide"] { display: none; }
-  .diagram-svg[data-layout="narrow"] { display: block; max-height: none; min-width: var(--min-w, 0); max-width: var(--max-w, none); margin-inline: auto; }
+  .diagram-svg[data-layout="narrow"] { display: block; }
   /* compact thumbnails only have the wide layout, drawn without text so it reads at card size */
   .diagram--compact .diagram-svg[data-layout="wide"] { display: block; }
 }
+/* flow-player measures the stage and shows the wide layout only while its labels stay readable (fit.ts) */
+flow-player[data-fit="wide"] .diagram-svg[data-layout="wide"], flow-player[data-fit="narrow"] .diagram-svg[data-layout="narrow"] { display: block; }
+flow-player[data-fit="wide"] .diagram-svg[data-layout="wide"] { min-width: var(--min-w, 0); }
+flow-player[data-fit="wide"] .diagram-svg[data-layout="narrow"], flow-player[data-fit="narrow"] .diagram-svg[data-layout="wide"] { display: none; }
+/* a desktop stage that falls back to the tall narrow layout draws it at natural size, not blown up */
+@container (min-width: 641px) { .diagram-svg[data-layout="narrow"] { max-width: var(--w, none); } }
 @media (max-width: 700px) { .diagram-stage { padding: 14px 8px; } }
 /* scroll affordance when a narrow diagram is wider than the stage (set by flow-player) */
 .diagram-stage { --more-l: none; --more-r: none; background: var(--more-l), var(--more-r), var(--bg); scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }

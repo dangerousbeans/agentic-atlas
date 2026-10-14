@@ -2,6 +2,7 @@
 import type { DiagramSpec } from '../../lib/diagram/types';
 import { labelLines, shownLabelIds, type DiagramLayout } from '../../lib/diagram/layout';
 import { KIND_LABEL, nodeDescription, edgeDescription, edgeTitle, nodeMap } from '../../lib/diagram/kinds';
+import { MIN_LABEL_SCALE, MAX_SCALE } from '../../lib/diagram/fit';
 import NodeShape from './NodeShape.astro';
 interface Props { uid: string; spec: DiagramSpec; layout: DiagramLayout; variant: 'wide' | 'narrow'; title: string; compact?: boolean }
 const { uid, spec, layout, variant, title, compact = false } = Astro.props;
@@ -12,8 +13,10 @@ const pending = (e: { from: string; to: string }) => hiddenIds.has(e.from) || hi
 // Edges that converge on one node with the same label (e.g. five "rate?" edges into an evaluator) show it once.
 const shown = shownLabelIds(spec);
 const labelled = spec.edges.filter(e => shown.has(e.id));
-// Narrow: never shrink text below ~78% (scroll instead), never blow a small diagram up past 125%.
-const sizing = variant === 'narrow' ? `--min-w:${Math.round(layout.width * 0.78)}px;--max-w:${Math.round(layout.width * 1.25)}px` : undefined;
+// Never blow a small diagram up past MAX_SCALE, never shrink labels below MIN_LABEL_SCALE (scroll instead; the wide
+// layout only once the player has picked it, fit.ts). Narrow --w: natural size, the cap on a desktop stage.
+const sizing = compact ? undefined : `--max-w:${Math.round(layout.width * MAX_SCALE)}px;--min-w:${Math.ceil(layout.width * MIN_LABEL_SCALE)}px` +
+  (variant === 'narrow' ? `;--w:${layout.width}px` : '');
 // Compact thumbnails sit inside a link whose heading names them, so they are decorative.
 ---
 <svg class="diagram-svg" data-layout={variant} viewBox={`0 0 ${layout.width} ${layout.height}`} style={sizing}
