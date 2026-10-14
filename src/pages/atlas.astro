@@ -1,0 +1,27 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import AtlasMap from '../components/atlas/AtlasMap.astro';
+import { getCatalog } from '../lib/catalog';
+const cat = await getCatalog();
+const n = cat.patterns.length, nf = cat.families.length;
+---
+<BaseLayout title="The atlas" description={`All ${n} agentic patterns in ${nf} families on one pannable, zoomable map. Each tile runs a live diagram.`}>
+  <div class="atlas-title">
+    <h1 class="mono"><span class="mark" aria-hidden="true"></span>The atlas · {n} patterns · {nf} families</h1>
+    <p class="hint hint-fine">Scroll to zoom, drag to move, click a pattern to open it. Focus the map, then arrow keys walk between patterns and Enter opens one.</p>
+    <p class="hint hint-touch">Pinch to zoom, drag to move, tap a pattern to open it.</p>
+  </div>
+  <AtlasMap fill />
+</BaseLayout>
+<style>
+  .atlas-title {
+    display: flex; align-items: center; justify-content: space-between; gap: 4px 24px; flex-wrap: wrap;
+    max-width: var(--max); margin: 0 auto; padding: 8px var(--gutter); min-height: 64px; box-sizing: border-box;
+  }
+  h1 { margin: 0; font: 400 12px/1.3 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--text); }
+  h1 .mark { margin-right: 10px; }
+  .hint { margin: 0; color: var(--text-3); font-size: 14px; }
+  .hint-touch { display: none; }
+  @media (hover: none) and (pointer: coarse) { .hint-fine { display: none; } .hint-touch { display: block; } }
+  @media (max-width: 720px) { .hint-fine { display: none; } .hint-touch { display: block; } }
+</style>

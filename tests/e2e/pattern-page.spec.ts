@@ -103,9 +103,9 @@ test.describe('neighbour nav', () => {
       else await expect(next).toHaveAttribute('href', new RegExp(`${order[i + 1]}/$`));
     });
   }
-  test('back link goes to the atlas anchor', async ({ page }) => {
+  test('back link goes to the atlas page', async ({ page }) => {
     await page.goto(url);
-    await expect(page.locator('.pattern-nav a.back')).toHaveAttribute('href', /\/#atlas$/);
+    await expect(page.locator('.pattern-nav a.back')).toHaveAttribute('href', /\/atlas\/$/);
   });
   test('random href without JS is next, or prev on the last page', async ({ browser }) => {
     const ctx = await browser.newContext({ javaScriptEnabled: false });
@@ -143,7 +143,7 @@ test.describe('page shortcuts', () => {
     expect(order).toContain(pathOf(page).split('/')[2]);
     await page.waitForLoadState('load');
     await page.keyboard.press('Escape');
-    await expect(page).toHaveURL(/\/#atlas$/);
+    await expect(page).toHaveURL(/\/atlas\/$/);
   });
   test('ignored inside the search input, with modifiers, and in the step list', async ({ page }) => {
     await page.goto(at('routing'));

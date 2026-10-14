@@ -3,10 +3,12 @@ import '../styles/global.css';
 import Header from '../components/site/Header.astro';
 import Footer from '../components/site/Footer.astro';
 import { href } from '../lib/url';
+import { author } from '../lib/author';
 /** `accent` is accepted for compatibility but ignored: the accent is always var(--accent). */
 interface Props { title: string; description: string; accent?: string; pagefind?: boolean }
 const { title, description, pagefind = false } = Astro.props;
 const fullTitle = title === 'Agentic Atlas' ? title : `${title} · Agentic Atlas`;
+const ld = JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebSite', name: 'Agentic Atlas', description, author: { '@type': 'Person', name: author.name, url: author.github, sameAs: [author.github] } }).replace(/</g, '\\u003c');
 const og = Astro.site ? new URL(href('/og.png'), Astro.site).toString() : href('/og.png');
 ---
 <!doctype html>
@@ -19,6 +21,10 @@ const og = Astro.site ? new URL(href('/og.png'), Astro.site).toString() : href('
     <meta property="og:title" content={fullTitle} />
     <meta property="og:description" content={description} />
     <meta property="og:image" content={og} />
+    <meta property="og:site_name" content="Agentic Atlas" />
+    <meta name="author" content={author.name} />
+    <link rel="me" href={author.github} />
+    <script type="application/ld+json" set:html={ld} />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href={href('/favicon.svg')} type="image/svg+xml" />
   </head>
