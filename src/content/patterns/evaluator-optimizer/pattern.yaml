@@ -55,15 +55,46 @@ prompts:
       Only pass the draft if every criterion is fully met.
 diagram:
   nodes:
-    - { id: input, kind: io, label: Task }
-    - { id: generator, kind: llm, label: Generator }
-    - { id: evaluator, kind: evaluator, label: Evaluator }
-    - { id: output, kind: io, label: Output }
+    - id: input
+      kind: io
+      label: Task
+      description: "The request that starts the loop, such as 'Write a board memo on the Q3 churn spike'."
+    - id: generator
+      kind: llm
+      label: Generator
+      description: "Writes the first draft, then rewrites it using the evaluator's critique each round."
+    - id: evaluator
+      kind: evaluator
+      label: Evaluator
+      description: "Checks each draft against explicit criteria and either returns a critique or accepts it."
+    - id: output
+      kind: io
+      label: Output
+      description: "The accepted draft, returned only once it has passed every criterion."
   edges:
-    - { id: task, from: input, to: generator }
-    - { id: draft, from: generator, to: evaluator }
-    - { id: revise, from: evaluator, to: generator, style: loop, label: revise }
-    - { id: accept, from: evaluator, to: output, label: pass }
+    - id: task
+      from: input
+      to: generator
+      description: "The original task and the success criteria go to the generator once."
+      example: "Write a one-page board memo on Q3 churn. Cite a source for every number. Formal tone."
+    - id: draft
+      from: generator
+      to: evaluator
+      description: "Each draft is sent to the evaluator to be judged against the criteria."
+      example: "Churn rose to 4.1% in Q3, mostly because customers dislike the new pricing."
+    - id: revise
+      from: evaluator
+      to: generator
+      style: loop
+      label: revise
+      description: "A specific critique goes back so the generator can fix exactly what failed."
+      example: "Critique: claim 2 has no citation; tone too casual for a board memo."
+    - id: accept
+      from: evaluator
+      to: output
+      label: pass
+      description: "When every criterion is met, the draft leaves the loop unchanged."
+      example: "PASS: all 4 criteria met (citations, tone, length, figures reconcile)."
   scenarios:
     - id: fails-twice
       label: Fails twice, then passes

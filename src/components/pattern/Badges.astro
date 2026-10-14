@@ -2,16 +2,27 @@
 interface Props { badges: { autonomy: string; cost: string; latency: string } }
 const { badges } = Astro.props;
 const n = (l: string) => ({ low: 1, medium: 2, high: 3 } as Record<string, number>)[l];
-const items = [['Autonomy', badges.autonomy], ['Cost', badges.cost], ['Latency', badges.latency]] as const;
+const items = [
+  ['Autonomy', badges.autonomy, 'How much the model decides the control flow itself, from fixed code paths (low) to open-ended (high).'],
+  ['Cost', badges.cost, 'Relative token spend per request.'],
+  ['Latency', badges.latency, 'Relative wall-clock time per request.'],
+] as const;
 ---
 <dl class="badges">
-  {items.map(([k, v]) => (
-    <div class="badge"><dt>{k}</dt><dd><span class="dots" aria-hidden="true">{[1, 2, 3].map(i => <i class:list={{ on: i <= n(v) }} />)}</span><span class="v">{v}</span></dd></div>
+  {items.map(([k, v, tip]) => (
+    <div class="badge" tabindex="0" data-tip={`${tip} Here: ${v}.`}>
+      <dt>{k}</dt><dd><span class="dots" aria-hidden="true">{[1, 2, 3].map(i => <i class:list={{ on: i <= n(v) }} />)}</span><span class="v">{v}</span><span class="sr-only">. {tip}</span></dd>
+    </div>
   ))}
 </dl>
 <style>
   .badges { display: flex; gap: 22px; margin: 18px 0 28px; flex-wrap: wrap; }
-  .badge { display: flex; flex-direction: column; gap: 4px; }
+  .badge { position: relative; display: flex; flex-direction: column; gap: 4px; cursor: help; border-radius: 6px; }
+  .badge:focus-visible { outline: 2px solid var(--family-accent); outline-offset: 4px; }
+  /* CSS-only tooltip, styled like the diagram tooltip (diagram.css .fp-tip). */
+  .badge::after { content: attr(data-tip); position: absolute; left: 0; top: calc(100% + 8px); z-index: 20; width: max-content; max-width: 260px; padding: 10px 12px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--family-accent) 40%, var(--line)); background: color-mix(in oklab, var(--bg-1) 96%, transparent); box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55), 0 0 24px -6px var(--family-accent); font: 400 13px/1.45 var(--font-ui); color: var(--text-2); text-transform: none; letter-spacing: 0; pointer-events: none; opacity: 0; visibility: hidden; transform: translateY(-3px); transition: opacity 0.12s, transform 0.12s, visibility 0.12s; }
+  .badge:hover::after, .badge:focus-visible::after { opacity: 1; visibility: visible; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .badge::after { transition: none; } }
   dt { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
   dd { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); text-transform: capitalize; }
   .dots { display: inline-flex; gap: 4px; }

@@ -9,7 +9,8 @@ test.describe('static diagram (no JS)', () => {
     await expect(wide.locator('g.node')).toHaveCount(4);
     await expect(wide.locator('path.edge')).toHaveCount(4);
     await expect(page.locator('ol.fp-captions').first().locator('li')).toHaveCount(4); // start, round#1, round#2, pass
-    await expect(page.locator('.fp-controls')).toBeHidden();
+    await expect(page.locator('ol.fp-captions').first().locator('li button')).toHaveCount(4);
+    await expect(page.locator('.fp-tabs')).toBeHidden();
   });
   test('hidden workers are present but invisible before playback', async ({ page }) => {
     await page.goto('/patterns/orchestrator-workers/');

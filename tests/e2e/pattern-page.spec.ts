@@ -6,6 +6,7 @@ test('has all sections in order', async ({ page }) => {
   const heads = await page.locator('article h2').allTextContents();
   expect(heads).toEqual(['Problem', 'How it works', 'When to use', 'When to avoid', 'Trade-offs', 'Failure modes', 'Related patterns', 'Sources']);
   await expect(page.locator('.badges')).toContainText('Autonomy');
+  await expect(page.locator('.badge').first()).toHaveAttribute('data-tip', /control flow/);
   await expect(page.locator('a[href*="arxiv.org/abs/2303.17651"]')).toBeVisible();
 });
 
@@ -19,7 +20,7 @@ test.describe('code panel sync', () => {
     const fp = page.locator('flow-player').first();
     await expect(fp).toHaveAttribute('data-step-index', '0');
     await expect.poll(() => stepLines(page)).toEqual([1, 2, 3]);
-    await page.getByRole('button', { name: 'Next step' }).click();
+    await page.locator('ol.fp-captions button[data-step-index="1"]').first().click();
     await expect(fp).toHaveAttribute('data-step-index', '1');
     await expect.poll(() => stepLines(page)).toEqual([4, 5, 6, 7, 8]);
   });
@@ -60,7 +61,7 @@ test.describe('no JS', () => {
   test.use({ javaScriptEnabled: false });
   test('dead tab buttons are hidden', async ({ page }) => {
     await page.goto(url);
-    await expect(page.locator('[role="tablist"]')).toBeHidden();
+    await expect(page.locator('[role="tablist"]:visible')).toHaveCount(0);
     await expect(page.locator('[data-code-block="generator"]')).toBeVisible();
   });
 });
