@@ -130,7 +130,6 @@ export const familySchema = z.object({
   accent: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
   description: z.string().min(1),
   order: z.array(id),
-  constellation: z.object({ x: z.number(), y: z.number(), z: z.number() }),
 });
 
 export type Pattern = z.infer<typeof patternSchema>;

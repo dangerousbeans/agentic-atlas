@@ -41,7 +41,7 @@ describe('diagramIssues', () => {
   it('flags group child that does not exist', () => { const d = base(); d.groups = [{ id: 'g', label: 'G', children: ['zz'] }]; expect(diagramIssues(d, code).join()).toMatch(/group "g" .*unknown node "zz"/); });
 });
 
-const fam = (slug: string, order: string[]): Family => familySchema.parse({ slug, name: slug, rank: 1, accent: '#F5B14C', description: 'A family of things.', order, constellation: { x: 0, y: 0, z: 0 } });
+const fam = (slug: string, order: string[]): Family => familySchema.parse({ slug, name: slug, rank: 1, accent: '#F5B14C', description: 'A family of things.', order });
 const pat = (slug: string, family: string, related: Partial<Pattern['related']> = {}): Pattern => ({
   slug, name: slug, family, aliases: [], summary: 'A summary of the pattern.', badges: { autonomy: 'low', cost: 'low', latency: 'low' },
   sources: [{ title: 't', url: 'https://example.com' }], related: { composesWith: [], confusedWith: [], ...related },
@@ -67,5 +67,5 @@ describe('patternSchema', () => {
     expect(r.success).toBe(false);
     if (!r.success) expect(r.error.issues.map(i => i.message).join('\n')).toMatch(/\[a\].*unknown node "nope"/);
   });
-  it('rejects bad accent', () => expect(familySchema.safeParse({ slug: 'f', name: 'F', rank: 1, accent: 'orange', description: 'x', order: [], constellation: { x: 0, y: 0, z: 0 } }).success).toBe(false));
+  it('rejects bad accent', () => expect(familySchema.safeParse({ slug: 'f', name: 'F', rank: 1, accent: 'orange', description: 'x', order: [] }).success).toBe(false));
 });

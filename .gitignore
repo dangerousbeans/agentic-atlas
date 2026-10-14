@@ -5,3 +5,5 @@ dist/
 .omc/
 .claude/
 test-results/
+.lighthouseci/
+lhci-results/

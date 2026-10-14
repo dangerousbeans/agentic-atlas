@@ -22,7 +22,6 @@ test('family page shows a compact diagram per pattern', async ({ page }) => {
   await expect(page.locator('flow-player[compact]')).toHaveCount(6);
   await expect(page.locator('a.pattern-card')).toHaveCount(6);
   await expect(page.locator('.other a')).toHaveCount(5);
-  await expect(page.locator('.constellation')).toHaveCount(0);
 });
 
 test('card link is named by its h3 and navigates', async ({ page }) => {

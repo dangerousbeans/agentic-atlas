@@ -150,7 +150,8 @@ const px = (n: number) => `${n}px`;
   /* Count on its own line keeps the narrowest label inside its island (and the plane) on phones. */
   [data-far] .isl-count { display: block; margin: 3px 0 0; }
   [data-far] .atlas-island li { opacity: .5; }
-  [data-far] .tile-name, [data-far] .tile-stats { visibility: hidden; }
+  /* opacity, not visibility: hidden text would drop out of the accessibility tree and leave the tile links nameless */
+  [data-far] .tile-name, [data-far] .tile-stats { opacity: 0; }
   [data-enhanced] .atlas-island li { position: absolute; left: var(--rx); top: var(--ry); }
   [data-enhanced] .atlas-tile { transition: opacity .2s, border-color .15s; }
   [data-enhanced] .atlas-tile[data-dim], [data-enhanced] .atlas-island[data-dim] .atlas-island-label { opacity: .22; }

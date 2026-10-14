@@ -4,6 +4,9 @@ import Header from '../components/site/Header.astro';
 import Footer from '../components/site/Footer.astro';
 import { href } from '../lib/url';
 import { author } from '../lib/author';
+// Preload the two Latin faces every page paints with, so text doesn't wait for CSS to discover them.
+import archivoLatin from '@fontsource-variable/archivo/files/archivo-latin-wdth-normal.woff2?url';
+import monoLatin from '@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url';
 /** `accent` is accepted for compatibility but ignored: the accent is always var(--accent). */
 interface Props { title: string; description: string; accent?: string; pagefind?: boolean }
 const { title, description, pagefind = false } = Astro.props;
@@ -27,6 +30,8 @@ const og = Astro.site ? new URL(href('/og.png'), Astro.site).toString() : href('
     <link rel="me" href={author.github} />
     <script type="application/ld+json" set:html={ld} />
     <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preload" href={archivoLatin} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={monoLatin} as="font" type="font/woff2" crossorigin />
     <link rel="icon" href={href('/favicon.svg')} type="image/svg+xml" />
   </head>
   <body>

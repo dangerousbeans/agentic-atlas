@@ -23,7 +23,7 @@ const right = 'm6 3 5 5-5 5';
       {fallback && <a class="btn btn-sm btn-icon" data-nav="random" href={to(fallback)} aria-label="Random pattern" title="Random pattern (r)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 4.5h2.6c2.7 0 3.6 7 6.3 7h2.1M1.5 11.5h2.6c1 0 1.6-1 2.2-2M10.4 4.5h2.1M11.5 2.5l2 2-2 2M11.5 9.5l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></a>}
     </span>
   </div>
-  <script type="application/json" data-slugs set:html={JSON.stringify(slugs)} />
+  <script type="application/json" data-slugs set:html={JSON.stringify(slugs).replace(/</g, '\\u003c')} />
 </nav>
 <script>import './page-keys.ts';</script>
 <style>
