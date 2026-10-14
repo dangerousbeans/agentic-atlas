@@ -1,8 +1,8 @@
 slug: debate
 name: Multi-Agent Debate
 family: multi-agent
-aliases: [Society of minds, Debate-and-judge]
-summary: Several agents answer independently, read each other's answers over several rounds, then a judge rules.
+aliases: [Society of minds, Debate-and-judge (optional judge)]
+summary: Several agents answer independently, read and critique each other's answers over rounds, then converge by majority or an optional judge.
 badges: { autonomy: medium, cost: high, latency: high }
 sources:
   - title: "Improving Factuality and Reasoning in Language Models through Multiagent Debate (Du et al., 2023)"
@@ -16,13 +16,13 @@ code:
     title: debate.py
     lang: python
     source: |
-      def debate(question, agents, judge, rounds=2):
+      def debate(question, agents, judge=None, rounds=2):
           answers = parallel(a.answer(question) for a in agents)
           for _ in range(rounds):
               answers = parallel(
-                  a.revise(question, own=answers[i], others=others(answers, i))
+                  a.revise(question, own=answers[i], others=others(answers, i))  # others(): every answer but agent i's
                   for i, a in enumerate(agents))
-          return judge.decide(question, answers)
+          return judge.decide(question, answers) if judge else majority(answers)
 prompts:
   - id: revise
     title: Debater revision prompt
