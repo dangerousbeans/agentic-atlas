@@ -8,12 +8,16 @@
 // Budgets: the optimised build measured 16.7 ms p95 and 116-180 Paint+Raster ms/s (median ~140) in Playwright's
 // headless Chromium (software raster), on a loaded 16-core machine. Local budgets give about 1.8x headroom; CI
 // runners are slower and noisier, so theirs are looser. The ×4 run is logged only. Full numbers are always logged.
+// Layerize (cc layer-tree building, which grows with promoted layers) is asserted locally only, with a generous budget.
+// Timing budgets are noisy, so the structural test below pins the R11 wins directly: the live-tile cap, no live
+// filters on tokens or active edges, and idle edge glows not painted.
 import { test, expect, type Page, type CDPSession } from '@playwright/test';
 
 const CI = !!process.env.CI;
 const BUDGET = {
   frameP95: CI ? 50 : 34,          // ms; 16.7 is every vsync, 33.3 one miss
   paintRasterPerSec: CI ? 400 : 250, // ms of Paint + Raster per second of animation
+  layerizeMsPerSec: 200,              // local only (not asserted on CI); see the test log for the measured value
 };
 const MS = 3000;
 const CATEGORIES = ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'disabled-by-default-devtools.timeline.frame', 'blink', 'cc', 'gpu', 'viz'];
@@ -107,6 +111,48 @@ test.describe('draw performance', () => {
   test.describe.configure({ mode: 'serial' });
   test.use({ viewport: { width: 1440, height: 900 } });
 
+  test('structure: at most 6 live tiles with more in view, no live filters on tokens or active edges, idle glows hidden', async ({ page }) => {
+    await zoomIntoWorkflows(page);
+    // Zoom out (still above the play threshold) until clearly more than six tiles are in view.
+    const vpLoc = page.locator('.atlas-viewport');
+    const vp = (await vpLoc.boundingBox())!;
+    await page.mouse.move(vp.x + vp.width / 2, vp.y + vp.height / 2);
+    await page.mouse.wheel(0, Math.log(1.3 / 0.7) / 0.0015);
+    await expect.poll(async () => Number(await vpLoc.getAttribute('data-zoom'))).toBeLessThan(0.8);
+    await page.mouse.move(2, 2);
+    const z = Number(await vpLoc.getAttribute('data-zoom'));
+    expect(z, 'still above the play threshold').toBeGreaterThanOrEqual(0.6);
+    const inView = await page.evaluate(() => {
+      const v = document.querySelector('.atlas-viewport')!.getBoundingClientRect();
+      return [...document.querySelectorAll('.atlas-tile')].filter(t => {
+        const r = t.getBoundingClientRect();
+        const w = Math.min(r.right, v.right) - Math.max(r.left, v.left), h = Math.min(r.bottom, v.bottom) - Math.max(r.top, v.top);
+        return w > 0 && h > 0 && (w * h) / (r.width * r.height) > 0.5;
+      }).length;
+    });
+    expect(inView, 'tiles at least half in view').toBeGreaterThan(6);
+    await page.waitForTimeout(500); // let IntersectionObserver and the live-tile pick settle
+    const live = page.locator('.atlas-map flow-player[data-playing="true"]');
+    await expect.poll(() => live.count()).toBeGreaterThan(0);
+    for (let i = 0; i < 5; i++) { expect(await live.count(), 'live map tiles').toBeLessThanOrEqual(6); await page.waitForTimeout(100); }
+
+    // Tokens and active edges carry no live filter (their glow is pre-rendered), and idle glows are not painted.
+    await expect.poll(() => page.locator('.atlas-map g.token:not([display]) circle').count()).toBeGreaterThan(0);
+    await expect.poll(() => page.locator('.atlas-map .edge[data-state="active"]').count()).toBeGreaterThan(0);
+    const styles = await page.evaluate(() => {
+      const map = document.querySelector('.atlas-map')!;
+      const filters = (sel: string) => [...map.querySelectorAll(sel)].map(el => getComputedStyle(el).filter);
+      // an idle glow mid fade-out is still visible for its 0.3s transition; judge the settled ones
+      const idle = [...map.querySelectorAll<SVGElement>('.edge-glow[data-state="idle"]')].filter(el => el.getAnimations().length === 0);
+      return { token: filters('g.token circle'), active: filters('.edge[data-state="active"]'), idle: idle.map(el => getComputedStyle(el).visibility) };
+    });
+    expect(styles.token.length).toBeGreaterThan(0);
+    expect(new Set(styles.token), 'token circle filter').toEqual(new Set(['none']));
+    expect(new Set(styles.active), 'active edge filter').toEqual(new Set(['none']));
+    expect(styles.idle.length).toBeGreaterThan(20);
+    expect(new Set(styles.idle), 'idle edge-glow visibility').toEqual(new Set(['hidden']));
+  });
+
   for (const rate of [1, 4]) {
     test(`map island, 6 live diagrams${rate > 1 ? `, ×${rate} CPU (logged only)` : `: frame p95 ≤ ${BUDGET.frameP95}ms, Paint+Raster ≤ ${BUDGET.paintRasterPerSec}ms/s`}`, async ({ page }) => {
       await zoomIntoWorkflows(page);
@@ -121,6 +167,7 @@ test.describe('draw performance', () => {
       if (rate > 1) return;
       expect(m.frameP95, 'frame-time p95 (ms)').toBeLessThanOrEqual(BUDGET.frameP95);
       expect(m.paintRasterPerSec, 'Paint + Raster (ms per second)').toBeLessThanOrEqual(BUDGET.paintRasterPerSec);
+      if (!CI) expect(m.layerizeMsPerSec, 'Layerize (ms per second)').toBeLessThanOrEqual(BUDGET.layerizeMsPerSec);
     });
   }
 });
