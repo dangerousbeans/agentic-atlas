@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { parse } from 'yaml';
-import { layoutDiagram, labelBox, boxesOverlap, shownLabelIds } from '../../src/lib/diagram/layout';
+import { layoutDiagram, labelBox, boxesOverlap, shownLabelIds, nodeTextWidth } from '../../src/lib/diagram/layout';
 import type { DiagramSpec } from '../../src/lib/diagram/types';
 import { first, last, attached } from './diagram-helpers';
 
@@ -53,6 +53,17 @@ describe('layout of every real pattern diagram', () => {
           const b = labelBox(L.edges[e.id].label, e.label!);
           expect(b.x, `${e.id} left`).toBeGreaterThanOrEqual(lo);
           expect(b.x + b.w, `${e.id} right`).toBeLessThanOrEqual(hi);
+        }
+      });
+
+      if (variant === 'narrow') it('on a 390px phone, scrolled to the middle, no node label or sublabel is cut off', () => {
+        const view = 330 / 0.86;
+        const scrolls = L.width > view;
+        const winLo = scrolls ? (L.width - view) / 2 : 0, winHi = scrolls ? (L.width + view) / 2 : L.width;
+        for (const n of spec.nodes) {
+          const b = L.nodes[n.id], half = nodeTextWidth(n, variant) / 2, cx = b.x + b.w / 2;
+          expect(cx - half, `${n.id} left`).toBeGreaterThanOrEqual(winLo);
+          expect(cx + half, `${n.id} right`).toBeLessThanOrEqual(winHi);
         }
       });
 

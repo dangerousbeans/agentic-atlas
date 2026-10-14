@@ -66,5 +66,8 @@ const json = JSON.stringify(list).replace(/</g, '\\u003c');
   @media (max-width: 600px) {
     .hero-stage :global(.diagram-stage) { min-height: 0; padding: 28px 16px; }
     .hero-stage :global(.diagram-svg[data-layout]) { max-height: 46vh; }
+    /* Phones: the hero sits above the headline, too short for 9px labels, so it is a text-free thumbnail (like the
+       compact cards); the pattern page, one tap away, reads in full. Tooltips still name every part. */
+    .hero-stage :global(:is(.node text, .edge-label, .group text, .token text)) { display: none; }
   }
 </style>
