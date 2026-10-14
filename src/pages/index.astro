@@ -8,13 +8,13 @@ import { author } from '../lib/author';
 const cat = await getCatalog();
 const n = cat.patterns.length, nf = cat.families.length;
 ---
-<BaseLayout title="Agentic Atlas" description={`A visual field guide to agentic AI patterns: ${n} patterns in ${nf} families, each with a live diagram, pseudocode and prompt templates.`}>
+<BaseLayout title="Agentic Atlas" description={`A visual field guide to agentic AI patterns: ${n} patterns in ${nf} families, each with a live diagram, a build prompt for your AI coding assistant, and prompt templates.`}>
   <section class="hero" aria-labelledby="hero-h">
     <div class="hero-copy">
       <h1 id="hero-h">An atlas of agentic patterns.</h1>
       <p class="lede">
         {n} ways to build with LLMs, from one augmented call to teams of agents. Each pattern runs live:
-        watch prompts, tool calls and loops move through it, then open it for the <strong>pseudocode and prompts</strong>.
+        watch prompts, tool calls and loops move through it, then open it for the <strong>build prompt and prompt templates</strong>.
       </p>
       <div class="cta">
         <a class="btn btn-primary" href={href('/atlas/')}>Open the atlas</a>

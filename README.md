@@ -1,10 +1,11 @@
 # Agentic Atlas
 
-A visual field guide to agentic AI patterns. It covers 21 ways to build with LLMs, from a single augmented call to teams of agents, grouped into 6 families. Each pattern has:
+A visual field guide to agentic AI patterns. It covers 21 ways to build with LLMs, from a single augmented call to teams of agents, grouped into families. Each pattern has:
 
 - a **live diagram** that plays a scripted run, with prompts, tool calls, loops and branches moving through it;
 - **hover explanations** for every node and edge, and an example payload on each edge;
-- **pseudocode and prompt templates**, synced to the step the diagram is on;
+- a **build prompt** to paste into your AI coding assistant, plus the **prompt templates**;
+- **variants** as tabs where a pattern has well-known alternative topologies, and who introduced or popularized it;
 - notes on when to use it, what it is often confused with, and sources.
 
 **Live site:** https://dangerousbeans.github.io/agentic-atlas/
@@ -38,9 +39,9 @@ To build for a sub-path (as GitHub Pages does), set `BASE_PATH`, for example `BA
 ```
 src/
   content/
-    families/*.yaml          the 6 families: name, rank, description, pattern order
+    families/*.yaml          the families: name, rank, description, pattern order
     patterns/<slug>/
-      pattern.yaml           metadata, diagram, scenarios, pseudocode, prompts
+      pattern.yaml           metadata, diagram, scenarios, build, origin, prompts, variants
       index.mdx              the prose write-up
   lib/
     schema.ts                Zod schemas and cross-checks for all content
@@ -84,8 +85,6 @@ related:
   composesWith: [guardrails]
   confusedWith:
     - { slug: routing, difference: "How the two differ, in one sentence." }
-code:                             # pseudocode blocks (python | markdown | text)
-  - { id: main, title: pattern.py, lang: python, source: "..." }
 prompts:
   - { id: system, title: System prompt, lang: markdown, source: "..." }
 diagram:
@@ -104,10 +103,9 @@ diagram:
           events:                 # send | activate | branch | appear | read | write
             - { type: send, edge: ask, token: { kind: prompt, label: task } }
             - { type: activate, node: model, status: thinking }
-          codeRef: { block: main, lines: "1-3" }   # optional: highlight pseudocode lines
 ```
 
-Every node needs a `description`, and every edge needs a `description` and an `example`; the schema requires them, so a pattern without them fails the build and `npm test`. Quote any value that contains ` #`, because YAML treats the rest of the line as a comment. The full schema is in `src/lib/schema.ts`.
+Every node needs a `description`, and every edge needs a `description` and an `example`; the schema requires them, so a pattern without them fails the build and `npm test`. Quote any value that contains ` #`, because YAML treats the rest of the line as a comment. The full schema is in `src/lib/schema.ts`; `build`, `origin` and `variants` are described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 

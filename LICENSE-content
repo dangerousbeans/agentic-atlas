@@ -7,7 +7,7 @@ Scope
 This licence covers the content of Agentic Atlas, as distinct from its code:
 
   - everything under src/content/ (pattern write-ups, diagram specifications,
-    scenarios, captions, pseudocode and prompt templates, family descriptions);
+    scenarios, captions, build prompts and prompt templates, family descriptions);
   - everything under docs/.
 
 The code (everything else in this repository) is licensed separately under the
