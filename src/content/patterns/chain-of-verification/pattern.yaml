@@ -170,7 +170,7 @@ diagram:
       from: drafter
       to: reviser
       style: dashed
-      label: skips checks
+      label: bypass
       description: "The draft goes straight to the reviser, bypassing the checks, so it can be compared with their answers."
       example: "Hillary Clinton, Donald Trump and Theodore Roosevelt were all born in New York City."
     - id: final
