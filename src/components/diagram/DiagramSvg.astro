@@ -28,11 +28,19 @@ const sizing = compact ? undefined : `--max-w:${Math.round(layout.width * MAX_SC
       <path class="arrow" d="M0,1 L9,5 L0,9 z" />
     </marker>
     <radialGradient id={`${pid}-halo`}><stop offset="0" class="halo-stop-a" /><stop offset="1" class="halo-stop-b" /></radialGradient>
+    {/* the comet dots, pre-rendered (core, then glow): flow-player fills each token circle with one, instead of a live drop-shadow */}
+    <radialGradient id={`${pid}-thead`} class="token-glow token-glow--head"><stop offset="0" class="tg-core" /><stop offset="0.35" class="tg-core" /><stop offset="0.39" class="tg-a" /><stop offset="0.6" class="tg-b" /><stop offset="0.8" class="tg-c" /><stop offset="1" class="tg-d" /></radialGradient>
+    <radialGradient id={`${pid}-ttrail`} class="token-glow token-glow--trail"><stop offset="0" class="tg-core" /><stop offset="0.31" class="tg-core" /><stop offset="0.36" class="tg-a" /><stop offset="0.58" class="tg-b" /><stop offset="0.8" class="tg-c" /><stop offset="1" class="tg-d" /></radialGradient>
   </defs>
   <g class="groups">
     {Object.entries(layout.groups).map(([id, g]) => (
       <g class="group" data-group={id}><rect x={g.x} y={g.y} width={g.w} height={g.h} rx="0" />{!compact && <text x={g.x + 14} y={g.y + 20}>{g.label}</text>}</g>
     ))}
+  </g>
+  {/* Active-edge glow as a soft stroked underlay, not a filter: the comet rides the active edge, and a drop-shadow
+      under it would be re-blurred on every frame (R11). */}
+  <g class="edge-glows" aria-hidden="true">
+    {spec.edges.map(e => <path class={`edge-glow edge-glow--${e.style ?? 'solid'}`} data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} data-from={e.from} data-to={e.to} />)}
   </g>
   <g class="edges">
     {spec.edges.map(e => (

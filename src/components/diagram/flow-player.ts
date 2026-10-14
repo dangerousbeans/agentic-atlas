@@ -5,7 +5,8 @@ import { pickLayout } from '../../lib/diagram/fit';
 
 interface Payload { spec: DiagramSpec; timelines: Timeline[] }
 interface Rect { x: number; y: number; w: number; h: number }
-interface View { svg: SVGSVGElement; layer: SVGGElement; paths: Map<string, SVGPathElement>; lengths: Map<string, number>; pool: SVGGElement[]; active: boolean; obstacles?: Rect[] }
+interface Track { len: number; pts: Float32Array }
+interface View { svg: SVGSVGElement; layer: SVGGElement; paths: Map<string, SVGPathElement>; tracks: Map<string, Track>; pool: SVGGElement[]; active: boolean; glow: (string | undefined)[]; obstacles?: Rect[] }
 const NS = 'http://www.w3.org/2000/svg';
 const HOLD_MS = 1600;
 const EPS = 0.001;
@@ -22,6 +23,19 @@ function textObstacles(svg: SVGSVGElement): Rect[] {
     out.push({ x: Math.min(p.x, q.x) - 2, y: Math.min(p.y, q.y) - 1, w: Math.abs(q.x - p.x) + 4, h: Math.abs(q.y - p.y) + 2 });
   });
   return out;
+}
+/** Sample an edge path once (every TRACK_STEP SVG units), so per-frame token positions are plain interpolation:
+ *  getPointAtLength() in the frame loop forces a style and layout update right after the state attributes change. */
+const TRACK_STEP = 2;
+function sampleTrack(path: SVGPathElement): Track {
+  const len = path.getTotalLength(), n = Math.max(1, Math.ceil(len / TRACK_STEP));
+  const pts = new Float32Array((n + 1) * 2);
+  for (let i = 0; i <= n; i++) { const p = path.getPointAtLength((i / n) * len); pts[2 * i] = p.x; pts[2 * i + 1] = p.y; }
+  return { len, pts };
+}
+function pointAt({ len, pts }: Track, d: number): { x: number; y: number } {
+  const n = pts.length / 2 - 1, f = Math.min(n, Math.max(0, (d / (len || 1)) * n)), i = Math.min(n - 1, Math.floor(f)), t = f - i;
+  return { x: pts[2 * i] + (pts[2 * i + 2] - pts[2 * i]) * t, y: pts[2 * i + 1] + (pts[2 * i + 3] - pts[2 * i + 1]) * t };
 }
 const ease = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
 
@@ -67,11 +81,11 @@ class FlowPlayer extends HTMLElement {
     this.data = JSON.parse(json.textContent);
     this.tl = this.data.timelines[0];
     this.querySelectorAll('[data-node]').forEach(el => this.push(this.nodeEls, (el as HTMLElement).dataset.node!, el));
-    this.querySelectorAll('path.edge[data-edge], text.edge-label[data-edge]').forEach(el => this.push(this.edgeEls, (el as HTMLElement).dataset.edge!, el));
+    this.querySelectorAll('path.edge[data-edge], path.edge-glow[data-edge], text.edge-label[data-edge]').forEach(el => this.push(this.edgeEls, (el as HTMLElement).dataset.edge!, el));
     this.querySelectorAll<SVGSVGElement>('svg.diagram-svg').forEach(svg => {
       const paths = new Map<string, SVGPathElement>();
       svg.querySelectorAll<SVGPathElement>('path.edge').forEach(p => paths.set(p.dataset.edge!, p));
-      this.views.push({ svg, layer: svg.querySelector('g.tokens')!, paths, lengths: new Map(), pool: [], active: false });
+      this.views.push({ svg, layer: svg.querySelector('g.tokens')!, paths, tracks: new Map(), pool: [], active: false, glow: [svg.querySelector('radialGradient.token-glow--head')?.id, svg.querySelector('radialGradient.token-glow--trail')?.id] });
     });
     document.fonts?.ready.then(() => { for (const v of this.views) v.obstacles = undefined; this.render(); });
     this.classList.add('is-enhanced');
@@ -299,21 +313,22 @@ class FlowPlayer extends HTMLElement {
   }
 
   private drawTokens(v: View, tokens: TokenState[]) {
-    while (v.pool.length < tokens.length) v.pool.push(this.makeToken(v.layer));
+    while (v.pool.length < tokens.length) v.pool.push(this.makeToken(v));
     v.pool.forEach((g, i) => {
       const tok = tokens[i];
       if (!tok) { g.setAttribute('display', 'none'); return; }
       const path = v.paths.get(tok.edge);
       if (!path) { g.setAttribute('display', 'none'); return; }
-      let len = v.lengths.get(tok.edge);
-      if (len === undefined) { len = path.getTotalLength(); v.lengths.set(tok.edge, len); }
+      let track = v.tracks.get(tok.edge);
+      if (!track) { track = sampleTrack(path); v.tracks.set(tok.edge, track); }
+      const len = track.len;
       g.removeAttribute('display');
       g.setAttribute('data-kind', tok.kind);
       const parts = g.children;
-      const head = path.getPointAtLength(ease(tok.progress) * len);
+      const head = pointAt(track, ease(tok.progress) * len);
       parts[3].setAttribute('transform', `translate(${head.x},${head.y})`);
       TRAIL.forEach((lag, k) => {
-        const pt = path.getPointAtLength(ease(Math.max(0, tok.progress - lag)) * len);
+        const pt = pointAt(track, ease(Math.max(0, tok.progress - lag)) * len);
         parts[k].setAttribute('transform', `translate(${pt.x},${pt.y})`);
       });
       const label = parts[4] as SVGTextElement;
@@ -323,7 +338,7 @@ class FlowPlayer extends HTMLElement {
       // Put the label beside the token, perpendicular to its direction of travel, on whichever side clears the
       // static labels; hide it for the frames where no side is clear.
       v.obstacles ??= textObstacles(v.svg);
-      const back = path.getPointAtLength(Math.max(0, ease(tok.progress) * len - 6));
+      const back = pointAt(track, Math.max(0, ease(tok.progress) * len - 6));
       let tx = head.x - back.x, ty = head.y - back.y;
       const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
       const w = text.length * 6.2 + 4, h = 12;
@@ -346,13 +361,21 @@ class FlowPlayer extends HTMLElement {
     });
   }
 
-  private makeToken(layer: SVGGElement): SVGGElement {
+  /** A comet: three trail dots and a head, plus a label. Each dot is one circle filled with a pre-rendered radial
+   *  gradient (solid core, then the red glow fading out) instead of a live drop-shadow, which a moving dot would
+   *  re-blur on every frame. */
+  private makeToken(v: View): SVGGElement {
     const g = document.createElementNS(NS, 'g');
     g.setAttribute('class', 'token');
-    [2.6, 3.2, 3.8].forEach((r, i) => { const c = document.createElementNS(NS, 'circle'); c.setAttribute('r', String(r)); c.setAttribute('class', 'trail'); c.setAttribute('opacity', String(0.25 + i * 0.2)); g.appendChild(c); });
-    const head = document.createElementNS(NS, 'circle'); head.setAttribute('r', '4.2'); head.setAttribute('class', 'head'); g.appendChild(head);
+    const [headFill, trailFill] = v.glow.map(id => (id ? `url(#${id})` : ''));
+    const dot = (cls: string, fill: string) => {
+      const c = document.createElementNS(NS, 'circle'); c.setAttribute('class', cls);
+      if (fill) c.setAttribute('fill', fill);
+      g.appendChild(c);
+    };
+    dot('trail', trailFill); dot('trail', trailFill); dot('trail', trailFill); dot('head', headFill);
     const text = document.createElementNS(NS, 'text'); text.setAttribute('text-anchor', 'middle'); g.appendChild(text);
-    layer.appendChild(g);
+    v.layer.appendChild(g);
     return g;
   }
 
