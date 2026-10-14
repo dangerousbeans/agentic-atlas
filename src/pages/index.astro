@@ -4,6 +4,7 @@ import HeroStage from '../components/home/HeroStage.astro';
 import AtlasMap from '../components/atlas/AtlasMap.astro';
 import { getCatalog } from '../lib/catalog';
 import { href } from '../lib/url';
+import { author } from '../lib/author';
 const cat = await getCatalog();
 const n = cat.patterns.length, nf = cat.families.length;
 ---
@@ -16,10 +17,11 @@ const n = cat.patterns.length, nf = cat.families.length;
         watch prompts, tool calls and loops move through it, then open it for the <strong>pseudocode and prompts</strong>.
       </p>
       <div class="cta">
-        <a class="btn btn-primary" href="#atlas">Open the atlas</a>
+        <a class="btn btn-primary" href={href('/atlas/')}>Open the atlas</a>
         <a class="btn" href={href('/families/')}>Browse families</a>
         <a class="btn" href={href('/patterns/augmented-llm/')} data-random-pattern>Show me a random pattern</a>
       </div>
+      <p class="byline mono"><span class="mark" aria-hidden="true"></span>An atlas by <a href={author.github} rel="me">{author.name}</a></p>
     </div>
     <div class="hero-visual">
       <HeroStage />
@@ -51,6 +53,9 @@ const n = cat.patterns.length, nf = cat.families.length;
   .hero-copy { padding: clamp(40px, 7vh, 88px) clamp(28px, 3.5vw, 56px) 64px var(--gutter); display: flex; flex-direction: column; justify-content: center; }
   .hero-copy h1 { margin: 0 0 28px; font-size: clamp(2.6rem, 5.4vw, 4.6rem); line-height: 0.98; }
   .lede { color: var(--text-2); font-size: 18px; line-height: 1.55; max-width: 34rem; margin: 0; }
+  .byline { margin: 40px 0 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); display: flex; align-items: center; gap: 10px; }
+  .byline a { color: var(--text-2); text-decoration: none; }
+  .byline a:hover { color: var(--text); text-decoration: underline; text-decoration-color: var(--accent); }
   .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; }
   .hero-visual {
     border-left: 1px solid var(--line);

@@ -38,7 +38,7 @@ test.describe('hero', () => {
 
   test('hero buttons go to the atlas, the families index and a random pattern', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('link', { name: 'Open the atlas' })).toHaveAttribute('href', '#atlas');
+    await expect(page.getByRole('link', { name: 'Open the atlas' })).toHaveAttribute('href', /\/atlas\/$/);
     await expect(page.getByRole('link', { name: 'Browse families' })).toHaveAttribute('href', /\/families\/$/);
     await page.getByRole('link', { name: 'Show me a random pattern' }).click();
     await expect(page).toHaveURL(/\/patterns\/[a-z-]+\/$/);

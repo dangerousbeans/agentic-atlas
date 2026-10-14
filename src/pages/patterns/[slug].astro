@@ -9,6 +9,7 @@ import Sources from '../../components/pattern/Sources.astro';
 import PatternNav from '../../components/pattern/PatternNav.astro';
 import SpecTable from '../../components/pattern/SpecTable.astro';
 import { patternStats } from '../../lib/pattern-stats';
+import { author, patternSourceUrl } from '../../lib/author';
 import { getCatalog } from '../../lib/catalog';
 import { getEntry, render } from 'astro:content';
 import type { DiagramSpec, CodeBlock } from '../../lib/diagram/types';
@@ -47,9 +48,13 @@ const stats = patternStats(p.diagram as DiagramSpec);
     </div>
     <RelatedPatterns pattern={p} catalog={cat} />
     <Sources sources={p.sources} />
+    <p class="made mono" data-pagefind-ignore>From the Agentic Atlas by {author.name} · <a href={patternSourceUrl(p.slug)}>Edit on GitHub</a></p>
   </article>
 </BaseLayout>
 <style>
+  .made { margin: 48px 0 0; font-size: 12px; letter-spacing: .04em; color: var(--text-3); }
+  .made a { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  .made a:hover { color: var(--text); text-decoration: underline; text-decoration-color: var(--accent); }
   .instrument { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: clamp(28px, 3.5vw, 48px); align-items: start; margin-top: 18px; }
   .info { padding-top: 6px; }
   .stage { padding-bottom: 28px; }
