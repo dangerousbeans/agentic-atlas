@@ -2,6 +2,8 @@
 import { describe, it, expect } from 'vitest';
 import { notesFor, PENTATONIC } from '../../src/lib/sound/palette';
 import { isSoundFocus, tileOf } from '../../src/lib/sound/focus';
+import { cuesBetween, type CueCursor } from '../../src/lib/sound/cues';
+import { compileScenario } from '../../src/lib/diagram/compile';
 import type { TokenKind } from '../../src/lib/diagram/types';
 
 const KINDS: TokenKind[] = ['prompt', 'tool-call', 'result', 'feedback', 'tokens'];
@@ -49,6 +51,44 @@ describe('notesFor: completion, rejection, step', () => {
     expect(s).toHaveLength(1);
     expect(PENTATONIC).toContain(s[0].freq);
     expect(s[0].dur).toBeLessThanOrEqual(0.3);
+  });
+});
+
+describe('cuesBetween', () => {
+  // three 1000 ms steps: a prompt at 0, a tool call at 1000 and a rejection at 1500, a result at 2000 (duration 3000)
+  const tl = compileScenario({ id: 's', label: 'S', steps: [
+    { id: 'a', caption: 'a', duration: 1000, events: [{ type: 'send', edge: 'e1', token: { kind: 'prompt' } }] },
+    { id: 'b', caption: 'b', duration: 1000, events: [{ type: 'send', edge: 'e2', token: { kind: 'tool-call' } }, { type: 'activate', node: 'g', status: 'error', at: [0.5, 1] }, { type: 'activate', node: 'n', status: 'thinking' }] },
+    { id: 'c', caption: 'c', duration: 1000, events: [{ type: 'send', edge: 'e3', token: { kind: 'result' } }, { type: 'branch', node: 'r', taken: 'e1', notTaken: ['e2'] }] },
+  ] });
+  const run = (frames: [number, number][], cur: CueCursor = { i: 0, t: -1 }) => {
+    const out: string[] = [];
+    for (const [a, b] of frames) cuesBetween(tl, a, b, cur, c => out.push(c));
+    return out;
+  };
+  const frames = (from: number, to: number, dt: number) => { const f: [number, number][] = []; for (let t = from; t < to; t += dt) f.push([t, t + dt]); return f; };
+
+  it('cues each send and rejection once, in order, then done once, across consecutive frames', () => {
+    expect(run(frames(0, 3200, 16))).toEqual(['prompt', 'tool-call', 'reject', 'result', 'done']);
+  });
+  it('ignores non-error activations and branches (not-taken is routing, not a rejection)', () => {
+    expect(run([[0, 3001]])).toEqual(['prompt', 'tool-call', 'reject', 'result', 'done']);
+  });
+  it('replays from the top after a wrap, and re-finds its place after a seek', () => {
+    const cur: CueCursor = { i: 0, t: -1 };
+    expect(run(frames(0, 3200, 100), cur)).toHaveLength(5);
+    expect(run(frames(0, 1100, 100), cur)).toEqual(['prompt', 'tool-call']);
+    expect(run([[1900, 2100]], cur)).toEqual(['result']);
+  });
+  it('re-finds its place for another timeline', () => {
+    const cur: CueCursor = { i: 0, t: -1 };
+    run([[0, 1600]], cur);
+    const other = compileScenario({ id: 'o', label: 'O', steps: [{ id: 'x', caption: 'x', events: [{ type: 'send', edge: 'e', token: { kind: 'feedback' } }] }] });
+    const out: string[] = [];
+    cuesBetween(other, 1600, 1700, cur, c => out.push(c));
+    expect(out).toEqual([]);
+    cuesBetween(other, 0, 10, cur, c => out.push(c));
+    expect(out).toEqual(['feedback']);
   });
 });
 

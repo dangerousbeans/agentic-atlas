@@ -3,6 +3,7 @@ import type { Timeline } from '../../lib/diagram/compile';
 import type { DiagramSpec } from '../../lib/diagram/types';
 import { pickLayout } from '../../lib/diagram/fit';
 import type { SoundHook } from '../../lib/sound/hook';
+import { cuesBetween, type CueCursor } from '../../lib/sound/cues';
 
 interface Payload { spec: DiagramSpec; timelines: Timeline[] }
 interface Rect { x: number; y: number; w: number; h: number }
@@ -318,15 +319,8 @@ class FlowPlayer extends HTMLElement {
 
   /** Sound cues for timeline events starting in [a, b): token sends, rejections (a node activated as `error`), and
    *  the scenario's end. Autoplay only, so reduced motion (which never autoplays) never plays the token stream. */
-  private cues(s: SoundHook, a: number, b: number) {
-    for (const { start, event: ev } of this.tl.events) {
-      if (start >= b) break;
-      if (start < a) continue;
-      if (ev.type === 'send') s.cue(ev.token.kind);
-      else if (ev.type === 'activate' && ev.status === 'error') s.cue('reject');
-    }
-    if (a < this.tl.duration && b >= this.tl.duration) s.cue('done');
-  }
+  private cues(s: SoundHook, a: number, b: number) { cuesBetween(this.tl, a, b, this.cueAt, s.cue); }
+  private cueAt: CueCursor = { i: 0, t: -1 };
 
   private shownT(): number {
     if (!this.reduced) return this.t;

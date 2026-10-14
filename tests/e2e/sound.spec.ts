@@ -97,6 +97,54 @@ test('a hidden tab suspends the audio', async ({ page }) => {
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await expect.poll(async () => (await ac(page)).state).toBe('suspended');
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect.poll(async () => (await ac(page)).state).toBe('running');
+});
+
+test('quick on, off, on while the chunk loads ends with exactly one running context', async ({ page }) => {
+  await page.route(SYNTH, async route => { await new Promise(r => setTimeout(r, 400)); await route.continue(); });
+  await page.goto(PATTERN);
+  await toggle(page).click();
+  await toggle(page).click();
+  await toggle(page).click();
+  await expect(toggle(page)).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => (await ac(page)).state).toBe('running');
+  await page.waitForTimeout(600);
+  expect((await ac(page)).created).toBe(1);
+});
+
+test('a failed chunk load turns the toggle back off, with no page error', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', e => errors.push(e.message));
+  await page.route(SYNTH, route => route.abort());
+  await page.goto(PATTERN);
+  await toggle(page).click();
+  await expect(toggle(page)).toHaveAttribute('aria-pressed', 'false');
+  expect((await ac(page)).created).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test('the output stays quiet: the last node before the speakers is a gain of about 0.3', async ({ page }) => {
+  // The compressor adds about +10 dB of make-up gain; the synth's output gain must cancel it.
+  await page.addInitScript(() => {
+    const w = window as any;
+    w.__out = [];
+    const connect = AudioNode.prototype.connect as any;
+    AudioNode.prototype.connect = function (this: AudioNode, dest: any, ...rest: any[]) {
+      if (dest instanceof AudioDestinationNode) w.__out.push(this instanceof GainNode ? this.gain.value : this.constructor.name);
+      return connect.call(this, dest, ...rest);
+    } as any;
+  });
+  await page.goto(PATTERN);
+  await toggle(page).click();
+  await expect.poll(async () => (await ac(page)).state).toBe('running');
+  const out = await page.evaluate(() => (window as any).__out);
+  expect(out).toHaveLength(1);
+  expect(out[0]).toBeGreaterThan(0.2);
+  expect(out[0]).toBeLessThanOrEqual(0.35);
 });
 
 test('reduced motion: no token stream, but a manual step plays its cue', async ({ page }) => {
@@ -110,13 +158,14 @@ test('reduced motion: no token stream, but a manual step plays its cue', async (
   await expect.poll(async () => (await ac(page)).osc).toBeGreaterThan(0);
 });
 
-test('on the map, tiles playing in view stay silent; the tile under the pointer sounds', async ({ page }) => {
+/** Home page, sound on, then the draw-perf route: scroll the map in (the hero leaves view and stops), centre Workflows,
+ *  zoom in until tiles play; the pointer is parked on the header, over no tile. */
+async function soundOnZoomedMap(page: Page) {
   await page.goto('/');
   await page.waitForLoadState('load');
   await expect(page.locator('.atlas-map')).toHaveAttribute('data-enhanced', '');
   await toggle(page).click();
   await expect.poll(async () => (await ac(page)).state).toBe('running');
-  // Same route as the draw-perf gate: scroll the map in (the hero leaves view and stops), centre Workflows, zoom in.
   await page.evaluate(() => {
     const vp = document.querySelector('.atlas-viewport')!;
     scrollTo(0, vp.getBoundingClientRect().top + scrollY - (document.querySelector('.site-header')?.getBoundingClientRect().height ?? 0));
@@ -136,9 +185,11 @@ test('on the map, tiles playing in view stay silent; the tile under the pointer 
   await expect.poll(async () => Number(await page.locator('.atlas-viewport').getAttribute('data-zoom'))).toBeGreaterThan(1.2);
   await page.mouse.move(2, 2);
   await expect(page.locator('[data-hero] flow-player')).toHaveAttribute('data-playing', 'false');
-  const live = page.locator('.atlas-plane flow-player[data-playing="true"]');
-  await expect.poll(() => live.count()).toBeGreaterThanOrEqual(3);
+  await expect.poll(() => page.locator('.atlas-plane flow-player[data-playing="true"]').count()).toBeGreaterThanOrEqual(3);
+}
 
+test('on the map, tiles playing in view stay silent; the tile under the pointer sounds', async ({ page }) => {
+  await soundOnZoomedMap(page);
   await resetOsc(page);
   await page.waitForTimeout(3000);
   expect((await ac(page)).osc).toBe(0);
@@ -146,6 +197,20 @@ test('on the map, tiles playing in view stay silent; the tile under the pointer 
   const tile = page.locator('.atlas-tile:has(flow-player[data-playing="true"])').first();
   const t = (await tile.boundingBox())!;
   await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2);
+  await expect.poll(async () => (await ac(page)).osc, { timeout: 8000 }).toBeGreaterThan(0);
+});
+
+test('on the map, the tile with keyboard focus sounds', async ({ page }) => {
+  await soundOnZoomedMap(page);
+  await resetOsc(page);
+  await page.waitForTimeout(1500);
+  expect((await ac(page)).osc).toBe(0);
+  // Tab from the zoom controls onto the map's roving tile (keyboard focus, so :focus-visible)
+  await page.locator('[data-zoom-btn="home"]').focus();
+  await page.keyboard.press('Tab');
+  const focused = page.locator('a.atlas-tile:focus-visible');
+  await expect(focused).toHaveCount(1);
+  await expect(focused.locator('flow-player')).toHaveAttribute('data-playing', 'true');
   await expect.poll(async () => (await ac(page)).osc, { timeout: 8000 }).toBeGreaterThan(0);
 });
 
