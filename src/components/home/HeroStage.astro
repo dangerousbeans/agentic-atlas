@@ -1,10 +1,9 @@
 ---
 /**
- * Home hero stage: a framed, hero-size live player plus a mono caption bar.
+ * Home hero stage: a hero-size live player (Diagram draws its own viewfinder Frame) plus a mono caption bar.
  * The build-time pick is `evaluator-optimizer`; "Another" (hero-swap.ts) swaps
  * in another pattern's player fetched from its page, without a reload.
  */
-import Frame from '../site/Frame.astro';
 import Diagram from '../diagram/Diagram.astro';
 import { getCatalog } from '../../lib/catalog';
 import { patternStats, statsLine } from '../../lib/pattern-stats';
@@ -19,11 +18,9 @@ const cur = list.find(x => x.slug === DEFAULT)!;
 const json = JSON.stringify(list).replace(/</g, '\\u003c');
 ---
 <div class="hero-live" data-hero data-slug={p.slug}>
-  <Frame class="hero-frame" label="Live · one run">
-    <div class="hero-stage">
-      <Diagram uid="hero" spec={p.diagram as DiagramSpec} title={p.name} />
-    </div>
-  </Frame>
+  <div class="hero-stage">
+    <Diagram uid="hero" spec={p.diagram as DiagramSpec} title={p.name} />
+  </div>
   <p class="hero-caption">
     <span class="hero-id"><span class="hero-name" aria-live="polite">{cur.name}</span><span class="hero-stats">{cur.stats}</span></span>
     <span class="hero-actions">
@@ -36,14 +33,12 @@ const json = JSON.stringify(list).replace(/</g, '\\u003c');
 <script>import './hero-swap.ts';</script>
 <style>
   .hero-live { min-width: 0; }
-  .hero-frame { --frame-bracket: 34px; }
-  .hero-stage {
-    display: flex; align-items: center; justify-content: center;
+  .hero-stage :global(.diagram-frame) { --frame-bracket: 34px; }
+  /* Hero size: a tall, centred stage inside Diagram's own frame. */
+  .hero-stage :global(.diagram-stage) {
+    display: flex; flex-direction: column; justify-content: center;
     min-height: clamp(300px, 42vw, 540px); padding: clamp(16px, 3vw, 40px);
   }
-  .hero-stage :global(flow-player) { width: 100%; }
-  /* The frame is the chrome: drop the stage card, the step list and the parts list. */
-  .hero-stage :global(.diagram-stage) { border: 0; border-radius: 0; background: none; padding: 0; overflow: visible; }
   .hero-stage :global(.diagram-svg) { max-height: min(56vh, 520px); }
   /* Step captions stay available to screen readers (the SVG desc points to them) and appear when focused. */
   .hero-stage :global(.fp-steps:not(:focus-within)) {
@@ -68,7 +63,7 @@ const json = JSON.stringify(list).replace(/</g, '\\u003c');
   .hero-another[hidden] { display: none; }
   [data-hero][aria-busy='true'] .hero-stage { opacity: .55; transition: opacity .2s; }
   @media (max-width: 600px) {
-    .hero-stage { min-height: 0; padding: 28px 16px; }
+    .hero-stage :global(.diagram-stage) { min-height: 0; padding: 28px 16px; }
     .hero-stage :global(.diagram-svg) { max-height: 46vh; }
   }
 </style>

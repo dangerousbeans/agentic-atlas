@@ -34,8 +34,6 @@ const stats = statsLine(patternStats(spec));
   .visual :global(.diagram) { width: 100%; }
   .visual :global(.diagram-stage) { border: 0; background: none; padding: 0; overflow: hidden; }
   .visual :global(.diagram-svg) { width: 100%; max-height: 100%; height: auto; }
-  /* NOTE: remove this override once compact diagrams get a narrow variant (R2 / layout polish). Compact has no DOWN variant; the stage's container query would hide the wide layout in a card, so keep it shown (it scales to fit). */
-  .visual :global(.diagram-svg[data-layout="wide"]) { display: block; }
   .body { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   h3 { margin: 0; font: 700 17px/1.25 var(--font-ui); letter-spacing: -.005em; }
   .stats { margin: 0; font: 500 11.5px/1.5 var(--font-mono); color: var(--text-2); letter-spacing: .02em; }

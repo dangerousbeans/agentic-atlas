@@ -177,6 +177,16 @@ test('scenario tabs control labelled panels', async ({ page }) => {
   await expect(panel).toHaveAttribute('aria-labelledby', (await tab.getAttribute('id'))!);
 });
 
+test('only the selected scenario shows its step list, before and after a tab pick', async ({ page }) => {
+  await page.goto(url);
+  const lists = page.locator('.fp-scenario-steps');
+  await expect(lists.nth(0)).toBeVisible();
+  await expect(lists.nth(1)).toBeHidden();
+  await page.locator('.fp-tabs [role="tab"]').nth(1).click();
+  await expect(lists.nth(0)).toBeHidden();
+  await expect(lists.nth(1)).toBeVisible();
+});
+
 // Every node now has a YAML description; the kind fallback itself is unit-tested in tests/unit/kinds.test.ts.
 test('node tooltip shows the pattern-specific description and kind chip', async ({ page }) => {
   const yaml = parse(readFileSync('src/content/patterns/orchestrator-workers/pattern.yaml', 'utf8'));
