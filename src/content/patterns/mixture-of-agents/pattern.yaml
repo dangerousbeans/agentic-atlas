@@ -29,7 +29,7 @@ build:
     - "Each later layer: call every proposer again in parallel with the {{prompt:aggregate}}, containing the user's prompt and all of the previous layer's responses, numbered."
     - "If a proposer call fails or times out, drop it from that layer and carry on with the responses that remain; see the stop rule for when too few survive."
     - "Finally, call the aggregator model with the {{prompt:aggregate}} over the last layer's responses, and return its output."
-  stop: "The run has a fixed number of layers and no loop: it ends when the aggregator answers. If a layer ends with fewer than two responses, stop layering: with exactly one, return it with a status of degraded; with none, fail with an error naming the timed-out models. If the aggregator call fails, retry it once, then return the best-ranked last-layer response with a status of degraded."
+  stop: "The run has a fixed number of layers and no loop: it ends when the aggregator answers. If a layer ends with fewer than two responses, stop layering: with exactly one, return it with a status of degraded; with none, fail with an error naming the timed-out models. If the aggregator call fails, retry it once, then return the first response of the last layer with a status of degraded."
   requirements:
     - "Run each layer's calls in parallel, each with its own timeout, so one slow model does not stall the layer."
     - "Make the model list, the layer count and the aggregator configurable, and log the cost: a run makes one call per proposer per layer, plus one."
