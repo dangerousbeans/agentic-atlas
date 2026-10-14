@@ -1,0 +1,42 @@
+@import '@fontsource/instrument-serif/400.css';
+@import '@fontsource/instrument-serif/400-italic.css';
+@import '@fontsource-variable/inter-tight';
+@import '@fontsource-variable/jetbrains-mono';
+
+:root {
+  --bg: #0B0F1A; --bg-1: #10162A; --bg-2: #161D3A;
+  --line: #2A3150; --line-strong: #4A5378;
+  --text: #E6E8F0; --text-2: #AAB0C6; --text-3: #8A91AE;
+  --danger: #FF7A7A; --ok: #7EE0A1;
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-ui: 'Inter Tight Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --max: 1160px; --radius: 12px;
+  --family-accent: #F5B14C;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 16px; line-height: 1.6; }
+body { margin: 0; min-height: 100vh;
+  background:
+    radial-gradient(ellipse 80% 50% at 70% -10%, var(--bg-2) 0%, transparent 60%),
+    radial-gradient(1px 1px at 20% 30%, #ffffff40 50%, transparent 51%),
+    radial-gradient(1px 1px at 80% 12%, #ffffff30 50%, transparent 51%),
+    radial-gradient(1px 1px at 55% 60%, #ffffff25 50%, transparent 51%),
+    var(--bg);
+  background-attachment: fixed; }
+a { color: inherit; text-decoration-color: color-mix(in oklab, var(--family-accent) 60%, transparent); text-underline-offset: 3px; }
+a:hover { color: var(--family-accent); }
+:focus-visible { outline: 2px solid var(--family-accent); outline-offset: 3px; border-radius: 4px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 400; line-height: 1.1; letter-spacing: -0.01em; }
+h1 { font-size: clamp(2.5rem, 6vw, 4.25rem); margin: 0.2em 0 0.3em; }
+h2 { font-size: clamp(1.75rem, 3.5vw, 2.4rem); margin: 2em 0 0.5em; }
+h3 { font-size: 1.4rem; margin: 1.5em 0 0.4em; }
+h1 em, h2 em { color: var(--family-accent); }
+code { font-family: var(--font-mono); font-size: 0.9em; }
+.wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+.eyebrow { font: 500 11px/1 var(--font-ui); letter-spacing: 0.18em; text-transform: uppercase; color: var(--family-accent); }
+.muted { color: var(--text-2); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.skip { position: absolute; left: -999px; } .skip:focus { left: 16px; top: 16px; z-index: 100; background: var(--bg-1); padding: 8px 12px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; } }

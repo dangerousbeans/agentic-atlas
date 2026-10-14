@@ -1,0 +1,23 @@
+---
+import { href } from '../../lib/url';
+---
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href={href('/')}><span class="mark" aria-hidden="true">✦</span> Agentic <em>Atlas</em></a>
+    <nav aria-label="Primary">
+      <a href={href('/#families')}>Families</a>
+      <a href={href('/about')}>About</a>
+      <slot name="actions" />
+    </nav>
+  </div>
+</header>
+<style>
+  .site-header { position: sticky; top: 0; z-index: 20; backdrop-filter: blur(10px); background: color-mix(in oklab, var(--bg) 75%, transparent); border-bottom: 1px solid var(--line); }
+  .bar { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+  .brand { font: 400 22px var(--font-display); text-decoration: none; }
+  .brand em { color: #F5B14C; }
+  .mark { color: #F5B14C; }
+  nav { display: flex; gap: 22px; align-items: center; font-size: 14px; }
+  nav a { text-decoration: none; color: var(--text-2); }
+  nav a:hover { color: var(--text); }
+</style>
