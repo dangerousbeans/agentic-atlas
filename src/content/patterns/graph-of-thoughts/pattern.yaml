@@ -1,0 +1,260 @@
+slug: graph-of-thoughts
+name: Graph of Thoughts
+family: planning-search
+aliases: [GoT, Thought graph]
+summary: Thoughts form a graph, not a tree. Partial results are scored and regenerated, merged many-to-one, and refined until the whole is right.
+badges: { autonomy: medium, cost: high, latency: high }
+sources:
+  - title: "Graph of Thoughts: Solving Elaborate Problems with Large Language Models (Besta et al., 2023)"
+    url: https://arxiv.org/abs/2308.09687
+related:
+  composesWith: [evaluator-optimizer]
+  confusedWith:
+    - { slug: tree-of-thoughts, difference: "Tree of Thoughts only branches and prunes, so every thought has one parent. Graph of Thoughts can also merge several thoughts into one and loop on a single thought to refine it." }
+    - { slug: sectioning, difference: "Sectioning splits once, runs the parts in parallel and joins them in one step. Graph of Thoughts scores every partial result, regenerates bad ones, and merges with model calls arranged in a graph you design." }
+origin:
+  by: Maciej Besta, Nils Blach et al.
+  org: ETH Zurich, Warsaw University of Technology, Cledar
+  year: 2023
+  url: https://arxiv.org/abs/2308.09687
+  kind: introduced
+  note: "Published at AAAI 2024. The paper's running example is sorting 32 numbers by splitting them into sorted chunks and merging them back."
+build:
+  goal: "Solve a task that splits into sub-results by running a fixed graph of model operations (generate, score, merge, refine) over partial thoughts, and return the best final thought."
+  steps:
+    - "Write the graph of operations in code before any model call: which thoughts are generated, how each is scored, which ones are merged together, and where refinement happens. The model fills in thoughts; it never changes the graph."
+    - "Split the input into parts. Do it in code when the split is mechanical, as for a list of numbers or a set of documents."
+    - "For each part, call the model with the {{prompt:solve}} to produce a thought, and score it with a check (in code where possible, such as counting sorting errors). If the score is below the bar, generate it again and keep the best attempt."
+    - "Merge thoughts as the graph says, two at a time, by calling the model with the {{prompt:merge}}. Score each merged thought the same way and keep the best of k merges."
+    - "Score the final merged thought. While it still has errors, call the model with the {{prompt:refine}}, passing the thought and the errors found, and keep the refined version only if it scores better."
+    - "Return the best final thought with its score."
+  stop: "Stop when the final thought scores perfectly, or after 2 refine passes. If the budget runs out, return the best-scoring final thought with its remaining errors and a status saying it is not clean."
+  requirements:
+    - "Keep the graph of operations as data (a list of operations and their inputs), so it can be logged and changed without touching the model calls."
+    - "Cap regenerations per thought (default 2), merges kept per pair (default 1 best of 3) and refine passes (default 2); log the total number of model calls."
+    - "Prefer a scoring function in code over a model judgement whenever the task allows one; fall back to a model score only for parts that code cannot check."
+    - "Run independent operations, such as the per-part thoughts and the merges at one level, in parallel."
+    - "Add a test with a stub LLM that drops one number from the second chunk on its first try and is correct afterwards; assert the solve prompt was called 5 times for 4 chunks and the output equals the input sorted."
+prompts:
+  - id: solve
+    title: Part prompt
+    lang: markdown
+    source: |
+      Solve this part of a larger task. Work only on the part below.
+
+      <task>{{task}}</task>
+      <part>{{part}}</part>
+
+      {{#if previous_errors}}
+      A previous attempt at this part had these errors. Avoid them:
+      <errors>{{previous_errors}}</errors>
+      {{/if}}
+
+      Return only the result for this part, in the format: {{format}}
+  - id: merge
+    title: Merge prompt
+    lang: markdown
+    source: |
+      Combine the two partial results below into one result for the task.
+      Keep everything that is correct in each; do not drop or duplicate items.
+
+      <task>{{task}}</task>
+      <a>{{result_a}}</a>
+      <b>{{result_b}}</b>
+
+      Return only the merged result, in the format: {{format}}
+  - id: refine
+    title: Refine prompt
+    lang: markdown
+    source: |
+      The result below is close, but a check found errors in it.
+
+      <task>{{task}}</task>
+      <result>{{result}}</result>
+      <errors>{{errors}}</errors>
+
+      Fix exactly these errors and change nothing else.
+      Return only the corrected result, in the format: {{format}}
+diagram:
+  nodes:
+    - id: problem
+      kind: io
+      label: Problem
+      description: "The task, from the paper's own example: sort a list of 32 numbers that contains duplicates."
+    - id: split
+      kind: llm
+      label: Split
+      description: "Breaks the list into four chunks of 8 numbers, each small enough for the model to sort reliably."
+    - id: sort1
+      kind: llm
+      label: Sort 1
+      description: "One thought: chunk 1 sorted. It is scored by counting errors before anything is merged."
+    - id: sort2
+      kind: llm
+      label: Sort 2
+      description: "One thought: chunk 2 sorted. Its first attempt drops a number, scores badly and is generated again."
+    - id: sort3
+      kind: llm
+      label: Sort 3
+      description: "One thought: chunk 3 sorted, scored like the others."
+    - id: sort4
+      kind: llm
+      label: Sort 4
+      description: "One thought: chunk 4 sorted, scored like the others."
+    - id: merge1
+      kind: aggregator
+      label: Merge A
+      description: "A model call that merges the sorted chunks 1 and 2 into one sorted list of 16. Two thoughts become one."
+    - id: merge2
+      kind: aggregator
+      label: Merge B
+      description: "A model call that merges the sorted chunks 3 and 4 into one sorted list of 16."
+    - id: final
+      kind: aggregator
+      label: Final merge
+      description: "Merges the two lists of 16 into all 32 numbers, then refines this one thought while the check still finds errors."
+    - id: scorer
+      kind: evaluator
+      label: Scorer
+      model: false
+      description: "Plain code: counts how many numbers are out of order or missing compared with the input. Zero errors passes."
+    - id: out
+      kind: io
+      label: Sorted
+      description: "The final sorted list of 32 numbers, returned once the scorer finds no errors."
+  edges:
+    - id: in
+      from: problem
+      to: split
+      description: "The full list goes to the split step."
+      example: "Sort: 5 1 9 3 3 8 0 7 2 6 4 9 1 5 8 2 7 0 3 6 9 4 1 8 2 5 7 0 6 3 4 9"
+    - id: c1
+      from: split
+      to: sort1
+      description: "Chunk 1, the first 8 numbers, becomes its own thought."
+      example: "Sort these 8 numbers: 5 1 9 3 3 8 0 7"
+    - id: c2
+      from: split
+      to: sort2
+      description: "Chunk 2 becomes its own thought, sorted in parallel with the others."
+      example: "Sort these 8 numbers: 2 6 4 9 1 5 8 2"
+    - id: c3
+      from: split
+      to: sort3
+      description: "Chunk 3 becomes its own thought."
+      example: "Sort these 8 numbers: 7 0 3 6 9 4 1 8"
+    - id: c4
+      from: split
+      to: sort4
+      description: "Chunk 4 becomes its own thought."
+      example: "Sort these 8 numbers: 2 5 7 0 6 3 4 9"
+    - id: a1
+      from: sort1
+      to: merge1
+      description: "Sorted chunk 1 flows into the first merge."
+      example: "0 1 3 3 5 7 8 9"
+    - id: a2
+      from: sort2
+      to: merge1
+      description: "Sorted chunk 2 flows into the same merge, after it was regenerated to fix a dropped number."
+      example: "1 2 2 4 5 6 8 9"
+    - id: a3
+      from: sort3
+      to: merge2
+      description: "Sorted chunk 3 flows into the second merge."
+      example: "0 1 3 4 6 7 8 9"
+    - id: a4
+      from: sort4
+      to: merge2
+      description: "Sorted chunk 4 flows into the second merge."
+      example: "0 2 3 4 5 6 7 9"
+    - id: f1
+      from: merge1
+      to: final
+      description: "The first list of 16 goes to the final merge."
+      example: "0 1 1 2 2 3 3 4 5 5 6 7 8 8 9 9"
+    - id: f2
+      from: merge2
+      to: final
+      description: "The second list of 16 goes to the final merge."
+      example: "0 0 1 2 3 3 4 4 5 6 6 7 7 8 9 9"
+    - id: check
+      from: final
+      to: scorer
+      label: score
+      description: "The merged list of 32 is checked against the input: every number present, in order."
+      example: "0 0 0 1 1 1 2 2 2 3 3 3 3 4 4 4 5 5 5 6 6 6 7 7 8 8 8 9 9 9 9 (31 numbers)"
+    - id: refine
+      from: scorer
+      to: final
+      style: loop
+      label: refine
+      description: "The errors go back so the model fixes exactly them in the same thought, rather than starting over."
+      example: "1 error: one 7 is missing (input has three 7s, result has two). Fix exactly this error."
+    - id: done
+      from: scorer
+      to: out
+      label: 0 errors
+      description: "When the count of errors is zero, the list leaves the graph."
+      example: "0 0 0 1 1 1 2 2 2 3 3 3 3 4 4 4 5 5 5 6 6 6 7 7 7 8 8 8 9 9 9 9"
+  scenarios:
+    - id: split-sort-merge
+      label: Split, sort, merge, refine
+      steps:
+        - id: split
+          caption: The 32 numbers are split into four chunks of 8.
+          duration: 1800
+          events:
+            - { type: send, edge: in, token: { kind: prompt, label: 32 numbers }, at: [0, 0.4] }
+            - { type: activate, node: split, status: thinking, at: [0.4, 1] }
+        - id: fan-out
+          caption: Each chunk becomes its own thought, and all four are sorted at once.
+          duration: 2600
+          events:
+            - { type: send, edge: c1, token: { kind: prompt, label: chunk 1 }, at: [0, 0.4] }
+            - { type: send, edge: c2, token: { kind: prompt, label: chunk 2 }, at: [0, 0.4] }
+            - { type: send, edge: c3, token: { kind: prompt, label: chunk 3 }, at: [0, 0.4] }
+            - { type: send, edge: c4, token: { kind: prompt, label: chunk 4 }, at: [0, 0.4] }
+            - { type: activate, node: sort1, status: thinking, at: [0.4, 1] }
+            - { type: activate, node: sort2, status: thinking, at: [0.4, 1] }
+            - { type: activate, node: sort3, status: thinking, at: [0.4, 1] }
+            - { type: activate, node: sort4, status: thinking, at: [0.4, 1] }
+        - id: regenerate
+          caption: Each sorted chunk is scored. Chunk 2 dropped a number, so that one thought is generated again.
+          duration: 2600
+          events:
+            - { type: activate, node: sort2, status: error, at: [0, 0.45] }
+            - { type: activate, node: sort2, status: thinking, at: [0.45, 1] }
+        - id: merge-pairs
+          caption: Two thoughts become one. Chunks 1 and 2 merge into a list of 16, and so do chunks 3 and 4.
+          duration: 3000
+          events:
+            - { type: send, edge: a1, token: { kind: result, label: sorted 1 }, at: [0, 0.35] }
+            - { type: send, edge: a2, token: { kind: result, label: sorted 2 }, at: [0, 0.35] }
+            - { type: send, edge: a3, token: { kind: result, label: sorted 3 }, at: [0.05, 0.4] }
+            - { type: send, edge: a4, token: { kind: result, label: sorted 4 }, at: [0.05, 0.4] }
+            - { type: activate, node: merge1, status: thinking, at: [0.4, 1] }
+            - { type: activate, node: merge2, status: thinking, at: [0.45, 1] }
+        - id: merge-final
+          caption: The two lists of 16 merge into all 32 numbers, and the scorer counts the errors.
+          duration: 2800
+          events:
+            - { type: send, edge: f1, token: { kind: result, label: 16 sorted }, at: [0, 0.35] }
+            - { type: send, edge: f2, token: { kind: result, label: 16 sorted }, at: [0, 0.35] }
+            - { type: activate, node: final, status: thinking, at: [0.35, 0.65] }
+            - { type: send, edge: check, token: { kind: result, label: 31 numbers }, at: [0.65, 1] }
+        - id: refine
+          caption: One 7 went missing in the merge. The error goes back and the model fixes just that.
+          duration: 2600
+          events:
+            - { type: branch, node: scorer, taken: refine, notTaken: [done], at: [0, 0.25] }
+            - { type: send, edge: refine, token: { kind: feedback, label: 1 error }, at: [0.25, 0.6] }
+            - { type: activate, node: final, status: thinking, at: [0.6, 1] }
+        - id: done
+          caption: The refined list scores zero errors and is returned.
+          duration: 2400
+          events:
+            - { type: send, edge: check, token: { kind: result, label: 32 numbers }, at: [0, 0.35] }
+            - { type: branch, node: scorer, taken: done, notTaken: [refine], at: [0.35, 0.55] }
+            - { type: send, edge: done, token: { kind: result, label: sorted }, at: [0.55, 0.9] }
+            - { type: activate, node: out, status: done, at: [0.85, 1] }
