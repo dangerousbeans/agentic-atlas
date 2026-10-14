@@ -115,12 +115,19 @@ class FlowPlayer extends HTMLElement {
       const wide = stage.querySelector<SVGSVGElement>('svg[data-layout="wide"]');
       // Show the wide layout only while its labels stay readable at this stage width, else the narrow one
       // (CSS keys off data-fit; without JS the 640px container query decides). Views follow via their observers.
+      // A data-wide player may span its [data-fit-span] container (the pattern page goes single-column for it, with no
+      // stage side padding), so it is judged at that width; the page only spans once the wide layout is picked.
+      // 2px hysteresis keeps a stage on the boundary from flipping.
       const fit = () => {
         if (!wide) return;
         const cs = getComputedStyle(stage), vb = wide.viewBox.baseVal;
-        const avail = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        // (the attribute's value is the media query under which that container can switch to spanning)
+        const span = this.hasAttribute('data-wide') ? this.closest<HTMLElement>('[data-fit-span]') : null;
+        const spans = span && (!span.dataset.fitSpan || matchMedia(span.dataset.fitSpan).matches);
+        const avail = span && spans ? span.clientWidth - 2 : stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
         const maxHeight = parseFloat(getComputedStyle(wide).maxHeight) || Infinity;
-        const pick = pickLayout(avail, { width: vb.width, height: vb.height, maxHeight });
+        const slack = this.dataset.fit === 'wide' ? 2 : this.dataset.fit === 'narrow' ? -2 : 0;
+        const pick = pickLayout(avail + slack, { width: vb.width, height: vb.height, maxHeight });
         if (this.dataset.fit !== pick) this.dataset.fit = pick;
       };
       fit();

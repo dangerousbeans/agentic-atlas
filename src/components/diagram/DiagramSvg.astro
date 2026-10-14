@@ -1,6 +1,6 @@
 ---
 import type { DiagramSpec } from '../../lib/diagram/types';
-import { labelLines, shownLabelIds, type DiagramLayout } from '../../lib/diagram/layout';
+import { labelLines, sublabelLines, shownLabelIds, type DiagramLayout } from '../../lib/diagram/layout';
 import { KIND_LABEL, nodeDescription, edgeDescription, edgeTitle, nodeMap } from '../../lib/diagram/kinds';
 import { MIN_LABEL_SCALE, MAX_SCALE } from '../../lib/diagram/fit';
 import NodeShape from './NodeShape.astro';
@@ -46,7 +46,7 @@ const sizing = compact ? undefined : `--max-w:${Math.round(layout.width * MAX_SC
       <path id={`${pid}-e-${e.id}`} class={`edge edge--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} marker-end={`url(#${pid}-arrow)`} data-from={e.from} data-to={e.to} />
     ))}
     {!compact && labelled.map(e => (
-      <text class={`edge-label edge-label--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} x={layout.edges[e.id].label.x} y={layout.edges[e.id].label.y} text-anchor={layout.edges[e.id].label.anchor} data-from={e.from} data-to={e.to} aria-hidden="true">{e.label}</text>
+      <text class={`edge-label edge-label--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} x={layout.edges[e.id].label.x} y={layout.edges[e.id].label.y} text-anchor={layout.edges[e.id].label.anchor} data-from={e.from} data-to={e.to} aria-hidden="true">{layout.edges[e.id].label.lines ? layout.edges[e.id].label.lines!.map((l, i) => <tspan x={layout.edges[e.id].label.x} dy={i ? 12 : 0}>{l}</tspan>) : e.label}</text>
     ))}
     {!compact && spec.edges.map(e => (
       <path class="edge-hit" data-hit={e.id} d={layout.edges[e.id].d} data-tip-t={edgeTitle(e, labels)} data-tip-k={e.label} data-tip-d={edgeDescription(e, labels)} data-tip-x={e.example} />
@@ -58,7 +58,7 @@ const sizing = compact ? undefined : `--max-w:${Math.round(layout.width * MAX_SC
         {...(compact ? {} : { tabindex: n.hidden ? -1 : 0, role: 'img', 'aria-label': `${n.label}. ${nodeDescription(n)}`, 'data-tip-t': n.label, 'data-tip-k': KIND_LABEL[n.kind], 'data-tip-d': nodeDescription(n) })}>
         <NodeShape kind={n.kind} cx={b.w / 2} />
         {!compact && <text class="label" x={b.w / 2} y={62} text-anchor="middle">{lines.map((l, i) => <tspan x={b.w / 2} dy={i ? 12 : 0}>{l}</tspan>)}</text>}
-        {!compact && n.sublabel && <text class="sublabel" x={b.w / 2} y={74 + 12 * (lines.length - 1)} text-anchor="middle">{n.sublabel}</text>}
+        {!compact && n.sublabel && <text class="sublabel" x={b.w / 2} y={74 + 12 * (lines.length - 1)} text-anchor="middle">{sublabelLines(n.sublabel, variant).map((l, i) => <tspan x={b.w / 2} dy={i ? 12 : 0}>{l}</tspan>)}</text>}
       </g>
     ); })}
   </g>
