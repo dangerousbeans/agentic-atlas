@@ -42,6 +42,17 @@ test('keyboard: space toggles, arrows step, End jumps to end (Review Focus 5)', 
   await expect(fp).toHaveAttribute('data-step-index', '0');
 });
 
+test('space on a focused control button toggles exactly once', async ({ page }) => {
+  await page.goto(url);
+  const fp = page.locator('flow-player').first();
+  await pause(page);
+  await page.locator('[data-action="play"]').first().focus();
+  await page.keyboard.press('Space');
+  await expect(fp).toHaveAttribute('data-playing', 'true');
+  await page.waitForFunction(() => document.querySelector('flow-player')!.getAttribute('data-playing') === 'true');
+  await expect(fp).toHaveAttribute('data-playing', 'true');
+});
+
 test('arrow keys inside the speed select do not step the player', async ({ page }) => {
   await page.goto(url);
   const fp = page.locator('flow-player').first();
