@@ -1,0 +1,40 @@
+## Problem
+
+Ask a model "When did the Golden Gate Bridge open, and how long was it the world's longest suspension span?" and it may answer "1936" with full confidence. Ask it to review its own answer and it will often confirm the mistake, because the review draws on the same memory that produced it. Gou et al. found that a model's self-critique on its own is unreliable and can even make answers worse. What is missing is something outside the model to check against.
+
+## How it works
+
+CRITIC, from Gou et al., adds that outside check. The <NodeRef id="llm">model</NodeRef> first answers the <NodeRef id="user">question</NodeRef> as usual. The answer then goes to the <NodeRef id="critic">verifier</NodeRef>, the same model under a verification prompt. Its job is to list the claims that a tool could check, the dates, numbers and names, and to check each one.
+
+Here the verifier asks <NodeRef id="search">web search</NodeRef> for the opening date and gets back "opened to the public May 27, 1937". It also uses <NodeRef id="code">Python</NodeRef> for the arithmetic, 1964 minus 1937, rather than trusting the 27 years in the answer. The date contradicts the evidence, so the verifier sends a critique back that names the wrong claim and quotes the search result.
+
+The model revises only that claim. The new answer goes through verification again from the start; this time the search agrees, the verdict is OK, and the answer goes to the <NodeRef id="out">output</NodeRef>.
+
+The critique loop passes through a tool. That is the whole difference from plain self-critique: every correction rests on evidence the model did not produce.
+
+**Not the same as Evaluator-Optimizer.** Evaluator-Optimizer's Tool-checked variant, which also cites the CRITIC paper, is the workflow form of this idea. A separate evaluator, with criteria you wrote, judges a generator's draft and uses tools to do it. CRITIC as an agent loop is narrower and more autonomous. One model checks its own answer, decides for itself which claims need checking and which tool to use, and its only standard is whether the evidence agrees. Choose Evaluator-Optimizer when you have explicit acceptance criteria. Choose CRITIC when the question is simply "is what I said true?".
+
+**The Code and tests (Self-Debug) variant.** For code, the tool is a test runner. In Chen et al.'s Self-Debugging, the model runs its program against the visible tests, explains its own code line by line next to the failures, and fixes it. Explaining the code, like rubber duck debugging, is what helps it find the bug when the tests only say "expected 2.5, got 3".
+
+## When to use
+
+- Answers contain checkable facts, numbers or code, and being wrong is costly.
+- You have tools that can check them: search, a database, a calculator, an interpreter, tests.
+- The model's introspection has proved unreliable for your task, so plain self-review keeps missing errors.
+
+## When to avoid
+
+- No tool can check the output, as with tone, style or opinion. Without evidence, this collapses into self-critique. Use Evaluator-Optimizer with a clear rubric instead.
+- Latency matters. Every answer costs at least one more model call plus tool calls, and every revision adds another round.
+- The tools are less reliable than the model, for example a search over poor sources. Then the evidence can talk the model out of a correct answer.
+
+## Trade-offs
+
+CRITIC spends extra calls to replace confidence with evidence. When an answer is right first time, verification still costs a model call and a few tool calls. When it is wrong, you get a correction tied to a source you can show to a user. The quality ceiling is set by the tools: a verifier is only as good as what it can look up or compute. It also corrects within one attempt only. Nothing is learned for the next question, which is what Reflexion's memory adds.
+
+## Failure modes
+
+- **Checking the easy claims:** the verifier checks a trivial detail and skips the claim that matters. Ask it to list every checkable claim before it calls any tool.
+- **Evidence-free critique:** the verifier objects from memory, without quoting a tool result. Reject critiques that quote no evidence.
+- **Bad evidence wins:** a weak search result overrides a correct answer. Prefer authoritative sources, and log the evidence behind every change.
+- **Revision drift:** fixing one claim rewrites others. Tell the model to keep everything that was not criticised, and verify the whole answer again.

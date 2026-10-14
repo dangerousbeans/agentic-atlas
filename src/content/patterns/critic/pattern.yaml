@@ -1,0 +1,328 @@
+slug: critic
+name: CRITIC
+family: agent-loops
+aliases: [Tool-interactive critiquing, Verify-then-revise, Tool-verified self-correction]
+summary: The model drafts an answer, checks its own claims with tools such as search or code, and revises from the evidence they return.
+badges: { autonomy: medium, cost: medium, latency: high }
+sources:
+  - title: "CRITIC: Large Language Models Can Self-Correct with Tool-Interactive Critiquing (Gou et al., 2023)"
+    url: https://arxiv.org/abs/2305.11738
+  - title: "Teaching Large Language Models to Self-Debug (Chen et al., 2023)"
+    url: https://arxiv.org/abs/2304.05128
+related:
+  composesWith: [react]
+  confusedWith:
+    - { slug: evaluator-optimizer, difference: "Evaluator-Optimizer is a workflow: a judge scores a draft against criteria you wrote, and its Tool-checked variant hands that judge tools. In CRITIC the model checks its own answer, decides which claims to verify and which tool to use, and has no rubric beyond the evidence." }
+    - { slug: reflexion, difference: "Reflexion stores a lesson after a failed trial and starts a fresh attempt. CRITIC corrects the same answer within one attempt, using tool evidence, and keeps no memory between tasks." }
+origin:
+  by: Zhibin Gou et al.
+  org: Tsinghua University, Microsoft Research Asia, Microsoft Azure AI
+  year: 2023
+  url: https://arxiv.org/abs/2305.11738
+  kind: introduced
+  note: "Published at ICLR 2024. The paper's point is that models correct themselves poorly from introspection alone, and reliably once a tool supplies evidence."
+build:
+  goal: "Answer a question, then have the same model verify the answer's claims with tools and revise it from the evidence, until a verification round finds nothing wrong."
+  steps:
+    - "Call the model with the question to get a first answer."
+    - "Call the same model with the {{prompt:verify}}, the question, the answer and the tool definitions. It lists the claims a tool can check and requests the tool calls."
+    - "Run each requested call (a search, a code execution, a calculation) and return the results, or their errors, to the model."
+    - "Parse the model's verdict: either OK, or a critique that names each wrong claim and quotes the evidence."
+    - "If the verdict is OK, return the answer. Otherwise call the model with the {{prompt:revise}}, passing the question, the answer and the critique, and verify the revised answer from the start."
+  stop: "Stop when a verification round finds no wrong claim, or after 3 revisions. On the cap, return the last answer with its unresolved critique and a status saying it was not verified."
+  requirements:
+    - "Use one model for answering, verifying and revising; only the prompt changes."
+    - "Give the verifier read-only tools with timeouts, and cap tool calls per round (default 5) as well as revisions (default 3)."
+    - "Accept a critique only if it quotes a tool result; a critique without evidence counts as OK, so the model cannot argue itself out of a correct answer."
+    - "Log every claim checked, the tool call that checked it, the result and the verdict."
+    - "Add a test with a stub LLM that first answers 1936 and a fake search that returns 1937; assert the critique quotes 1937, one revision happens, and the returned answer says 1937."
+defaultVariantName: Search and code
+prompts:
+  - id: verify
+    title: Verification prompt
+    lang: markdown
+    source: |
+      Check the answer below before it is shown to anyone. You have tools.
+
+      <question>{{question}}</question>
+      <answer>{{answer}}</answer>
+
+      1. List every claim in the answer that a tool could check: dates, numbers,
+         names, quotations, calculations.
+      2. Use the tools to check each one. Do not rely on memory.
+      3. Then reply with exactly one of:
+         OK
+         or
+         WRONG: one line per wrong claim, with the tool evidence that contradicts it.
+  - id: revise
+    title: Revision prompt
+    lang: markdown
+    source: |
+      Your answer contained claims that the evidence contradicts.
+
+      <question>{{question}}</question>
+      <answer>{{answer}}</answer>
+      <critique>{{critique}}</critique>
+
+      Rewrite the answer so that every claim agrees with the evidence.
+      Keep everything that was not criticised. Return only the revised answer.
+diagram:
+  nodes:
+    - id: user
+      kind: io
+      label: Question
+      description: "'When did the Golden Gate Bridge open, and how long was it the world's longest suspension span?'"
+    - id: llm
+      kind: llm
+      label: Model
+      sublabel: answer, revise
+      description: "Answers the question, then rewrites the answer whenever its own verification finds a claim the evidence contradicts."
+    - id: critic
+      kind: llm
+      label: Verifier
+      sublabel: same model
+      description: "The same model under a verification prompt: it picks the checkable claims, calls tools on them and returns OK or the wrong claims."
+    - id: search
+      kind: tool
+      label: Web search
+      description: "Looks up facts such as dates and names, and returns snippets the verifier can quote as evidence."
+    - id: code
+      kind: tool
+      label: Python
+      description: "Runs short calculations, such as the number of years between two dates, so arithmetic is computed, not recalled."
+    - id: out
+      kind: io
+      label: Answer
+      description: "The answer once a verification round finds every checked claim agrees with the evidence."
+  edges:
+    - id: ask
+      from: user
+      to: llm
+      description: "The question goes to the model, which answers from what it knows."
+      example: "When did the Golden Gate Bridge open, and how long was it the world's longest suspension span?"
+    - id: draft
+      from: llm
+      to: critic
+      description: "The answer goes to the verification prompt, unchanged."
+      example: "It opened in 1936 and held the record for 27 years, until the Verrazzano-Narrows Bridge opened in 1964."
+    - id: query
+      from: critic
+      to: search
+      label: check
+      description: "The verifier turns each factual claim into a search."
+      example: "Golden Gate Bridge opening date"
+    - id: evidence
+      from: search
+      to: critic
+      label: evidence
+      description: "Search results come back as evidence to quote."
+      example: "The Golden Gate Bridge opened to the public on May 27, 1937. (Wikipedia)"
+    - id: calc
+      from: critic
+      to: code
+      style: dashed
+      description: "For arithmetic claims, the verifier runs code instead of trusting the number in the answer."
+      example: "print(1964 - 1937)"
+    - id: result
+      from: code
+      to: critic
+      style: dashed
+      description: "The computed value comes back to the verifier."
+      example: "27 (printed by the code)"
+    - id: revise
+      from: critic
+      to: llm
+      style: loop
+      label: revise
+      description: "A critique quoting the evidence goes back, and the model rewrites only the wrong claims."
+      example: "WRONG: 'opened in 1936'. Search: opened to the public May 27, 1937. The span held the record from 1937 to 1964."
+    - id: ok
+      from: critic
+      to: out
+      label: OK
+      description: "When every checked claim agrees with the evidence, the answer is returned."
+      example: "It opened on May 27, 1937 and was the world's longest suspension span for 27 years, until 1964."
+  scenarios:
+    - id: claim-corrected
+      label: A date is wrong, then fixed
+      steps:
+        - id: ask
+          caption: The question reaches the model, which answers from memory.
+          duration: 1800
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.4] }
+            - { type: activate, node: llm, status: thinking, at: [0.4, 1] }
+        - id: draft
+          caption: The answer says 1936. It goes to the verification prompt.
+          duration: 1400
+          events:
+            - { type: send, edge: draft, token: { kind: result, label: opened 1936 } }
+        - id: check
+          caption: The verifier searches the opening date and computes the span of years with code.
+          duration: 3400
+          events:
+            - { type: send, edge: query, token: { kind: tool-call, label: opening date }, at: [0, 0.25] }
+            - { type: activate, node: search, status: calling, at: [0.25, 0.4] }
+            - { type: send, edge: evidence, token: { kind: result, label: "1937" }, at: [0.4, 0.6] }
+            - { type: send, edge: calc, token: { kind: tool-call, label: 1964-1937 }, at: [0.6, 0.75] }
+            - { type: send, edge: result, token: { kind: result, label: "27" }, at: [0.8, 1] }
+        - id: revise
+          caption: The evidence contradicts the date, so a critique quoting it goes back, and the model fixes that claim.
+          duration: 2800
+          events:
+            - { type: branch, node: critic, taken: revise, notTaken: [ok], at: [0, 0.25] }
+            - { type: send, edge: revise, token: { kind: feedback, label: was 1937 }, at: [0.25, 0.6] }
+            - { type: activate, node: llm, status: thinking, at: [0.6, 1] }
+        - id: recheck
+          caption: The revised answer is verified again from the start, and the search now agrees.
+          duration: 2800
+          events:
+            - { type: send, edge: draft, token: { kind: result, label: opened 1937 }, at: [0, 0.3] }
+            - { type: send, edge: query, token: { kind: tool-call, label: opening date }, at: [0.3, 0.55] }
+            - { type: send, edge: evidence, token: { kind: result, label: "1937" }, at: [0.55, 0.85] }
+        - id: ok
+          caption: Every claim checks out, so the answer is returned.
+          duration: 2000
+          events:
+            - { type: branch, node: critic, taken: ok, notTaken: [revise], at: [0, 0.3] }
+            - { type: send, edge: ok, token: { kind: result, label: answer }, at: [0.3, 0.85] }
+            - { type: activate, node: out, status: done, at: [0.8, 1] }
+    - id: verified-first-time
+      label: Verified first time
+      steps:
+        - id: ask
+          caption: The question reaches the model, which answers.
+          duration: 1800
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.4] }
+            - { type: activate, node: llm, status: thinking, at: [0.4, 1] }
+        - id: check
+          caption: The verifier searches the date and it matches the answer.
+          duration: 2600
+          events:
+            - { type: send, edge: draft, token: { kind: result, label: opened 1937 }, at: [0, 0.3] }
+            - { type: send, edge: query, token: { kind: tool-call, label: opening date }, at: [0.3, 0.6] }
+            - { type: send, edge: evidence, token: { kind: result, label: "1937" }, at: [0.6, 1] }
+        - id: ok
+          caption: Nothing contradicts the answer, so it is returned unchanged.
+          duration: 2000
+          events:
+            - { type: branch, node: critic, taken: ok, notTaken: [revise], at: [0, 0.3] }
+            - { type: send, edge: ok, token: { kind: result, label: answer }, at: [0.3, 0.85] }
+            - { type: activate, node: out, status: done, at: [0.8, 1] }
+variants:
+  - id: self-debug
+    name: Code and tests (Self-Debug)
+    summary: "For code: the model runs its program against tests, explains the code line by line, and fixes it from the execution feedback."
+    origin:
+      by: Xinyun Chen et al.
+      org: Google DeepMind, UC Berkeley
+      year: 2023
+      url: https://arxiv.org/abs/2304.05128
+      kind: introduced
+      note: "Self-Debugging: the model explains its own code, rubber-duck style, alongside unit test results and execution traces, then fixes it, with no human feedback."
+    build:
+      goal: "Generate code for a task, run it against the available tests, and have the same model explain and fix it from the execution feedback until the tests pass."
+      steps:
+        - "Call the model with the task and the visible tests to write the first version of the code."
+        - "Run the code against the tests in a sandbox and capture, for each failing test, the input, the expected output, the actual output or the error."
+        - "If every test passes, return the code."
+        - "Otherwise call the same model with the {{prompt:debug}}, passing the code and the failing test results. It explains the code line by line, says where the behaviour differs from what the tests expect, and writes a fixed version."
+        - "Run the fixed version against the tests and repeat."
+      stop: "Stop when every visible test passes, or after 3 debugging rounds. On the cap, return the version that passed the most tests, with the failures that remain."
+      requirements:
+        - "Run code in a sandbox with time and memory limits; treat a timeout as a failing test with the message 'timed out'."
+        - "Pass the actual output and the expected output for every failing test, not only a pass/fail count."
+        - "Keep every version and its test results, and return the best one if the cap is hit."
+        - "Do not show the model hidden tests; check the final code against them separately, if you have them."
+        - "Add a test with a stub LLM whose first program fails one test and whose second passes all; assert one debug call, two test runs, and that the second program is returned."
+    prompts:
+      - id: debug
+        title: Debugging prompt
+        lang: markdown
+        source: |
+          Your code fails some tests.
+
+          <task>{{task}}</task>
+          <code>{{code}}</code>
+          <failures>{{failing_tests_with_expected_and_actual}}</failures>
+
+          First explain what the code does, line by line.
+          Then say exactly where its behaviour differs from what the failing tests expect.
+          Finally, return the complete fixed code in one code block.
+    diagram:
+      nodes:
+        - id: user
+          kind: io
+          label: Task
+          description: "A coding task with visible tests: 'Write median(xs) for a list of numbers.'"
+        - id: llm
+          kind: llm
+          label: Model
+          sublabel: write, explain, fix
+          description: "Writes the code, then explains it line by line against the failing tests and writes a fixed version."
+        - id: tests
+          kind: tool
+          label: Test runner
+          description: "Runs the code against the visible tests and returns, for each failure, the input, the expected and the actual output."
+        - id: out
+          kind: io
+          label: Code
+          description: "The version of the code that passes every visible test."
+      edges:
+        - id: ask
+          from: user
+          to: llm
+          description: "The task and its visible tests go to the model."
+          example: "Write median(xs). Tests: median([3, 1, 2]) == 2; median([4, 1, 3, 2]) == 2.5"
+        - id: run
+          from: llm
+          to: tests
+          label: run
+          description: "Each version of the code is run against the tests."
+          example: "def median(xs): s = sorted(xs); return s[len(s) // 2]"
+        - id: feedback
+          from: tests
+          to: llm
+          style: loop
+          label: failures
+          description: "Failing tests come back with expected and actual output, and the model explains and fixes its code."
+          example: "median([4, 1, 3, 2]): expected 2.5, got 3. Explanation: for an even length, the code takes the upper middle instead of averaging the two middles."
+        - id: pass
+          from: tests
+          to: out
+          label: all pass
+          description: "When every test passes, that version is returned."
+          example: "def median(xs): s = sorted(xs); n = len(s); return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2"
+      scenarios:
+        - id: one-fix
+          label: Fails one test, then fixed
+          steps:
+            - id: ask
+              caption: The task and its tests reach the model, which writes a first version.
+              duration: 1800
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: task }, at: [0, 0.4] }
+                - { type: activate, node: llm, status: thinking, at: [0.4, 1] }
+            - id: fail
+              caption: The code fails the even-length test; the expected and actual outputs come back.
+              duration: 2600
+              events:
+                - { type: send, edge: run, token: { kind: tool-call, label: v1 }, at: [0, 0.3] }
+                - { type: activate, node: tests, status: error, at: [0.3, 0.55] }
+                - { type: branch, node: tests, taken: feedback, notTaken: [pass], at: [0.5, 0.6] }
+                - { type: send, edge: feedback, token: { kind: feedback, label: 3 ≠ 2.5 }, at: [0.6, 1] }
+            - id: explain
+              caption: The model explains its code line by line, spots the even-length case, and writes a fix.
+              duration: 2400
+              events:
+                - { type: activate, node: llm, status: thinking }
+            - id: pass
+              caption: The fixed version passes every test and is returned.
+              duration: 2600
+              events:
+                - { type: send, edge: run, token: { kind: tool-call, label: v2 }, at: [0, 0.3] }
+                - { type: activate, node: tests, status: calling, at: [0.3, 0.5] }
+                - { type: branch, node: tests, taken: pass, notTaken: [feedback], at: [0.5, 0.6] }
+                - { type: send, edge: pass, token: { kind: result, label: code }, at: [0.6, 0.9] }
+                - { type: activate, node: out, status: done, at: [0.85, 1] }

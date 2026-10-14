@@ -3,4 +3,4 @@ name: "Agent Loops"
 rank: 3
 accent: "#A78BFA"
 description: One model chooses its next action, observes the result and loops, sometimes critiquing itself or learning across attempts.
-order: [augmented-llm, react, reflexion, codeact]
+order: [augmented-llm, react, reflexion, codeact, critic]
