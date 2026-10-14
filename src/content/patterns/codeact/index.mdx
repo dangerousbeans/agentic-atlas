@@ -1,0 +1,36 @@
+## Problem
+
+"Which 3 of our 40 SaaS vendors raised prices the most this year?" needs the vendor list, then two invoice lookups per vendor, then a comparison. With JSON tool calls, that is 81 model turns, and every invoice row lands in the context, whether or not the model needs it. The work is a loop with arithmetic, which is exactly what code is good at and what a turn-by-turn tool loop is bad at.
+
+## How it works
+
+CodeAct, from Wang et al., changes what an action is. Instead of emitting one JSON tool call, the <NodeRef id="llm">model</NodeRef> writes a snippet of Python. The snippet runs in an <NodeRef id="interp">interpreter</NodeRef> inside a sandbox, where each tool is an ordinary function. The model can call several tools, loop over results, filter and sort, all in one action.
+
+In the example, the model writes one script. It calls <NodeRef id="crm">list_vendors()</NodeRef> once, loops over the 40 vendors, calls <NodeRef id="billing">get_invoices()</NodeRef> for this year and last, computes each rise and prints the top three. Those 81 tool calls happen inside the sandbox. Only what the code prints, three names and percentages, returns to the model as the observation, and it writes the <NodeRef id="out">answer</NodeRef>.
+
+Errors are observations too. If the script reads a field the invoice rows do not have, the KeyError and its traceback come back to the model. The model reads it, patches the snippet and runs it again. Because the interpreter keeps its variables between steps, the patched snippet can reuse the vendor list it already fetched.
+
+This is still an agent loop, act and observe, like ReAct. What changed is the size of one action: a program instead of a single call.
+
+## When to use
+
+- One step needs several tool calls composed with logic: loops, filters, joins, arithmetic.
+- The data is large and should stay out of the context: let code reduce it and print a summary.
+- The model is good at code in your domain, and your tools can be wrapped as functions.
+
+## When to avoid
+
+- You cannot sandbox code execution. Running model-written code with real credentials and no limits is a security hole.
+- The tool set is tiny and calls are single-shot. Plain JSON tool calls are simpler to log, review and restrict.
+- Every action needs approval or a precise audit. A script that makes 80 calls is harder to review than 80 separate, typed calls.
+
+## Trade-offs
+
+CodeAct trades auditability for leverage. One turn does the work of dozens, so cost and latency drop and the context stays small, because intermediate data lives in variables. In exchange you must run a sandbox, with resource limits and no stray network or file access, and permissions move from "which tool may be called" to "what this code may do". Logs need to capture both the code and the tool calls made from inside it, or you lose track of what the agent actually did.
+
+## Failure modes
+
+- **Unsandboxed execution:** the code reaches the file system, network or credentials it should not. Expose tools only as functions and block everything else.
+- **Printing everything:** the model prints a whole dataset and floods its own context. Truncate observations and tell the model to print summaries.
+- **Silent wrong logic:** the code runs but computes the wrong thing, such as comparing the wrong months. Ask the model to print a small sample of intermediate values before the final result.
+- **Fix loops:** the model keeps patching the same error. Cap executions and detect repeated tracebacks.
