@@ -7,46 +7,119 @@ const url = '/patterns/evaluator-optimizer/';
 
 test('has all sections in order', async ({ page }) => {
   await page.goto(url);
-  const heads = await page.locator('article h2').allTextContents();
+  const heads = await page.locator('article h2:visible').allTextContents();
   expect(heads).toEqual(['Measured over one run', 'Problem', 'How it works', 'When to use', 'When to avoid', 'Trade-offs', 'Failure modes', 'Related patterns', 'Sources']);
-  await expect(page.locator('dl.spec')).toContainText('Autonomy');
-  await expect(page.locator('.spec-row').filter({ hasText: 'Autonomy' })).toHaveAttribute('data-tip', /control flow/);
-  await expect(page.locator('a[href*="arxiv.org/abs/2303.17651"]')).toBeVisible();
+  await expect(page.locator('dl.spec:visible')).toContainText('Autonomy');
+  await expect(page.locator('.spec-row:visible').filter({ hasText: 'Autonomy' })).toHaveAttribute('data-tip', /control flow/);
+  await expect(page.getByRole('link', { name: /^Self-Refine: Iterative Refinement/ })).toHaveAttribute('href', 'https://arxiv.org/abs/2303.17651');
 });
 
-test.describe('code panel sync', () => {
-  test.use({ reducedMotion: 'reduce' });
-  const stepLines = async (page: import('@playwright/test').Page) =>
-    page.locator('[data-code-block="loop"] .ec-line').evaluateAll(ls => ls.flatMap((l, i) => (l.classList.contains('is-step') ? [i + 1] : [])));
+test('the Build tab is the default; the Prompts tab shows the prompt templates', async ({ page }) => {
+  await page.goto(url);
+  await expect(page.getByRole('tab', { name: 'Build it with your AI' })).toHaveAttribute('aria-selected', 'true');
+  const build = page.locator('.build-md:visible');
+  await expect(build).toHaveCount(1);
+  await expect(build).toContainText('Implement the Evaluator-Optimizer pattern in this codebase');
+  await expect(build).toContainText('## Stop rule');
+  await expect(page.locator('.build-panel .hint:visible')).toContainText('Claude Code, Cursor, ChatGPT');
+  await page.getByRole('tab', { name: 'Prompts' }).click();
+  await expect(page.locator('[data-prompt-block="generator"]:visible')).toHaveCount(1);
+  await expect(page.locator('.build-md:visible')).toHaveCount(0);
+});
 
-  test('highlights the initial step on load and follows step changes', async ({ page }) => {
+test.describe('copy button', () => {
+  test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
+  test('copies the composed build prompt and announces it', async ({ page }) => {
     await page.goto(url);
-    const fp = page.locator('flow-player').first();
-    await expect(fp).toHaveAttribute('data-step-index', '0');
-    await expect.poll(() => stepLines(page)).toEqual([1, 2, 3]);
-    await page.locator('ol.fp-captions button[data-step-index="1"]').first().click();
-    await expect(fp).toHaveAttribute('data-step-index', '1');
-    await expect.poll(() => stepLines(page)).toEqual([4, 5, 6, 7, 8]);
+    const btn = page.locator('[data-copy]:visible');
+    await expect(btn).toHaveText('Copy');
+    await btn.click();
+    await expect(btn).toHaveText('Copied');
+    await expect(page.locator('[data-copy-status]')).toHaveText(/copied/i);
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    expect(text).toBe(await page.locator('.build-md:visible').textContent());
+    expect(text.startsWith('Implement the Evaluator-Optimizer pattern in this codebase')).toBe(true);
+    await expect(btn).toHaveText('Copy', { timeout: 4000 });
   });
 });
 
-test('prompt tab shows prompt templates', async ({ page }) => {
+test.describe('variants', () => {
+  const visiblePlayers = (page: import('@playwright/test').Page) => page.locator('flow-player:not([compact]):visible');
+  test('tabs swap the diagram, build, prompts, stats and origin, and set the hash', async ({ page }) => {
+    await page.goto(url);
+    const tabs = page.getByRole('tablist', { name: 'Evaluator-Optimizer variants' }).getByRole('tab');
+    await expect(tabs).toHaveText(['Separate judge', 'Same model', 'Tool-checked']);
+    await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+    await expect(visiblePlayers(page)).toHaveCount(1);
+    await expect(visiblePlayers(page)).toHaveAttribute('data-uid', 'evaluator-optimizer');
+    await expect(page.locator('.origin:visible')).toContainText('Popularized by Erik Schluntz and Barry Zhang (2024)');
+
+    await tabs.nth(1).click();
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    expect(new URL(page.url()).hash).toBe('#variant-self-critique');
+    await expect(visiblePlayers(page)).toHaveAttribute('data-uid', 'evaluator-optimizer--self-critique');
+    await expect(page.locator('.build-md:visible')).toContainText('(Same model variant)');
+    await expect(page.locator('.origin:visible')).toContainText('Introduced by Aman Madaan et al. (2023)');
+    const val = (label: string) => page.locator('.spec-row:visible').filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}$`) }) }).locator('dd .v');
+    await expect(val('Scenarios')).toHaveText('1');
+    await page.getByRole('tab', { name: 'Prompts' }).click();
+    await expect(page.locator('[data-prompt-block="feedback"]:visible')).toHaveCount(1);
+    await expect(page.locator('[data-prompt-block="evaluator"]:visible')).toHaveCount(0);
+
+    // keyboard: arrows move between variant tabs; the first tab clears the hash
+    await tabs.nth(1).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(tabs.nth(2)).toBeFocused();
+    expect(new URL(page.url()).hash).toBe('#variant-tool-checked');
+    await expect(val('Tool calls')).toHaveText('2');
+    await page.keyboard.press('Home');
+    expect(new URL(page.url()).hash).toBe('');
+    expect(new URL(page.url()).pathname).toBe(url);
+  });
+
+  test('a #variant- hash deep-links a tab, and only the visible diagram plays', async ({ page }) => {
+    await page.goto(`${url}#variant-tool-checked`);
+    await expect(page.getByRole('tab', { name: 'Tool-checked' })).toHaveAttribute('aria-selected', 'true');
+    await expect(visiblePlayers(page)).toHaveAttribute('data-uid', 'evaluator-optimizer--tool-checked');
+    await expect(visiblePlayers(page)).toHaveAttribute('data-playing', 'true');
+    await expect(page.locator('flow-player[data-uid="evaluator-optimizer"]')).toHaveAttribute('data-suspended', '');
+    await expect(page.locator('flow-player[data-uid="evaluator-optimizer"]')).toHaveAttribute('data-playing', 'false');
+    await expect(page.locator('.origin:visible')).toContainText('Introduced by Zhibin Gou et al. (2023)');
+  });
+
+  test('an unknown hash falls back to the default variant', async ({ page }) => {
+    await page.goto(`${url}#variant-nope`);
+    await expect(page.getByRole('tab', { name: 'Separate judge' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('pages without variants have no variant tabs', async ({ page }) => {
+    await page.goto('/patterns/routing/');
+    await expect(page.locator('[data-variant-tabs]')).toHaveCount(0);
+    await expect(page.locator('.variant-h')).toHaveCount(0);
+  });
+});
+
+test('JSON-LD cites each distinct origin as a CreativeWork', async ({ page }) => {
   await page.goto(url);
-  await page.getByRole('tab', { name: 'Prompts' }).click();
-  await expect(page.locator('[data-code-block="generator"]')).toBeVisible();
-  await expect(page.locator('[data-code-block="loop"]')).toBeHidden();
+  const lds = await page.locator('script[type="application/ld+json"]').allTextContents();
+  const article = lds.map(t => JSON.parse(t)).find(x => x['@type'] === 'TechArticle');
+  expect(article.headline).toBe('Evaluator-Optimizer');
+  expect(article.citation.map((c: { url: string }) => c.url)).toEqual([
+    'https://www.anthropic.com/engineering/building-effective-agents', 'https://arxiv.org/abs/2303.17651', 'https://arxiv.org/abs/2305.11738',
+  ]);
+  for (const c of article.citation) { expect(c['@type']).toBe('CreativeWork'); expect(c.author).toBeTruthy(); }
 });
 
 test('hovering a NodeRef highlights the diagram node', async ({ page }) => {
   await page.goto(url);
   await page.locator('.noderef[data-noderef="evaluator"]').first().hover();
-  await expect(page.locator('svg[data-layout="wide"] g.node[data-node="evaluator"]')).toHaveClass(/is-ref/);
+  await expect(page.locator('flow-player').first().locator('svg[data-layout="wide"] g.node[data-node="evaluator"]')).toHaveClass(/is-ref/);
 });
 
 test('focusing a NodeRef highlights the node and survives mouseleave', async ({ page }) => {
   await page.goto(url);
   const ref = page.locator('.noderef[data-noderef="generator"]').first();
-  const node = page.locator('svg[data-layout="wide"] g.node[data-node="generator"]');
+  const node = page.locator('flow-player').first().locator('svg[data-layout="wide"] g.node[data-node="generator"]');
   await ref.focus();
   await expect(node).toHaveClass(/is-ref/);
   await ref.hover();
@@ -61,11 +134,21 @@ test.describe('no JS', () => {
   test('dead tab buttons are hidden', async ({ page }) => {
     await page.goto(url);
     await expect(page.locator('[role="tablist"]:visible')).toHaveCount(0);
-    await expect(page.locator('[data-code-block="generator"]')).toBeVisible();
+    await expect(page.locator('[data-copy]:visible')).toHaveCount(0);
+    await expect(page.locator('[data-prompt-block="generator"]').first()).toBeVisible();
   });
-  test('code blocks are keyboard-focusable without JS', async ({ page }) => {
+  test('variants stack with headings, each with its diagram, build, stats and origin', async ({ page }) => {
     await page.goto(url);
-    const pres = page.locator('[data-code-panel] pre');
+    await expect(page.locator('.variant-h')).toHaveText(['Separate judge (default)', 'Same model', 'Tool-checked']);
+    await expect(page.locator('flow-player:not([compact]):visible')).toHaveCount(3);
+    await expect(page.locator('.build-md:visible')).toHaveCount(3);
+    await expect(page.locator('dl.spec:visible')).toHaveCount(3);
+    await expect(page.locator('.origin:visible')).toHaveCount(3);
+    await expect(page.locator('.origin-for').first()).toHaveText('Separate judge:');
+  });
+  test('prompt code blocks are keyboard-focusable without JS', async ({ page }) => {
+    await page.goto(url);
+    const pres = page.locator('[data-prompt-block] pre');
     expect(await pres.count()).toBeGreaterThan(0);
     for (const pre of await pres.all()) await expect(pre).toHaveAttribute('tabindex', '0');
   });
@@ -73,7 +156,7 @@ test.describe('no JS', () => {
 
 test('spec tooltips: hover shows, Escape dismisses without leaving the page', async ({ page }) => {
   await page.goto(url);
-  const row = page.locator('.spec-row').first();
+  const row = page.locator('.spec-row:visible').first();
   const shown = () => row.evaluate(el => getComputedStyle(el, '::after').display);
   await row.hover();
   expect(await shown()).toBe('block');
@@ -189,7 +272,7 @@ test('spec table matches patternStats for evaluator-optimizer', async ({ page })
   const d = parse(readFileSync('src/content/patterns/evaluator-optimizer/pattern.yaml', 'utf8')).diagram;
   const s = patternStats(d);
   await page.goto(url);
-  const val = async (label: string) => (await page.locator('.spec-row').filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}$`) }) }).locator('dd .v').textContent())!.trim();
+  const val = async (label: string) => (await page.locator('.spec-row:visible').filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}$`) }) }).locator('dd .v').textContent())!.trim();
   const yn = (b: boolean) => (b ? 'yes' : 'no');
   expect(await val('Nodes')).toBe(String(s.nodes));
   expect(await val('LLM calls')).toBe(String(s.llmCalls));
@@ -210,7 +293,7 @@ test.describe('360px phone', () => {
   test('no horizontal overflow, even with a spec tooltip open', async ({ page }) => {
     await page.goto(url);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
-    await page.locator('.spec-row').last().hover();
+    await page.locator('.spec-row:visible').last().hover();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
   });
 });

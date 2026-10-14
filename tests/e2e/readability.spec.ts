@@ -1,9 +1,13 @@
 // Readability gate: node labels in the visible diagram must render at a legible size.
 // Effective size = SVG scale (rendered width / viewBox width) x computed font-size.
 import { test, expect, type Page } from '@playwright/test';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { parse } from 'yaml';
 
 const slugs = readdirSync('src/content/patterns').sort();
+/** Every non-default variant, as [slug, variant id]. */
+const variants: [string, string][] = slugs.flatMap(slug =>
+  ((parse(readFileSync(`src/content/patterns/${slug}/pattern.yaml`, 'utf8')).variants ?? []) as { id: string }[]).map(v => [slug, v.id] as [string, string]));
 const MIN_PX = 9; // everywhere, phones included
 
 interface Reading { layout: string; px: number; scrolls: boolean; visible: number }
@@ -53,6 +57,25 @@ for (const width of [1440, 1280, 1024, 390]) {
           if (r.layout === 'narrow') expect(g.side, `${slug}: narrow layout sits beside the info column`).toBe(true);
           else expect(g.side || g.above, `${slug}: wide layout beside the info column or below its band`).toBe(true);
         }
+      });
+    }
+  });
+}
+
+// The same floor for every variant tab, measured on the variant's own (visible) player.
+for (const width of [1440, 1024, 390]) {
+  test.describe(`variant label size at ${width}px`, () => {
+    test.use({ viewport: { width, height: 900 } });
+    for (const [slug, id] of variants) {
+      test(`${slug} #variant-${id}`, async ({ page }) => {
+        await page.goto(`/patterns/${slug}/#variant-${id}`);
+        const scope = `[data-variant-pane="${id}"] flow-player:not([compact])`;
+        await expect(page.locator(`[data-variant-pane="${id}"]`)).toBeVisible();
+        await fitted(page, scope);
+        const r = await measure(page, scope);
+        test.info().annotations.push({ type: 'label-px', description: `${slug}#${id}@${width} ${r.layout} ${r.px}px${r.scrolls ? ' (scrolls)' : ''}` });
+        expect(r.visible, 'exactly one diagram layout is visible').toBe(1);
+        expect(r.px, `${slug} variant ${id} node labels at ${width}px (${r.layout} layout)`).toBeGreaterThanOrEqual(MIN_PX);
       });
     }
   });
