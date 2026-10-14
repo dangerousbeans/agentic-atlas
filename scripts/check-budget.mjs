@@ -60,6 +60,10 @@ const importsOf = (file) => {
 };
 
 const pages = walk(DIST).filter((f) => f.endsWith('.html') && !isPagefind(f)).sort();
+if (pages.length === 0) {
+  console.error(`✗ no HTML pages found in ${DIST}`);
+  process.exit(1);
+}
 const rows = [];
 let failed = false;
 
