@@ -14,6 +14,8 @@ Take a message from the <NodeRef id="user">user</NodeRef> that mentions a trip t
 
 When the window fills, the oldest messages are written verbatim to recall memory, and a <NodeRef id="summarizer">summarizer</NodeRef> folds them into a running summary that stays at the front of the prompt. The summary is lossy, but the raw messages are not: the agent can search recall for the exact wording when the summary is not enough.
 
+Two simpler designs appear as tabs. A rolling summary drops the tiers and tools entirely and keeps one running summary per user. A fact store (Mem0) extracts facts after every exchange and reconciles each with what is already stored.
+
 ## When to use
 
 - Conversations span days or months, far beyond one context window.

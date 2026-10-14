@@ -12,6 +12,29 @@ sources:
 related:
   composesWith: [agentic-rag]
   confusedWith: []
+origin:
+  by: Charles Packer et al.
+  org: UC Berkeley
+  year: 2023
+  url: https://arxiv.org/abs/2310.08560
+  kind: introduced
+  note: "MemGPT, which framed the context window as main memory and the agent as its own memory manager."
+build:
+  goal: "Give a long-running chat agent memory beyond its context window by treating the window like RAM: a small always-visible core, a log of evicted messages and a searchable archive, paged with tool calls."
+  steps:
+    - "Build every prompt from the {{prompt:system}}: the core memory block, then the running summary, then the recent messages."
+    - "Give the agent three tools: core_memory_append(text), recall_search(query) over the evicted-message log, and archival_search(query) over the long-term store."
+    - "Run the agent loop: execute each tool call it makes, append the result, and call it again until it replies without a tool call."
+    - "If a tool call fails or its arguments do not parse, return the error text as the tool result so the agent can retry or move on."
+    - "After each turn, count the prompt's tokens. Above the threshold, evict the oldest messages: store them verbatim in recall memory and fold them into the running summary with the {{prompt:summary}}."
+  stop: "Each turn stops when the agent replies without a tool call, or after 6 tool calls; at the cap, ask for a reply with tools disabled. The memory itself persists across sessions and is never reset."
+  requirements:
+    - "Make the eviction threshold (default 70% of the context window), the core memory limit (default 2,000 characters) and the per-turn tool cap (default 6) parameters."
+    - "Reject a core_memory_append that would pass the limit, with an error telling the agent to move older facts to archival memory."
+    - "Store recall and archival memory outside the process, keyed by user, so they survive restarts."
+    - "Log every memory write and every eviction, with token counts before and after."
+    - "Add a test with a stub token counter that crosses the threshold on turn 3; assert the oldest messages are in recall memory verbatim, the summarizer was called once, and those messages are no longer in the prompt."
+defaultVariantName: OS-style paging
 prompts:
   - id: system
     title: Memory-aware system prompt
@@ -118,3 +141,177 @@ diagram:
           events:
             - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
             - { type: send, edge: reply, token: { kind: result, label: reply }, at: [0.5, 1] }
+variants:
+  - id: rolling-summary
+    name: Rolling summary
+    summary: "No tiers and no memory tools: after each session the model folds the new dialogue into one running summary, which opens every later session."
+    origin:
+      by: Qingyue Wang et al.
+      org: HKUST, CAS IIE, NUDT, University of Sydney
+      year: 2023
+      url: https://arxiv.org/abs/2308.15022
+      kind: introduced
+      note: "Recursively Summarizing Enables Long-Term Dialogue Memory in Large Language Models (Neurocomputing)."
+    build:
+      goal: "Give a chat agent long-term memory with no memory tools: keep one running summary per user, rewritten after each session and placed at the top of every later prompt."
+      steps:
+        - "When a session starts, load the user's running summary (empty for a new user) and put it at the top of the system prompt."
+        - "Run the session as a normal chat. The agent reads the summary but has no memory tools."
+        - "When the session ends (after 30 minutes idle), send the previous summary and the full session log to the summarizer with the {{prompt:fold}}."
+        - "Save the returned text as the user's new running summary, keeping the previous version."
+        - "If the summarizer fails or returns more than the word limit, keep the old summary and fold both session logs in at the end of the next session."
+      stop: "One summary update per session. The summary is never reset; it stays under the word limit because the summarizer must drop the least important facts to fit."
+      requirements:
+        - "Make the word limit (default 400) and the idle time that ends a session (default 30 minutes) parameters."
+        - "Keep the last 5 summary versions per user, so a bad rewrite can be rolled back."
+        - "Log each update with its word count and the session id it came from."
+        - "Add a test with a stub summarizer that returns 'User is vegetarian.'; assert the first prompt of the next session contains 'User is vegetarian.' above the first user message."
+    prompts:
+      - id: fold
+        title: Session summary prompt
+        lang: markdown
+        source: |
+          Update the running summary of what you know about this user, using
+          the session that just ended.
+
+          <previous_summary>{{previous}}</previous_summary>
+          <session>{{session_log}}</session>
+
+          Keep names, dates, preferences, decisions and open tasks. If the user
+          corrected an earlier fact, replace it rather than keeping both.
+          Write at most {{max_words}} words.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: User, description: "The person chatting with the assistant across many sessions." }
+        - { id: llm, kind: llm, label: Agent, description: "Chats normally, with the running summary at the top of its prompt; it has no memory tools." }
+        - { id: summarizer, kind: llm, label: Summarizer, description: "At the end of each session, folds the new dialogue into the previous summary, within a word limit." }
+        - { id: summary, kind: memory, label: Summary, sublabel: one running text, description: "A single summary per user, rewritten after every session and prepended to the next one." }
+      edges:
+        - { id: prepend, from: summary, to: llm, style: dashed, label: prepend, description: "When a session starts, the running summary goes at the top of the agent's prompt.", example: "Summary: User is planning a Lisbon trip, 12-19 May; hotel booked near Alfama; prefers window seats." }
+        - { id: msg, from: user, to: llm, description: "Each user message joins the session as in a normal chat.", example: "I'm vegetarian now. Any dinner ideas for Lisbon?" }
+        - { id: reply, from: llm, to: user, description: "The agent replies using the summary and the current session.", example: "For your 12-19 May trip, try the vegetarian places near Alfama, close to your hotel." }
+        - { id: fold, from: llm, to: summarizer, label: session log, description: "When the session ends, its full log goes to the summarizer with the previous summary.", example: "previous summary + session: \"user: I'm vegetarian now...\"" }
+        - { id: store, from: summarizer, to: summary, label: new summary, description: "The rewritten summary replaces the old one, ready for the next session.", example: "Summary: User is vegetarian (since October). Lisbon trip 12-19 May; hotel near Alfama; prefers window seats." }
+      scenarios:
+        - id: next-session
+          label: A session reads and updates the summary
+          steps:
+            - id: recall
+              caption: A new session opens with the running summary from earlier sessions at the top of the prompt.
+              duration: 2000
+              events:
+                - { type: read, node: summary, at: [0, 0.4] }
+                - { type: send, edge: prepend, token: { kind: tokens, label: summary }, at: [0.4, 1] }
+            - id: chat
+              caption: The user mentions the trip and a new preference; the agent answers from the summary, with no tool calls.
+              duration: 2600
+              events:
+                - { type: send, edge: msg, token: { kind: prompt, label: message }, at: [0, 0.3] }
+                - { type: activate, node: llm, status: thinking, at: [0.3, 0.65] }
+                - { type: send, edge: reply, token: { kind: result, label: reply }, at: [0.65, 1] }
+            - id: fold
+              caption: When the session ends, the summarizer folds it into the old summary, which is saved for next time.
+              duration: 3000
+              events:
+                - { type: send, edge: fold, token: { kind: tokens, label: session log }, at: [0, 0.3] }
+                - { type: activate, node: summarizer, status: thinking, at: [0.3, 0.6] }
+                - { type: send, edge: store, token: { kind: result, label: new summary }, at: [0.6, 0.85] }
+                - { type: write, node: summary, at: [0.85, 1] }
+  - id: fact-store
+    name: Fact store (Mem0)
+    summary: "After each exchange, an extractor pulls out candidate facts, compares each with similar stored facts, and applies ADD, UPDATE, DELETE or NOOP."
+    origin:
+      by: Prateek Chhikara et al.
+      org: Mem0
+      year: 2025
+      url: https://arxiv.org/abs/2504.19413
+      kind: introduced
+      note: "Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory."
+    build:
+      goal: "Keep a de-duplicated store of facts about each user: extract candidate facts after every exchange, reconcile each with similar stored facts, and retrieve the relevant ones into later prompts."
+      steps:
+        - "After each exchange, send the user message, the reply and a short running summary to the extractor with the {{prompt:extract}}, and parse its JSON list of candidate facts."
+        - "For each candidate, find the 5 most similar stored facts by embedding similarity."
+        - "Call the model with the {{prompt:reconcile}}, passing the candidate and those facts, and parse one operation: ADD, UPDATE (with a fact id and new text), DELETE (with a fact id) or NOOP."
+        - "Apply the operation to the fact store, keeping each fact's id, text, timestamps and source exchange."
+        - "Before each agent turn, retrieve the 5 stored facts most similar to the new message and put them in the prompt."
+        - "If the extractor or the reconcile reply does not parse, skip the memory update for that exchange and log it; the chat carries on."
+      stop: "Memory updates run once per exchange, after the reply is sent, and never block it. There is no loop to stop; the store persists across sessions."
+      requirements:
+        - "Make the similar-fact count (default 5) and the retrieved-fact count (default 5) parameters."
+        - "Run extraction and reconciliation after the reply is sent, so the user never waits for them."
+        - "Keep updated and deleted facts in a history table, so a wrong operation can be reverted."
+        - "Log every operation with its candidate, the matched fact and the result."
+        - "Add a test with the stored fact 'User loves seafood' and a stub that returns UPDATE for the candidate 'User is vegetarian'; assert the store holds the single fact 'User is vegetarian' and the history holds the old text."
+    prompts:
+      - id: extract
+        title: Fact extraction prompt
+        lang: markdown
+        source: |
+          Extract lasting facts about the user from this exchange.
+
+          <summary>{{summary}}</summary>
+          <exchange>{{user_message}} / {{assistant_reply}}</exchange>
+
+          Include preferences, plans, relationships and corrections. Skip small talk.
+          Respond in JSON: {"facts": ["short standalone fact", "..."]}
+      - id: reconcile
+        title: Memory update prompt
+        lang: markdown
+        source: |
+          Decide how a new fact changes the user's stored memory.
+
+          <new_fact>{{candidate}}</new_fact>
+          <similar_facts>{{similar}}</similar_facts>
+
+          Choose one operation:
+          ADD if it is new; UPDATE if it refines or replaces a stored fact;
+          DELETE if it shows a stored fact is no longer true; NOOP if already known.
+          Respond in JSON: {"op": "ADD|UPDATE|DELETE|NOOP", "id": "<fact id or null>", "text": "<new text or null>"}
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: User, description: "The person chatting with the assistant, e.g. one who says 'I'm vegetarian now'." }
+        - { id: llm, kind: llm, label: Agent, description: "Replies with the most relevant stored facts in its prompt; it never manages memory itself." }
+        - { id: extractor, kind: llm, label: Extractor, description: "After each exchange, pulls out short, standalone facts worth remembering." }
+        - { id: compare, kind: evaluator, label: Reconcile, sublabel: vs similar facts, description: "Compares each candidate with the most similar stored facts and picks ADD, UPDATE, DELETE or NOOP." }
+        - { id: facts, kind: memory, label: Facts, description: "The fact store: one short fact per row, searchable by similarity, with a history of changes." }
+      edges:
+        - { id: msg, from: user, to: llm, description: "A user message starts the agent's turn.", example: "I'm vegetarian now, so no more seafood suggestions." }
+        - { id: reply, from: llm, to: user, description: "The agent's reply, sent before any memory work starts.", example: "Noted. I'll stick to vegetarian places from now on." }
+        - { id: exchange, from: llm, to: extractor, label: exchange, description: "The latest exchange goes to the extractor after the reply is sent.", example: "user: I'm vegetarian now, so no more seafood suggestions. assistant: Noted..." }
+        - { id: candidates, from: extractor, to: compare, label: candidates, description: "The candidate facts, each compared with the stored facts most similar to it.", example: "{\"facts\": [\"User is vegetarian\"]}" }
+        - { id: op, from: compare, to: facts, label: operation, description: "One operation per candidate is applied to the store.", example: "UPDATE fact 17: 'User loves Portuguese seafood' -> 'User is vegetarian (since October)'" }
+        - { id: retrieve, from: facts, to: llm, style: dashed, label: facts, description: "On the next message, the stored facts most similar to it go into the agent's prompt.", example: "Relevant facts: User is vegetarian. Lisbon trip 12-19 May." }
+      scenarios:
+        - id: preference-changes
+          label: A preference changes
+          steps:
+            - id: chat
+              caption: The user says they are vegetarian now, and the agent replies.
+              duration: 2400
+              events:
+                - { type: send, edge: msg, token: { kind: prompt, label: message }, at: [0, 0.35] }
+                - { type: activate, node: llm, status: thinking, at: [0.35, 0.65] }
+                - { type: send, edge: reply, token: { kind: result, label: reply }, at: [0.65, 1] }
+            - id: extract
+              caption: After the reply, the extractor pulls one candidate fact from the exchange.
+              duration: 2600
+              events:
+                - { type: send, edge: exchange, token: { kind: tokens, label: exchange }, at: [0, 0.35] }
+                - { type: activate, node: extractor, status: thinking, at: [0.35, 0.65] }
+                - { type: send, edge: candidates, token: { kind: result, label: vegetarian }, at: [0.65, 1] }
+            - id: reconcile
+              caption: The closest stored fact says the user loves seafood, so the operation is UPDATE, not ADD.
+              duration: 2800
+              events:
+                - { type: read, node: facts, at: [0, 0.25] }
+                - { type: activate, node: compare, status: thinking, at: [0.25, 0.55] }
+                - { type: send, edge: op, token: { kind: tokens, label: UPDATE }, at: [0.55, 0.85] }
+                - { type: write, node: facts, at: [0.85, 1] }
+            - id: next
+              caption: On the next message, the updated fact is retrieved into the agent's prompt.
+              duration: 2400
+              events:
+                - { type: send, edge: msg, token: { kind: prompt, label: dinner? }, at: [0, 0.35] }
+                - { type: read, node: facts, at: [0.35, 0.55] }
+                - { type: send, edge: retrieve, token: { kind: result, label: vegetarian }, at: [0.55, 1] }

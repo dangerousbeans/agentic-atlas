@@ -1,7 +1,7 @@
 slug: corrective-rag
 name: Corrective RAG
 family: knowledge-memory
-aliases: [CRAG, Self-RAG (variant)]
+aliases: [CRAG]
 summary: Grade the retrieved documents. If they're irrelevant, rewrite the query and fall back to web search before generating.
 badges: { autonomy: low, cost: medium, latency: medium }
 sources:
@@ -12,6 +12,28 @@ sources:
 related:
   composesWith: [agentic-rag, evaluator-optimizer]
   confusedWith: []
+origin:
+  by: Shi-Qi Yan et al.
+  org: University of Science and Technology of China, UCLA, Google DeepMind
+  year: 2024
+  url: https://arxiv.org/abs/2401.15884
+  kind: introduced
+build:
+  goal: "Answer a question from an internal index, but grade the retrieved documents first, fall back to a rewritten web search when none is relevant, and check the answer against its documents."
+  steps:
+    - "Retrieve the top 4 documents for the question from the internal index."
+    - "Grade each document with the {{prompt:grader}}, parsing its JSON into relevant and reason, and keep the relevant ones."
+    - "If none is relevant, call the {{prompt:rewriter}} with the question and the rejection reasons, run its query on web search, and use the web results as the documents."
+    - "Generate an answer from the documents, then run the {{prompt:check}} on it and parse the list of unsupported claims."
+    - "If any claim is unsupported, regenerate with that list, telling the model to drop or fix those claims, and check again."
+  stop: "Stop when the check finds every claim supported, or after 2 regenerations. At the cap, return the last answer with its unsupported claims removed, and a status saying the check did not fully pass."
+  requirements:
+    - "Make the documents retrieved (default 4) and the regeneration cap (default 2) parameters."
+    - "If a grader reply is not valid JSON, treat that document as not relevant and log the raw reply."
+    - "If web search fails or returns nothing, reply that the answer could not be found rather than generating from rejected documents."
+    - "Log every grade with its reason, the rewritten query and each check result."
+    - "Add a test with a stub grader that rejects all 4 documents and a stub web search; assert the rewriter ran once, web search ran once, and the generator received only the web documents."
+defaultVariantName: Grade and fall back
 prompts:
   - id: grader
     title: Document grader prompt
@@ -138,3 +160,195 @@ diagram:
             - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.3, 0.55] }
             - { type: branch, node: check, taken: accept, notTaken: [regen], at: [0.55, 0.75] }
             - { type: send, edge: accept, token: { kind: result, label: answer }, at: [0.75, 1] }
+variants:
+  - id: self-rag
+    name: Self-RAG
+    summary: "One model decides on demand whether to retrieve, then critiques each passage and its own output with reflection tokens; there is no separate grader."
+    origin:
+      by: Akari Asai et al.
+      org: University of Washington, Allen Institute for AI, IBM Research AI
+      year: 2023
+      url: https://arxiv.org/abs/2310.11511
+      kind: introduced
+      note: "Self-RAG trains the model to emit the reflection tokens itself (ICLR 2024). With an untrained model, a prompt can ask for the same tags, less reliably."
+    build:
+      goal: "Let one model decide on demand whether to retrieve, judge each passage's relevance and its own output's support with reflection tokens, and keep the best-scored continuation."
+      steps:
+        - "Use a model trained, or prompted with the {{prompt:self-rag}}, to emit reflection tokens: Retrieve (yes or no), IsRel (relevant or irrelevant), IsSup (fully, partially or not supported) and IsUse (1 to 5)."
+        - "Generate the next segment. If the model emits Retrieve=yes, search the index with the question plus the answer so far and take the top 4 passages."
+        - "For each passage, generate a candidate segment in parallel and read the IsRel and IsSup tokens the model emits for it."
+        - "Score each candidate from its tokens, with relevant and fully supported scoring highest; keep the best one and append it to the answer."
+        - "When the model emits Retrieve=no, generate the segment without passages."
+        - "If a candidate's reflection tokens cannot be parsed, give it the lowest score instead of failing the request."
+      stop: "Stop when the model ends its answer, or after 6 segments. Return the answer with each segment's IsSup tag, so partly supported text can be shown as such."
+      requirements:
+        - "Make the segment cap (default 6), the passages per retrieval (default 4) and the score weights parameters."
+        - "Expose a retrieval threshold: retrieve when the probability of Retrieve=yes is above it (default 0.5), where the model exposes token probabilities."
+        - "Log every segment's candidates with their reflection tokens and scores."
+        - "Add a test with a stub model that emits Retrieve=no for a rewording task; assert the retriever is never called and one segment is returned."
+    prompts:
+      - id: self-rag
+        title: Self-reflective answer prompt
+        lang: markdown
+        source: |
+          Answer the question one short segment at a time.
+
+          <question>{{question}}</question>
+          <answer_so_far>{{answer}}</answer_so_far>
+          {{#if passage}}<passage>{{passage}}</passage>{{/if}}
+
+          Before each segment, write [Retrieve=Yes] if you need a document, else [Retrieve=No].
+          If a passage is given, write [IsRel=Relevant] or [IsRel=Irrelevant] for it.
+          After the segment, write [IsSup=Fully], [IsSup=Partially] or [IsSup=No]
+          for how well the passage supports it, then [IsUse=1..5] for its usefulness.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, description: "The user's question, e.g. 'Who is our current vendor for payroll?'." }
+        - { id: model, kind: llm, label: Self-RAG model, sublabel: emits reflection tokens, description: "One model that decides whether to retrieve, tags each passage's relevance and rates how well each segment is supported." }
+        - { id: retriever, kind: memory, label: Retriever, description: "The internal index, searched only when the model emits Retrieve=Yes." }
+        - { id: out, kind: io, label: Answer, description: "The answer built from the best-scored segments, each carrying its support tag." }
+      edges:
+        - { id: ask, from: user, to: model, description: "The question goes straight to the model; there is no up-front retrieval.", example: "Question: Who is our current vendor for payroll?" }
+        - { id: retrieve, from: model, to: retriever, label: "[Retrieve]", description: "When the model emits Retrieve=Yes, the question plus the answer so far is sent to the index.", example: "[Retrieve=Yes] query: \"current payroll vendor\"" }
+        - { id: passages, from: retriever, to: model, style: dashed, label: passages, description: "Each passage gets its own candidate segment, and the model tags each passage's relevance.", example: "kb-112 2021 vendor review [IsRel=Irrelevant]; kb-207 Gusto contract, March 2025 [IsRel=Relevant]" }
+        - { id: answer, from: model, to: out, label: "[IsSup]", description: "The best-scored candidate, relevant and fully supported, becomes the answer.", example: "Acme has used Gusto for payroll since March 2025. [IsSup=Fully] [IsUse=5]" }
+      scenarios:
+        - id: retrieves
+          label: Retrieves, then critiques the passages
+          steps:
+            - id: ask
+              caption: The question reaches the model, which decides it needs a document and emits Retrieve=Yes.
+              duration: 2400
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.4] }
+                - { type: activate, node: model, status: thinking, at: [0.4, 0.7] }
+                - { type: branch, node: model, taken: retrieve, notTaken: [answer], at: [0.7, 1] }
+            - id: search
+              caption: The index returns four passages.
+              duration: 2400
+              events:
+                - { type: send, edge: retrieve, token: { kind: tool-call, label: query }, at: [0, 0.4] }
+                - { type: read, node: retriever, at: [0.4, 0.6] }
+                - { type: send, edge: passages, token: { kind: result, label: 4 passages }, at: [0.6, 1] }
+            - id: critique
+              caption: The model drafts a segment per passage and tags each one; the 2021 vendor review is marked irrelevant.
+              duration: 2600
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 1] }
+            - id: answer
+              caption: The fully supported segment from the Gusto contract scores highest and becomes the answer.
+              duration: 2200
+              events:
+                - { type: branch, node: model, taken: answer, notTaken: [retrieve], at: [0, 0.3] }
+                - { type: send, edge: answer, token: { kind: result, label: Gusto }, at: [0.3, 1] }
+        - id: no-retrieval
+          label: No retrieval needed
+          steps:
+            - id: ask
+              caption: A request to reword a sentence reaches the model, which emits Retrieve=No.
+              duration: 2400
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: reword }, at: [0, 0.4] }
+                - { type: activate, node: model, status: thinking, at: [0.4, 0.7] }
+                - { type: branch, node: model, taken: answer, notTaken: [retrieve], at: [0.7, 1] }
+            - id: answer
+              caption: It writes the answer without touching the index.
+              duration: 1800
+              events:
+                - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0, 1] }
+  - id: groundedness
+    name: Groundedness loop
+    summary: "After generating, a grader checks that the answer is grounded and on-topic: ungrounded answers regenerate, and off-topic ones rewrite the query and retrieve again."
+    build:
+      goal: "Answer from retrieved documents, then grade the answer itself: regenerate when it is not grounded in the documents, and rewrite the query and retrieve again when it does not answer the question."
+      steps:
+        - "Retrieve the top 4 documents for the question and generate an answer from them."
+        - "Grade the answer with the {{prompt:answer-grader}}, parsing its JSON into grounded, answers_question and unsupported claims."
+        - "If both checks are true, return the answer."
+        - "If grounded is false, regenerate from the same documents, passing the unsupported claims to drop or fix."
+        - "If grounded is true but answers_question is false, call the {{prompt:rewriter}} for a new query, retrieve again and regenerate."
+        - "If the grader's JSON does not parse, retry once; if it fails again, treat the answer as not grounded."
+      stop: "Stop when both checks pass, or after 3 loops in total, regenerations and re-retrievals together. At the cap, reply that no supported answer was found and return the last documents."
+      requirements:
+        - "Make the total loop cap (default 3) and the documents per retrieval (default 4) parameters."
+        - "Cap re-retrievals separately (default 2), so a poor index cannot use up every loop."
+        - "Log each grade with the loop it triggered."
+        - "Add a test with a stub grader that returns answers_question=false once and then passes both checks; assert two retrievals, the second using the rewritten query, and that the second answer is returned."
+    prompts:
+      - id: answer-grader
+        title: Answer grader prompt
+        lang: markdown
+        source: |
+          Grade an answer against the documents it was written from and the question.
+
+          <question>{{question}}</question>
+          <documents>{{docs}}</documents>
+          <answer>{{answer}}</answer>
+
+          Respond in JSON:
+          {"grounded": true|false, "answers_question": true|false,
+           "unsupported_claims": ["claim", "..."]}
+          grounded is true only if every claim is stated in the documents.
+      - id: rewriter
+        title: Query rewriter prompt
+        lang: markdown
+        source: |
+          The answer below did not address the question, so the search missed.
+
+          <question>{{question}}</question>
+          <answer>{{answer}}</answer>
+
+          Write one search query that would find the missing facts. Use specific
+          terms and names, not the full question. Return only the query.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, description: "The user's question, e.g. 'Who is our current vendor for payroll?'." }
+        - { id: retriever, kind: memory, label: Retriever, description: "The internal index, searched with the question and again with any rewritten query." }
+        - { id: generator, kind: llm, label: Generator, description: "Writes the answer from the retrieved documents, and rewrites it when claims are flagged as unsupported." }
+        - { id: grader, kind: evaluator, label: Answer grader, description: "Checks the answer twice: are its claims in the documents, and does it answer the question at all?" }
+        - { id: rewriter, kind: llm, label: Rewriter, description: "Turns a question the search missed into a sharper query." }
+        - { id: out, kind: io, label: Answer, description: "An answer that is both grounded and on the question." }
+      edges:
+        - { id: ask, from: user, to: retriever, description: "The question is the first search query.", example: "Question: Who is our current vendor for payroll?" }
+        - { id: docs, from: retriever, to: generator, style: dashed, label: docs, description: "The top documents go to the generator.", example: "4 docs: \"Payroll runs on the 25th of each month...\", \"Payroll FAQ...\"" }
+        - { id: draft, from: generator, to: grader, label: answer, description: "Each answer is graded with the documents it should rest on.", example: "Payroll runs on the 25th of each month." }
+        - { id: regen, from: grader, to: generator, style: loop, label: ungrounded, description: "Claims not found in the documents go back so the generator can drop or fix them.", example: "{\"grounded\": false, \"answers_question\": true, \"unsupported_claims\": [\"on a three-year contract\"]}" }
+        - { id: off, from: grader, to: rewriter, label: off-topic, description: "A grounded answer that misses the question means the search missed, so the query is rewritten.", example: "{\"grounded\": true, \"answers_question\": false, \"unsupported_claims\": []}" }
+        - { id: requery, from: rewriter, to: retriever, style: loop, label: new query, description: "The rewritten query is searched, and the loop continues with the new documents.", example: "payroll provider contract vendor name 2025" }
+        - { id: accept, from: grader, to: out, label: grounded, description: "An answer that passes both checks leaves the loop.", example: "Acme has used Gusto for payroll since March 2025." }
+      scenarios:
+        - id: off-topic
+          label: The first answer misses the question
+          steps:
+            - id: retrieve
+              caption: The question is searched and the documents go to the generator.
+              duration: 2000
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.4] }
+                - { type: read, node: retriever, at: [0.4, 0.6] }
+                - { type: send, edge: docs, token: { kind: result, label: 4 docs }, at: [0.6, 1] }
+            - id: first-answer
+              caption: The answer is grounded but talks about pay dates, not the vendor, so the grader marks it off-topic.
+              duration: 3000
+              events:
+                - { type: activate, node: generator, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: draft, token: { kind: result, label: answer }, at: [0.3, 0.55] }
+                - { type: activate, node: grader, status: error, at: [0.55, 0.75] }
+                - { type: branch, node: grader, taken: off, notTaken: [accept, regen], at: [0.75, 1] }
+            - id: rewrite
+              caption: The rewriter writes a sharper query and the index is searched again.
+              duration: 3000
+              events:
+                - { type: send, edge: off, token: { kind: feedback, label: off-topic }, at: [0, 0.25] }
+                - { type: activate, node: rewriter, status: thinking, at: [0.25, 0.45] }
+                - { type: send, edge: requery, token: { kind: tool-call, label: new query }, at: [0.45, 0.7] }
+                - { type: read, node: retriever, at: [0.7, 0.85] }
+                - { type: send, edge: docs, token: { kind: result, label: contract }, at: [0.85, 1] }
+            - id: second-answer
+              caption: The new answer names the vendor, every claim is in the documents, and it is returned.
+              duration: 2800
+              events:
+                - { type: activate, node: generator, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: draft, token: { kind: result, label: answer }, at: [0.3, 0.55] }
+                - { type: branch, node: grader, taken: accept, notTaken: [off, regen], at: [0.55, 0.7] }
+                - { type: send, edge: accept, token: { kind: result, label: Gusto }, at: [0.7, 1] }
