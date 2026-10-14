@@ -11,6 +11,30 @@ related:
   composesWith: [routing, evaluator-optimizer]
   confusedWith:
     - { slug: orchestrator-workers, difference: "A chain runs the same fixed steps in order every time; an orchestrator decides the steps at run time." }
+origin:
+  by: Erik Schluntz and Barry Zhang
+  org: Anthropic
+  year: 2024
+  url: https://www.anthropic.com/engineering/building-effective-agents
+  kind: popularized
+  note: "Anthropic named the pattern in 2024. Chaining LLM steps was introduced earlier as AI Chains by Tongshuang Wu, Michael Terry and Carrie J. Cai (University of Washington, Google Research) in 2021: https://arxiv.org/abs/2110.01691."
+build:
+  goal: "Turn a blog-post brief into a finished post through a fixed sequence of calls (outline, check, draft, polish), stopping early when the outline fails a code check."
+  steps:
+    - "Define the chain in code as an ordered list of steps; each step names its prompt, its input and the one output it passes on. The model never picks the next step."
+    - "Call the model with the {{prompt:outline}}, filling in the brief and the audience, and parse the reply as JSON into a list of sections."
+    - "Run the gate in plain code: the JSON parses, it has between 4 and 6 sections, and every section has a non-empty heading and point."
+    - "If the gate fails, end the chain and return an error result holding the rejected outline and the name of the check that failed. Do not call the draft step."
+    - "If it passes, call the model with the {{prompt:draft}}, passing only the approved outline and the target word count."
+    - "Send the draft to a third call that polishes tone and clarity without changing the structure, and return its text as the post."
+  stop: "The chain ends after the polish step, or at the first failed gate. Nothing loops: each step runs once, so a run makes at most 3 model calls, plus one retry per failed call."
+  requirements:
+    - "Keep the section bounds (default 4 to 6) and the word count (default 800) as parameters, not literals inside a prompt."
+    - "If a model call errors or times out, retry it once, then end the chain with an error that names the step."
+    - "Pass each step only the fields it needs, as named values (outline, draft), never the whole conversation so far."
+    - "Log every step's input, output, gate result and token count, so a bad post can be traced to the step that caused it."
+    - "Add a test with a stub LLM whose outline has 2 sections; assert exactly one model call was made and the result is an error containing that outline."
+defaultVariantName: Gated exit
 prompts:
   - id: outline
     title: Step 1, outline prompt
@@ -95,3 +119,206 @@ diagram:
             - { type: activate, node: gate, status: error, at: [0, 0.4] }
             - { type: branch, node: gate, taken: fail, notTaken: [pass], at: [0.4, 0.6] }
             - { type: send, edge: fail, token: { kind: feedback, label: rejected }, at: [0.6, 1] }
+variants:
+  - id: gate-retry
+    name: Gate with retry
+    summary: "A failed check sends its error back to the step that produced the output, for a capped number of retries, instead of ending the chain."
+    build:
+      goal: "Turn a brief into a finished post through fixed steps, where an outline that fails the code check is sent back with the error for a capped number of retries before the chain gives up."
+      steps:
+        - "Define the chain in code as an ordered list of steps: outline, check, draft, polish. The model never picks the next step."
+        - "Call the model with the {{prompt:outline}}, filling in the brief and the audience, and parse the reply as JSON into a list of sections."
+        - "Run the gate in plain code: the JSON parses, it has between 4 and 6 sections, and every section has a non-empty heading and point. Collect every failed check as a short error message."
+        - "If the gate fails and attempts remain, call the outline step again with the same brief plus the error messages, and check the new outline."
+        - "If the gate passes, call the model with the {{prompt:draft}}, passing only the approved outline and the word count, then polish the draft in a third call and return it."
+      stop: "Stop after the polish step, or when the outline has failed the gate 3 times in total. In that case return an error result with the last outline and every error message, and do not draft."
+      requirements:
+        - "Make the attempt cap a parameter (default 3 attempts, so 2 retries); the retry loop must never run without one."
+        - "Send the gate's error messages back verbatim and specifically (\"3 sections, need 4 to 6\"), never a bare \"invalid\"."
+        - "Treat a reply that is not valid JSON as a gate failure with the parse error as its message, so it uses the same retry path."
+        - "Log each attempt's outline and errors, so a brief that keeps failing can be found and its prompt fixed."
+        - "Add a test with a stub LLM whose first outline has 2 sections and whose second has 4; assert two outline calls, that the second prompt contains the error, and that a post is returned."
+    prompts:
+      - id: outline
+        title: Step 1, outline prompt
+        lang: markdown
+        source: |
+          You are planning a blog post for {{audience}}.
+
+          <brief>{{brief}}</brief>
+
+          {{#if errors}}
+          Your previous outline failed these checks. Fix every one:
+          <errors>{{errors}}</errors>
+          {{/if}}
+
+          Write an outline with 4 to 6 sections. Give each section a heading
+          and one sentence on what it must prove. Output JSON:
+          {"sections": [{"heading": "...", "point": "..."}]}
+      - id: draft
+        title: Step 2, draft prompt
+        lang: markdown
+        source: |
+          Write the full post from this approved outline. Follow it exactly:
+          same sections, same order, no new sections.
+
+          <outline>{{outline}}</outline>
+
+          Keep to about {{word_count}} words and write in a plain, concrete voice.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Brief, description: "The blog-post brief that starts the chain, such as 'Write a post on index tuning for Postgres'." }
+        - { id: llm1, kind: llm, label: Outline, description: "First call: turns the brief into a 4-6 section outline as JSON; on a retry it also sees the check's error messages." }
+        - { id: gate, kind: guard, label: Check, model: false, description: "Plain code, not a model: checks the outline parses and has 4-6 complete sections, and counts the attempts." }
+        - { id: llm2, kind: llm, label: Draft, description: "Second call: writes the full post from the approved outline alone, keeping its sections and order." }
+        - { id: llm3, kind: llm, label: Polish, description: "Third call: polishes the draft for tone and clarity and returns the finished post." }
+        - { id: out, kind: io, label: Post, description: "The finished post, or an error with the last outline once every attempt has failed the check." }
+      edges:
+        - { id: in, from: user, to: llm1, description: "The brief is filled into the outline prompt and sent to the first call.", example: "You are planning a blog post for backend engineers. <brief>Write a post on index tuning for Postgres</brief>" }
+        - { id: to-gate, from: llm1, to: gate, description: "Each outline goes to the code check before anything is drafted from it.", example: "{\"sections\": [{\"heading\": \"Intro\", \"point\": \"Indexes speed reads.\"}, {\"heading\": \"Tips\", \"point\": \"Add indexes.\"}]}" }
+        - { id: retry, from: gate, to: llm1, style: loop, label: retry, description: "A failed check sends its error messages back to the outline step, which tries again while attempts remain.", example: "<errors>Outline has 2 sections; it needs 4 to 6.</errors> Attempt 2 of 3." }
+        - { id: pass, from: gate, to: llm2, description: "A valid outline continues down the chain to the draft step.", example: "Write the full post from this approved outline: {\"sections\": [{\"heading\": \"Why indexes\", \"point\": \"Avoid scans.\"}, {\"heading\": \"EXPLAIN\", \"point\": \"Find the scan.\"}, ...]}" }
+        - { id: give-up, from: gate, to: out, style: dashed, label: give up, description: "After the last allowed attempt fails, the chain exits with an error instead of drafting.", example: "{\"error\": \"outline failed checks after 3 attempts\", \"errors\": [\"3 sections, need 4 to 6\"]}" }
+        - { id: to-polish, from: llm2, to: llm3, description: "The full draft passes to the last call for a polish pass.", example: "Index tuning starts with measurement. Run EXPLAIN ANALYZE on the slow query and look for a Seq Scan on a large table..." }
+        - { id: done, from: llm3, to: out, description: "The polished post leaves the chain as its final output.", example: "Index Tuning in Postgres: Measure First. Start with EXPLAIN ANALYZE on the slow query and look for sequential scans on large tables..." }
+      scenarios:
+        - id: retry-then-pass
+          label: Fails once, then passes
+          steps:
+            - { id: arrive, caption: A brief for a blog post enters the first prompt., duration: 1000, events: [{ type: send, edge: in, token: { kind: prompt, label: brief } }] }
+            - id: first
+              caption: The first outline has only two sections, so the check sends the error back to the outline step.
+              duration: 2600
+              events:
+                - { type: activate, node: llm1, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: to-gate, token: { kind: result, label: outline }, at: [0.3, 0.55] }
+                - { type: activate, node: gate, status: error, at: [0.55, 0.7] }
+                - { type: branch, node: gate, taken: retry, notTaken: [pass, give-up], at: [0.6, 0.75] }
+                - { type: send, edge: retry, token: { kind: feedback, label: 2 sections }, at: [0.75, 1] }
+            - id: second
+              caption: The retried outline has five sections and passes the check.
+              duration: 2400
+              events:
+                - { type: activate, node: llm1, status: thinking, at: [0, 0.35] }
+                - { type: send, edge: to-gate, token: { kind: result, label: outline }, at: [0.35, 0.6] }
+                - { type: branch, node: gate, taken: pass, notTaken: [retry, give-up], at: [0.6, 0.75] }
+                - { type: send, edge: pass, token: { kind: result, label: ok }, at: [0.75, 1] }
+            - id: finish
+              caption: The draft and polish steps run as usual and the post comes out.
+              duration: 2600
+              events:
+                - { type: activate, node: llm2, status: thinking, at: [0, 0.35] }
+                - { type: send, edge: to-polish, token: { kind: result, label: draft }, at: [0.35, 0.55] }
+                - { type: activate, node: llm3, status: thinking, at: [0.55, 0.8] }
+                - { type: send, edge: done, token: { kind: result, label: post }, at: [0.8, 1] }
+        - id: gives-up
+          label: Fails every attempt
+          steps:
+            - { id: arrive, caption: A vague brief enters the first prompt., duration: 1000, events: [{ type: send, edge: in, token: { kind: prompt, label: brief } }] }
+            - id: attempt
+              caption: The outline fails the check, and the error goes back for another attempt.
+              duration: 2400
+              repeat: 2
+              events:
+                - { type: activate, node: llm1, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: to-gate, token: { kind: result, label: outline }, at: [0.3, 0.55] }
+                - { type: branch, node: gate, taken: retry, notTaken: [pass, give-up], at: [0.55, 0.7] }
+                - { type: send, edge: retry, token: { kind: feedback, label: errors }, at: [0.7, 1] }
+            - id: last
+              caption: The third outline fails too; the attempts are used up, so the chain exits with the errors.
+              duration: 2400
+              events:
+                - { type: activate, node: llm1, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: to-gate, token: { kind: result, label: outline }, at: [0.3, 0.55] }
+                - { type: activate, node: gate, status: error, at: [0.55, 0.7] }
+                - { type: branch, node: gate, taken: give-up, notTaken: [pass, retry], at: [0.6, 0.75] }
+                - { type: send, edge: give-up, token: { kind: feedback, label: failed }, at: [0.75, 1] }
+  - id: refine-chain
+    name: Incremental refine
+    summary: "One refine step runs once per chunk of a long input, folding each chunk into a running summary that is carried forward."
+    origin:
+      by: Yapei Chang et al.
+      org: University of Massachusetts Amherst, AI2, Princeton
+      year: 2023
+      url: https://arxiv.org/abs/2310.00785
+      kind: popularized
+      uncertain: true
+      note: "Studied, not introduced, by BooookScore (ICLR 2024), which evaluates incremental updating against hierarchical merging for book-length summaries; the workflow was already common in LLM tooling."
+    build:
+      goal: "Summarize a document too long for one call by running a single refine step once per chunk, in order, carrying a running summary forward from chunk to chunk."
+      steps:
+        - "Split the document in code into chunks that fit the context window with room to spare (default 2,000 tokens each), keeping their order and breaking at paragraph ends."
+        - "Start with an empty running summary."
+        - "For each chunk in order, call the model with the {{prompt:refine}}, passing the chunk, its position (3 of 40) and the running summary, and replace the summary with the reply."
+        - "If the new summary is longer than the length cap, call the model once with the {{prompt:compress}}, and keep the shorter of the two summaries."
+        - "After the last chunk, return the running summary."
+      stop: "Stop after the last chunk has been folded in. The loop runs exactly once per chunk, so the number of calls is fixed by the input's length, plus at most one compression call per chunk."
+      requirements:
+        - "Make the chunk size (default 2,000 tokens) and the summary length cap (default 500 words) parameters."
+        - "Process chunks strictly in order; the summary after chunk i must be the only memory passed to chunk i + 1."
+        - "If a refine call errors, retry it once; if it fails again, stop and return the summary so far with the index of the chunk that failed."
+        - "Save the summary after every chunk, so a long run can resume from the last good chunk."
+        - "Add a test with a stub LLM that replies \"S\" plus the chunk number; feed 3 chunks and assert 3 calls, that call 3 received \"S2\" as the summary, and that \"S3\" is returned."
+    prompts:
+      - id: refine
+        title: Refine prompt
+        lang: markdown
+        source: |
+          You are summarizing a long {{document_type}} one part at a time.
+
+          <summary_so_far>{{summary}}</summary_so_far>
+          <part number="{{index}}" of="{{total}}">{{chunk}}</part>
+
+          Update the summary so it also covers this part. Keep earlier
+          points unless this part contradicts them, keep events in order,
+          and stay under {{max_words}} words. Return only the summary.
+      - id: compress
+        title: Compress prompt
+        lang: markdown
+        source: |
+          Shorten this summary to under {{max_words}} words. Keep events
+          in order, keep every name the later parts may need, and drop
+          detail before dropping events. Return only the summary.
+
+          <summary>{{summary}}</summary>
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Book, description: "The long input, here a 300-page novel, far too long for one call." }
+        - { id: chunks, kind: tool, label: Chunker, model: false, description: "Plain code, not a model: splits the book into ordered chunks of about 2,000 tokens, breaking at paragraph ends." }
+        - { id: refiner, kind: llm, label: Refine, sublabel: once per chunk, description: "One prompt, run once per chunk: it folds the new chunk into the running summary and returns the updated summary." }
+        - { id: summary, kind: memory, label: Running summary, description: "The summary so far, replaced after every chunk; it is the only thing carried from one chunk to the next." }
+        - { id: out, kind: io, label: Summary, description: "The running summary after the last chunk, returned as the book's summary." }
+      edges:
+        - { id: in, from: user, to: chunks, description: "The whole book goes to the chunker.", example: "the-lighthouse-keeper.txt (312 pages, about 95,000 words)" }
+        - { id: next, from: chunks, to: refiner, label: chunk i, description: "The chunks go to the refine step one at a time, in order.", example: "<part number=\"3\" of=\"48\">Mara rows out to the rock at dawn and finds the lamp already lit...</part>" }
+        - { id: write, from: refiner, to: summary, description: "The refine step's reply replaces the running summary.", example: "Mara, the new keeper, arrives on the island and learns the last keeper vanished. On her first morning she finds the lamp lit by someone else." }
+        - { id: carry, from: summary, to: refiner, style: loop, label: so far, description: "The current summary goes into the next chunk's prompt, so each call sees the story so far without the earlier text.", example: "<summary_so_far>Mara, the new keeper, arrives on the island and learns the last keeper vanished.</summary_so_far>" }
+        - { id: done, from: summary, to: out, description: "After the last chunk, the running summary is returned as the result.", example: "A young keeper on a remote island uncovers why her predecessor vanished, and chooses to stay. 480 words." }
+      scenarios:
+        - id: three-chunks
+          label: Folds in chunk after chunk
+          steps:
+            - id: split
+              caption: Plain code splits the book into ordered chunks.
+              duration: 1400
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: book }, at: [0, 0.6] }
+                - { type: activate, node: chunks, status: calling, at: [0.6, 1] }
+            - id: fold
+              caption: The next chunk and the summary so far go to the refine step, which writes the updated summary back.
+              duration: 3000
+              repeat: 3
+              events:
+                - { type: send, edge: next, token: { kind: prompt, label: chunk }, at: [0, 0.3] }
+                - { type: read, node: summary, at: [0, 0.15] }
+                - { type: send, edge: carry, token: { kind: prompt, label: so far }, at: [0.1, 0.35] }
+                - { type: activate, node: refiner, status: thinking, at: [0.35, 0.7] }
+                - { type: send, edge: write, token: { kind: result, label: summary }, at: [0.7, 0.9] }
+                - { type: write, node: summary, at: [0.88, 1] }
+            - id: finish
+              caption: After the last chunk, the running summary is returned.
+              duration: 1600
+              events:
+                - { type: read, node: summary, at: [0, 0.3] }
+                - { type: send, edge: done, token: { kind: result, label: summary }, at: [0.3, 0.9] }
+                - { type: activate, node: out, status: done, at: [0.85, 1] }
