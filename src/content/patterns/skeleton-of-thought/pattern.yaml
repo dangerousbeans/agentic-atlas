@@ -34,7 +34,7 @@ build:
     - "Cap the number of points (default 10) and the length of each expansion (default 2 sentences)."
     - "Keep the join step as plain code; do not add a synthesis call, which would put back the latency the pattern removes."
     - "Log the skeleton, each expansion's latency, and the total time to the full answer."
-    - "Add a test with a stub LLM returning a 3-point skeleton and a fixed expansion per point, with point 1's stub delayed longest; assert three expansion calls are in flight at once and the joined answer lists the points in order 1, 2, 3."
+    - "Add a test with a stub LLM returning a 3-point skeleton and a fixed expansion per point, with point 1 delayed longest; have the stub record its maximum concurrent calls and assert it is 3, and that the joined answer lists the points in order 1, 2, 3."
 prompts:
   - id: skeleton
     title: Skeleton prompt
