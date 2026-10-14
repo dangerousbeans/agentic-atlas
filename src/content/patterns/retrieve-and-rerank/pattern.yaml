@@ -151,6 +151,6 @@ diagram:
           duration: 2600
           events:
             - { type: send, edge: to-bm25, token: { kind: result, label: prefixed }, at: [0, 0.6] }
-            - { type: send, edge: to-vectors, token: { kind: result, label: prefixed }, at: [0, 0.6] }
+            - { type: send, edge: to-vectors, token: { kind: result }, at: [0, 0.6] }
             - { type: write, node: bm25, at: [0.6, 1] }
             - { type: write, node: vectors, at: [0.6, 1] }

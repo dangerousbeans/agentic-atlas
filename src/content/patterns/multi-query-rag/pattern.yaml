@@ -238,9 +238,9 @@ variants:
               caption: Each branch answers its sub-question from its own documents only.
               duration: 3200
               events:
-                - { type: send, edge: c1, token: { kind: result, label: docs }, at: [0, 0.35] }
+                - { type: send, edge: c1, token: { kind: result }, at: [0, 0.35] }
                 - { type: send, edge: c2, token: { kind: result, label: docs }, at: [0, 0.35] }
-                - { type: send, edge: c3, token: { kind: result, label: docs }, at: [0, 0.35] }
+                - { type: send, edge: c3, token: { kind: result }, at: [0, 0.35] }
                 - { type: activate, node: a1, status: thinking, at: [0.35, 0.75] }
                 - { type: activate, node: a2, status: thinking, at: [0.35, 0.75] }
                 - { type: activate, node: a3, status: thinking, at: [0.35, 0.75] }
@@ -328,7 +328,7 @@ variants:
               duration: 2400
               events:
                 - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.5] }
-                - { type: send, edge: direct, token: { kind: prompt, label: question }, at: [0, 0.5] }
+                - { type: send, edge: direct, token: { kind: prompt }, at: [0, 0.5] }
                 - { type: read, node: specific, at: [0.5, 1] }
                 - { type: activate, node: stepback, status: thinking, at: [0.5, 1] }
             - id: abstract

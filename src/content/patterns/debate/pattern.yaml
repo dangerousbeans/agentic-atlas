@@ -89,9 +89,9 @@ diagram:
           caption: The same question goes to all three debaters at once.
           duration: 1400
           events:
-            - { type: send, edge: q-a, token: { kind: prompt, label: question } }
+            - { type: send, edge: q-a, token: { kind: prompt } }
             - { type: send, edge: q-b, token: { kind: prompt, label: question } }
-            - { type: send, edge: q-c, token: { kind: prompt, label: question } }
+            - { type: send, edge: q-c, token: { kind: prompt } }
         - id: independent
           caption: Each debater reasons alone, so the first answers disagree.
           duration: 2000
@@ -283,9 +283,9 @@ variants:
               caption: The same question goes to all three debaters at once.
               duration: 1400
               events:
-                - { type: send, edge: q-a, token: { kind: prompt, label: question }, at: [0, 0.7] }
+                - { type: send, edge: q-a, token: { kind: prompt }, at: [0, 0.7] }
                 - { type: send, edge: q-b, token: { kind: prompt, label: question }, at: [0.15, 0.85] }
-                - { type: send, edge: q-c, token: { kind: prompt, label: question }, at: [0.3, 1] }
+                - { type: send, edge: q-c, token: { kind: prompt }, at: [0.3, 1] }
             - id: first-answers
               caption: Each debater answers alone, and the answers reach the round check. A says prime; B and C say 59 x 61.
               duration: 2600
@@ -294,16 +294,16 @@ variants:
                 - { type: activate, node: b, status: thinking, at: [0, 0.5] }
                 - { type: activate, node: c, status: thinking, at: [0, 0.5] }
                 - { type: send, edge: a-in, token: { kind: result, label: prime }, at: [0.5, 1] }
-                - { type: send, edge: b-in, token: { kind: result, label: 59 x 61 }, at: [0.5, 1] }
-                - { type: send, edge: c-in, token: { kind: result, label: 59 x 61 }, at: [0.5, 1] }
+                - { type: send, edge: b-in, token: { kind: result }, at: [0.5, 1] }
+                - { type: send, edge: c-in, token: { kind: result }, at: [0.5, 1] }
             - id: share
               caption: The answers differ, so the check hands every debater the other two answers.
               duration: 2400
               events:
                 - { type: branch, node: check, taken: to-a, notTaken: [agreed], at: [0, 0.3] }
-                - { type: send, edge: to-a, token: { kind: feedback, label: others }, at: [0.3, 1] }
+                - { type: send, edge: to-a, token: { kind: feedback }, at: [0.3, 1] }
                 - { type: send, edge: to-b, token: { kind: feedback, label: others }, at: [0.3, 1] }
-                - { type: send, edge: to-c, token: { kind: feedback, label: others }, at: [0.3, 1] }
+                - { type: send, edge: to-c, token: { kind: feedback }, at: [0.3, 1] }
             - id: round-one
               caption: "Each debater rechecks the others' reasoning; A multiplies 59 by 61 and changes its answer."
               duration: 2600
@@ -311,9 +311,9 @@ variants:
                 - { type: activate, node: a, status: thinking, at: [0, 0.5] }
                 - { type: activate, node: b, status: thinking, at: [0, 0.5] }
                 - { type: activate, node: c, status: thinking, at: [0, 0.5] }
-                - { type: send, edge: a-in, token: { kind: result, label: 59 x 61 }, at: [0.5, 1] }
+                - { type: send, edge: a-in, token: { kind: result }, at: [0.5, 1] }
                 - { type: send, edge: b-in, token: { kind: result, label: 59 x 61 }, at: [0.5, 1] }
-                - { type: send, edge: c-in, token: { kind: result, label: 59 x 61 }, at: [0.5, 1] }
+                - { type: send, edge: c-in, token: { kind: result }, at: [0.5, 1] }
             - id: agree
               caption: All three answers now agree, so the debate ends with no judge.
               duration: 2000

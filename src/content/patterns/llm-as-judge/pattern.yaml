@@ -299,7 +299,7 @@ variants:
               duration: 2600
               events:
                 - { type: send, edge: case-a, token: { kind: prompt, label: case 17 }, at: [0, 0.4] }
-                - { type: send, edge: case-b, token: { kind: prompt, label: case 17 }, at: [0, 0.4] }
+                - { type: send, edge: case-b, token: { kind: prompt }, at: [0, 0.4] }
                 - { type: send, edge: reply-a, token: { kind: result, label: reply A }, at: [0.5, 1] }
                 - { type: send, edge: reply-b, token: { kind: result, label: reply B }, at: [0.5, 1] }
             - id: first-order
@@ -329,7 +329,7 @@ variants:
               duration: 2400
               events:
                 - { type: send, edge: case-a, token: { kind: prompt, label: case 52 }, at: [0, 0.4] }
-                - { type: send, edge: case-b, token: { kind: prompt, label: case 52 }, at: [0, 0.4] }
+                - { type: send, edge: case-b, token: { kind: prompt }, at: [0, 0.4] }
                 - { type: send, edge: reply-a, token: { kind: result, label: reply A }, at: [0.5, 1] }
                 - { type: send, edge: reply-b, token: { kind: result, label: reply B }, at: [0.5, 1] }
             - id: flip
@@ -472,9 +472,9 @@ variants:
               duration: 2600
               events:
                 - { type: send, edge: cases, token: { kind: prompt, label: case 17 }, at: [0, 0.4] }
-                - { type: send, edge: to-j1, token: { kind: result, label: reply }, at: [0.5, 1] }
+                - { type: send, edge: to-j1, token: { kind: result }, at: [0.5, 1] }
                 - { type: send, edge: to-j2, token: { kind: result, label: reply }, at: [0.5, 1] }
-                - { type: send, edge: to-j3, token: { kind: result, label: reply }, at: [0.5, 1] }
+                - { type: send, edge: to-j3, token: { kind: result }, at: [0.5, 1] }
             - id: vote
               caption: Each judge scores alone. Two say pass and one says fail.
               duration: 3000
@@ -500,9 +500,9 @@ variants:
               duration: 2600
               events:
                 - { type: send, edge: cases, token: { kind: prompt, label: case 40 }, at: [0, 0.4] }
-                - { type: send, edge: to-j1, token: { kind: result, label: reply }, at: [0.5, 1] }
+                - { type: send, edge: to-j1, token: { kind: result }, at: [0.5, 1] }
                 - { type: send, edge: to-j2, token: { kind: result, label: reply }, at: [0.5, 1] }
-                - { type: send, edge: to-j3, token: { kind: result, label: reply }, at: [0.5, 1] }
+                - { type: send, edge: to-j3, token: { kind: result }, at: [0.5, 1] }
             - id: vote
               caption: Judge 1 is swayed by the length and passes it; the other two catch the policy error.
               duration: 3000

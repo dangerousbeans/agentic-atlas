@@ -82,9 +82,9 @@ diagram:
           caption: The same snippet goes to three voters, each sampled independently.
           duration: 1400
           events:
-            - { type: send, edge: v1, token: { kind: prompt, label: snippet } }
+            - { type: send, edge: v1, token: { kind: prompt } }
             - { type: send, edge: v2, token: { kind: prompt, label: snippet } }
-            - { type: send, edge: v3, token: { kind: prompt, label: snippet } }
+            - { type: send, edge: v3, token: { kind: prompt } }
         - id: work
           caption: Each voter reasons on its own and arrives at an answer.
           duration: 2600
@@ -177,9 +177,9 @@ variants:
               caption: The same snippet goes to three samples at once.
               duration: 1400
               events:
-                - { type: send, edge: v1, token: { kind: prompt, label: snippet } }
+                - { type: send, edge: v1, token: { kind: prompt } }
                 - { type: send, edge: v2, token: { kind: prompt, label: snippet } }
-                - { type: send, edge: v3, token: { kind: prompt, label: snippet } }
+                - { type: send, edge: v3, token: { kind: prompt } }
             - id: work
               caption: Each sample writes its own paragraph; no two match word for word, so an exact-match vote cannot count them.
               duration: 2600
@@ -274,9 +274,9 @@ variants:
               caption: The question goes to three different models at once.
               duration: 1400
               events:
-                - { type: send, edge: v1, token: { kind: prompt, label: question } }
+                - { type: send, edge: v1, token: { kind: prompt } }
                 - { type: send, edge: v2, token: { kind: prompt, label: question } }
-                - { type: send, edge: v3, token: { kind: prompt, label: question } }
+                - { type: send, edge: v3, token: { kind: prompt } }
             - id: work
               caption: Each model answers in its own way and at its own speed.
               duration: 2600

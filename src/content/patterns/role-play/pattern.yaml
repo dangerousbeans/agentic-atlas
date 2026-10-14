@@ -100,7 +100,7 @@ diagram:
             - { type: send, edge: seed, token: { kind: prompt, label: idea }, at: [0, 0.3] }
             - { type: activate, node: specifier, status: thinking, at: [0.3, 0.6] }
             - { type: send, edge: brief-user, token: { kind: prompt, label: task }, at: [0.6, 1] }
-            - { type: send, edge: brief-assistant, token: { kind: prompt, label: task }, at: [0.6, 1] }
+            - { type: send, edge: brief-assistant, token: { kind: prompt }, at: [0.6, 1] }
         - id: exchange
           caption: The AI user gives one instruction; the AI assistant answers with a solution and asks for the next request.
           duration: 3200
@@ -126,7 +126,7 @@ diagram:
           duration: 2000
           events:
             - { type: send, edge: brief-user, token: { kind: prompt, label: task }, at: [0, 0.6] }
-            - { type: send, edge: brief-assistant, token: { kind: prompt, label: task }, at: [0, 0.6] }
+            - { type: send, edge: brief-assistant, token: { kind: prompt }, at: [0, 0.6] }
         - id: drift
           caption: The assistant flips roles and replies with an instruction of its own; the format check rejects it before it reaches the AI user.
           duration: 3000

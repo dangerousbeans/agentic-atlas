@@ -115,7 +115,7 @@ diagram:
       to: tool
       style: dashed
       label: next steps
-      description: "The new worker runs the remaining steps. After a crash the first is a redo of step 23 with the same idempotency key, which the database recognizes and skips."
+      description: "The resuming worker runs the remaining steps. Each call carries its step's idempotency key, so a step already applied before the interruption is skipped, not run twice."
       example: "copy_batch(offset=2,200,000, key='mig-0412/step-23') -> already applied, skipped"
     - id: done
       from: worker2

@@ -248,7 +248,7 @@ variants:
         - { id: spawn-2, from: lead, to: r2, label: brief, description: "A second brief, sent at the same moment, for a part that does not overlap the first.", example: "{\"objective\": \"Onboarding questions raised in Q3 sales calls\", \"output\": \"top themes with call dates\", \"tools\": [\"transcript_search\"], \"boundaries\": \"prospects only\"}" }
         - { id: back-1, from: r1, to: lead, style: dashed, description: "Condensed findings, not raw search results, come back to the lead.", example: "1. SSO setup is confusing (41 tickets, e.g. #8812). 2. CSV import fails on files over 10 MB (23 tickets, e.g. #9034)." }
         - { id: back-2, from: r2, to: lead, style: dashed, description: "The second subagent's condensed findings come back to the lead.", example: "Prospects asked about SSO setup in 9 of 14 calls (e.g. Acme, 14 Aug). Two asked for a guided import." }
-        - { id: spawn-3, from: lead, to: r3, label: brief, description: "A follow-up brief for the gap, spawned only after the first findings are in.", example: "{\"objective\": \"Did SSO tickets drop after the 20 Aug docs fix?\", \"output\": \"weekly SSO ticket counts, Jul to Sep\", \"tools\": [\"ticket_search\"], \"boundaries\": \"SSO tickets only\"}" }
+        - { id: spawn-3, from: lead, to: r3, label: follow-up, description: "A follow-up brief for the gap, spawned only after the first findings are in.", example: "{\"objective\": \"Did SSO tickets drop after the 20 Aug docs fix?\", \"output\": \"weekly SSO ticket counts, Jul to Sep\", \"tools\": [\"ticket_search\"], \"boundaries\": \"SSO tickets only\"}" }
         - { id: back-3, from: r3, to: lead, style: dashed, description: "The follow-up findings come back to the lead.", example: "SSO tickets fell from 14 a week to 4 a week after the 20 Aug docs fix (ticket_search, Jul to Sep)." }
         - { id: draft, from: lead, to: citer, label: draft, description: "When the findings answer the question, the lead's draft goes to the citation agent with every source.", example: "Draft: SSO setup is the top onboarding complaint in both tickets and calls; CSV import failures come second." }
         - { id: final, from: citer, to: out, description: "The report goes out with a citation on every claim.", example: "SSO setup is the top onboarding complaint [tickets #8812, #9034; Acme call, 14 Aug]. CSV import failures come second [23 tickets]." }
@@ -271,7 +271,7 @@ variants:
                 - { type: appear, node: r1, at: [0, 0.3] }
                 - { type: appear, node: r2, at: [0, 0.3] }
                 - { type: send, edge: spawn-1, token: { kind: prompt, label: brief }, at: [0.3, 1] }
-                - { type: send, edge: spawn-2, token: { kind: prompt, label: brief }, at: [0.3, 1] }
+                - { type: send, edge: spawn-2, token: { kind: prompt }, at: [0.3, 1] }
             - id: search
               caption: Both subagents search in parallel and return condensed findings with sources.
               duration: 3000
@@ -398,7 +398,7 @@ variants:
                 - { type: activate, node: web, status: error, at: [0.6, 0.75] }
                 - { type: send, edge: from-web, token: { kind: result, label: login wall }, at: [0.75, 1] }
             - id: replan
-              caption: "A third stalled turn in a row passes the threshold of 2 and triggers a replan. The task ledger gets a new fact (search needs a login) and a new plan (use the public fare calendar)."
+              caption: "Three stalled turns in a row put the stall count over the threshold of 2, so the orchestrator replans: a new fact (search needs a login) and a new plan (use the public fare calendar)."
               duration: 3000
               events:
                 - { type: send, edge: check, token: { kind: feedback, label: stalled }, at: [0, 0.3] }

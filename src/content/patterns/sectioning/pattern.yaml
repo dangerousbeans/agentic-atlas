@@ -272,7 +272,7 @@ variants:
               duration: 1400
               events:
                 - { type: send, edge: s1, token: { kind: prompt, label: message } }
-                - { type: send, edge: s2, token: { kind: prompt, label: message } }
+                - { type: send, edge: s2, token: { kind: prompt } }
             - id: work
               caption: The screen finishes first and passes the message; the answer arrives a moment later.
               duration: 2600
@@ -295,7 +295,7 @@ variants:
               duration: 1400
               events:
                 - { type: send, edge: s1, token: { kind: prompt, label: message } }
-                - { type: send, edge: s2, token: { kind: prompt, label: message } }
+                - { type: send, edge: s2, token: { kind: prompt } }
             - id: work
               caption: The answer finishes first, but it is held at the gate until the screen returns, which flags the message.
               duration: 2600

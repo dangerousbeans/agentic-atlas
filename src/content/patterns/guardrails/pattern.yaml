@@ -91,9 +91,9 @@ diagram:
           caption: The message goes to the agent and to the input guards at the same moment.
           duration: 1800
           events:
-            - { type: send, edge: to-agent, token: { kind: prompt, label: message } }
+            - { type: send, edge: to-agent, token: { kind: prompt } }
             - { type: send, edge: to-relevance, token: { kind: prompt, label: message } }
-            - { type: send, edge: to-jailbreak, token: { kind: prompt, label: message } }
+            - { type: send, edge: to-jailbreak, token: { kind: prompt } }
             - { type: activate, node: agent, status: thinking, at: [0.6, 1] }
         - id: input-ok
           caption: Both input guards finish and report no problem.
@@ -124,9 +124,9 @@ diagram:
           caption: A suspicious message goes to the agent and the input guards at the same moment.
           duration: 1800
           events:
-            - { type: send, edge: to-agent, token: { kind: prompt, label: ignore rules } }
+            - { type: send, edge: to-agent, token: { kind: prompt } }
             - { type: send, edge: to-relevance, token: { kind: prompt, label: ignore rules } }
-            - { type: send, edge: to-jailbreak, token: { kind: prompt, label: ignore rules } }
+            - { type: send, edge: to-jailbreak, token: { kind: prompt } }
             - { type: activate, node: agent, status: thinking, at: [0.6, 1] }
         - id: trip
           caption: The jailbreak guard detects an instruction-override attempt and trips its wire.
@@ -148,9 +148,9 @@ diagram:
           caption: A request unrelated to the product goes to the agent and the input guards at the same moment.
           duration: 1800
           events:
-            - { type: send, edge: to-agent, token: { kind: prompt, label: write a poem } }
+            - { type: send, edge: to-agent, token: { kind: prompt } }
             - { type: send, edge: to-relevance, token: { kind: prompt, label: write a poem } }
-            - { type: send, edge: to-jailbreak, token: { kind: prompt, label: write a poem } }
+            - { type: send, edge: to-jailbreak, token: { kind: prompt } }
             - { type: activate, node: agent, status: thinking, at: [0.6, 1] }
         - id: trip
           caption: The on-topic guard decides this is out of scope and trips, while the jailbreak guard finds nothing wrong.

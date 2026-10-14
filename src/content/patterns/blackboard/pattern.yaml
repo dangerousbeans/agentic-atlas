@@ -132,7 +132,7 @@ diagram:
             - { type: send, edge: state, token: { kind: prompt, label: board }, at: [0, 0.2] }
             - { type: activate, node: control, status: thinking, at: [0.2, 0.35] }
             - { type: send, edge: go-logs, token: { kind: prompt, label: activate }, at: [0.35, 0.5] }
-            - { type: send, edge: go-db, token: { kind: prompt, label: activate }, at: [0.35, 0.5] }
+            - { type: send, edge: go-db, token: { kind: prompt }, at: [0.35, 0.5] }
             - { type: activate, node: logs, status: thinking, at: [0.5, 0.7] }
             - { type: activate, node: db, status: thinking, at: [0.5, 0.7] }
             - { type: send, edge: w-logs, token: { kind: result, label: "02:00 only" }, at: [0.7, 0.95] }
