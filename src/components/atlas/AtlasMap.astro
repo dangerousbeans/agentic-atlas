@@ -200,7 +200,6 @@ const px = (n: number) => `${n}px`;
     .atlas-island-label { font-size: 11px; letter-spacing: .08em; }
     .atlas-island-label .mark { margin-right: 7px; }
   }
-  /* Full-page atlas: viewport minus header and the title row (the header wraps on phones). */
-  .atlas-map.fill[data-enhanced] .atlas-viewport { height: max(420px, calc(100dvh - var(--header-h) - 64px)); }
-  @media (max-width: 720px) { .atlas-map.fill[data-enhanced] .atlas-viewport { height: max(420px, calc(100dvh - var(--header-h) - 116px)); } }
+  /* Full-page atlas: the window minus whatever sits above the map; atlas-map.ts measures --atlas-top. */
+  .atlas-map.fill[data-enhanced] .atlas-viewport { height: max(420px, calc(100dvh - var(--atlas-top, 124px))); }
 </style>

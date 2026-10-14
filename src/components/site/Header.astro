@@ -66,4 +66,5 @@ const current = (l: (typeof links)[number]) => (!l.active ? undefined : path ===
     ul a { min-height: 48px; font-size: 14px; }
     ul a.active::after { bottom: 8px; }
   }
+  @media (max-width: 360px) { ul { gap: 16px; } nav { gap: 8px; } }
 </style>

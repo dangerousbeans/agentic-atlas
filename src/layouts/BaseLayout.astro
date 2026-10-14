@@ -8,7 +8,8 @@ import { author } from '../lib/author';
 interface Props { title: string; description: string; accent?: string; pagefind?: boolean }
 const { title, description, pagefind = false } = Astro.props;
 const fullTitle = title === 'Agentic Atlas' ? title : `${title} · Agentic Atlas`;
-const ld = JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebSite', name: 'Agentic Atlas', description, author: { '@type': 'Person', name: author.name, url: author.github, sameAs: [author.github] } }).replace(/</g, '\\u003c');
+const SITE_DESCRIPTION = 'A visual field guide to agentic AI patterns, each with a live diagram, pseudocode and prompt templates.';
+const ld = JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebSite', name: 'Agentic Atlas', description: SITE_DESCRIPTION, ...(Astro.site && { url: new URL(href('/'), Astro.site).toString() }), author: { '@type': 'Person', name: author.name, url: author.github, sameAs: [author.github] } }).replace(/</g, '\\u003c');
 const og = Astro.site ? new URL(href('/og.png'), Astro.site).toString() : href('/og.png');
 ---
 <!doctype html>
