@@ -67,6 +67,8 @@ const cat = await getCatalog();
   dialog.search::backdrop { background: #120F0Ecc; backdrop-filter: blur(4px); }
   .search-head { display: flex; gap: 8px; padding: 14px; border-bottom: 1px solid var(--line); }
   .search-head input { flex: 1; background: transparent; border: 0; color: var(--text); font: 16px var(--font-ui); outline: none; }
+  /* the outline is replaced, not removed: a 2px red rule under the field while it has keyboard focus */
+  .search-head input:focus-visible { box-shadow: 0 2px 0 var(--accent); }
   .search-head select, .search-head button { background: var(--bg); color: var(--text-2); border: 1px solid var(--line-strong); border-radius: 0; font: 12px var(--font-ui); padding: 4px 8px; }
   .status { margin: 0; padding: 8px 16px; font: 12px var(--font-mono); color: var(--text-2); }
   .results { list-style: none; margin: 0; padding: 0 8px 8px; max-height: 60vh; overflow: auto; }

@@ -10,6 +10,17 @@ test('cmd/ctrl+K opens search and finds a pattern', async ({ page }) => {
   await expect(dialog.locator('.results')).toContainText('Evaluator-Optimizer');
 });
 
+test('the focused search input shows a visible focus indicator', async ({ page }) => {
+  await page.goto('/');
+  await page.keyboard.press('ControlOrMeta+k');
+  const input = page.getByRole('dialog', { name: 'Search patterns' }).getByRole('searchbox');
+  await expect(input).toBeFocused();
+  const style = await input.evaluate(el => { const c = getComputedStyle(el); return { outline: c.outlineStyle === 'none' ? 'none' : c.outlineWidth, shadow: c.boxShadow }; });
+  expect(style.outline !== 'none' || style.shadow !== 'none', JSON.stringify(style)).toBe(true);
+  // the indicator is the accent red (#FF3B30)
+  expect(style.shadow).toContain('rgb(255, 59, 48)');
+});
+
 test('search family filter narrows results', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: /Search/ }).click();
