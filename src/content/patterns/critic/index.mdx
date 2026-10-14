@@ -14,7 +14,7 @@ The critique loop passes through a tool. That is the whole difference from plain
 
 **Not the same as Evaluator-Optimizer.** Evaluator-Optimizer's Tool-checked variant, which also cites the CRITIC paper, is the workflow form of this idea. A separate evaluator, with criteria you wrote, judges a generator's draft and uses tools to do it. CRITIC as an agent loop is narrower and more autonomous. One model checks its own answer, decides for itself which claims need checking and which tool to use, and its only standard is whether the evidence agrees. Choose Evaluator-Optimizer when you have explicit acceptance criteria. Choose CRITIC when the question is simply "is what I said true?".
 
-**The Code and tests (Self-Debug) variant.** For code, the tool is a test runner. In Chen et al.'s Self-Debugging, the model runs its program against the visible tests, explains its own code line by line next to the failures, and fixes it. Explaining the code, like rubber duck debugging, is what helps it find the bug when the tests only say "expected 2.5, got 3".
+**The Code and tests (Self-Debug) variant.** For code, the tool is a test runner. In Chen et al.'s Self-Debugging, the model runs its program against the visible tests, explains its own code line by line next to the failures, and fixes it. Explaining the code, like rubber duck debugging, is what helps it find the bug when the tests only say "expected 2.5, got 3". The build makes the explanation and the fix two calls to the same model, so the explanation shows up in the logs.
 
 ## When to use
 

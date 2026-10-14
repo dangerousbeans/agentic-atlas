@@ -213,7 +213,7 @@ diagram:
 variants:
   - id: self-debug
     name: Code and tests (Self-Debug)
-    summary: "For code: the model runs its program against tests, explains the code line by line, and fixes it from the execution feedback."
+    summary: "For code: the model runs its program against tests, explains the code line by line next to the failures, and fixes it from that explanation."
     origin:
       by: Xinyun Chen et al.
       org: Google DeepMind, UC Berkeley
@@ -222,23 +222,24 @@ variants:
       kind: introduced
       note: "Self-Debugging: the model explains its own code, rubber-duck style, alongside unit test results and execution traces, then fixes it, with no human feedback."
     build:
-      goal: "Generate code for a task, run it against the available tests, and have the same model explain and fix it from the execution feedback until the tests pass."
+      goal: "Generate code for a task, run it against the available tests, and have the same model explain its code against the failures and then fix it, until the tests pass."
       steps:
         - "Call the model with the task and the visible tests to write the first version of the code."
         - "Run the code against the tests in a sandbox and capture, for each failing test, the input, the expected output, the actual output or the error."
         - "If every test passes, return the code."
-        - "Otherwise call the same model with the {{prompt:debug}}, passing the code and the failing test results. It explains the code line by line, says where the behaviour differs from what the tests expect, and writes a fixed version."
+        - "Otherwise call the same model with the {{prompt:explain}}, passing the code and the failing test results. It explains the code line by line and says where its behaviour differs from what the tests expect, without writing code."
+        - "Call the model with the {{prompt:fix}}, passing the code, the failures and that explanation, to write a complete fixed version."
         - "Run the fixed version against the tests and repeat."
       stop: "Stop when every visible test passes, or after 3 debugging rounds. On the cap, return the version that passed the most tests, with the failures that remain."
       requirements:
         - "Run code in a sandbox with time and memory limits; treat a timeout as a failing test with the message 'timed out'."
         - "Pass the actual output and the expected output for every failing test, not only a pass/fail count."
-        - "Keep every version and its test results, and return the best one if the cap is hit."
+        - "Keep every version, its test results and its explanation, and return the best version if the cap is hit."
         - "Do not show the model hidden tests; check the final code against them separately, if you have them."
-        - "Add a test with a stub LLM whose first program fails one test and whose second passes all; assert one debug call, two test runs, and that the second program is returned."
+        - "Add a test with a stub LLM whose first program fails one test and whose second passes all; assert one explain call, one fix call, two test runs, and that the second program is returned."
     prompts:
-      - id: debug
-        title: Debugging prompt
+      - id: explain
+        title: Explanation prompt
         lang: markdown
         source: |
           Your code fails some tests.
@@ -247,9 +248,21 @@ variants:
           <code>{{code}}</code>
           <failures>{{failing_tests_with_expected_and_actual}}</failures>
 
-          First explain what the code does, line by line.
-          Then say exactly where its behaviour differs from what the failing tests expect.
-          Finally, return the complete fixed code in one code block.
+          Explain what the code does, line by line, as if to a colleague.
+          Then trace one failing test through it and say exactly where its
+          behaviour differs from what the test expects. Do not write code.
+      - id: fix
+        title: Fix prompt
+        lang: markdown
+        source: |
+          <task>{{task}}</task>
+          <code>{{code}}</code>
+          <failures>{{failing_tests_with_expected_and_actual}}</failures>
+          <explanation>{{explanation}}</explanation>
+
+          Using the explanation, fix the code so every failing test passes
+          without breaking the ones that pass. Return the complete fixed code
+          in one code block, with no commentary.
     diagram:
       nodes:
         - id: user
@@ -259,12 +272,17 @@ variants:
         - id: llm
           kind: llm
           label: Model
-          sublabel: write, explain, fix
-          description: "Writes the code, then explains it line by line against the failing tests and writes a fixed version."
+          sublabel: write, fix
+          description: "Writes the first version of the code, then writes each fixed version from the explanation of what went wrong."
         - id: tests
           kind: tool
           label: Test runner
           description: "Runs the code against the visible tests and returns, for each failure, the input, the expected and the actual output."
+        - id: explain
+          kind: llm
+          label: Explain
+          sublabel: same model
+          description: "The same model under an explanation prompt: walks through its code line by line and pins down where it diverges from the failing test."
         - id: out
           kind: io
           label: Code
@@ -283,11 +301,17 @@ variants:
           example: "def median(xs): s = sorted(xs); return s[len(s) // 2]"
         - id: feedback
           from: tests
+          to: explain
+          label: failures
+          description: "Failing tests go to the explanation step with their expected and actual output. The runner only reports; it does not explain."
+          example: "median([4, 1, 3, 2]): expected 2.5, got 3"
+        - id: explanation
+          from: explain
           to: llm
           style: loop
-          label: failures
-          description: "Failing tests come back with expected and actual output, and the model explains and fixes its code."
-          example: "median([4, 1, 3, 2]): expected 2.5, got 3. Explanation: for an even length, the code takes the upper middle instead of averaging the two middles."
+          label: explanation
+          description: "The line-by-line explanation goes back to the model, which writes a fix aimed at exactly the line it names."
+          example: "Line 1 sorts xs to [1, 2, 3, 4]. Line 2 returns s[2], the upper middle. For an even length the median is the mean of s[1] and s[2], 2.5, so line 2 is wrong when len(s) is even."
         - id: pass
           from: tests
           to: out
@@ -305,7 +329,7 @@ variants:
                 - { type: send, edge: ask, token: { kind: prompt, label: task }, at: [0, 0.4] }
                 - { type: activate, node: llm, status: thinking, at: [0.4, 1] }
             - id: fail
-              caption: The code fails the even-length test; the expected and actual outputs come back.
+              caption: The code fails the even-length test; the expected and actual outputs go to the explanation step.
               duration: 2600
               events:
                 - { type: send, edge: run, token: { kind: tool-call, label: v1 }, at: [0, 0.3] }
@@ -313,10 +337,12 @@ variants:
                 - { type: branch, node: tests, taken: feedback, notTaken: [pass], at: [0.5, 0.6] }
                 - { type: send, edge: feedback, token: { kind: feedback, label: 3 ≠ 2.5 }, at: [0.6, 1] }
             - id: explain
-              caption: The model explains its code line by line, spots the even-length case, and writes a fix.
-              duration: 2400
+              caption: The model explains its code line by line, finds that line 2 takes the upper middle for an even length, and sends the explanation back.
+              duration: 3000
               events:
-                - { type: activate, node: llm, status: thinking }
+                - { type: activate, node: explain, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: explanation, token: { kind: feedback, label: line 2 }, at: [0.5, 0.85] }
+                - { type: activate, node: llm, status: thinking, at: [0.8, 1] }
             - id: pass
               caption: The fixed version passes every test and is returned.
               duration: 2600
