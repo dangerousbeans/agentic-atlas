@@ -16,6 +16,7 @@ const cat = await getCatalog();
 </dialog>
 <script>
   import { joinBase } from '../../lib/url';
+  import { excerptNodes } from '../../lib/excerpt';
   const dlg = document.querySelector<HTMLDialogElement>('dialog.search')!;
   const input = dlg.querySelector<HTMLInputElement>('input')!;
   const fam = dlg.querySelector<HTMLSelectElement>('select')!;
@@ -38,7 +39,7 @@ const cat = await getCatalog();
   let seq = 0;
   const run = async () => {
     const my = ++seq; const q = input.value.trim();
-    if (!q) { list.innerHTML = ''; status.textContent = ''; return; }
+    if (!q) { list.replaceChildren(); status.textContent = ''; return; }
     const p = await load(); if (!p) return;
     let items;
     try {
@@ -51,7 +52,7 @@ const cat = await getCatalog();
       const li = document.createElement('li'); const a = document.createElement('a'); a.href = it.url;
       const t = document.createElement('span'); t.className = 'title'; t.textContent = it.meta.title ?? it.url;
       const f = document.createElement('span'); f.className = 'fam'; f.textContent = it.filters.family?.[0] ?? '';
-      const ex = document.createElement('span'); ex.className = 'ex'; ex.innerHTML = it.excerpt;
+      const ex = document.createElement('span'); ex.className = 'ex'; ex.replaceChildren(...excerptNodes(it.excerpt));
       a.append(t, f, ex); li.append(a); return li;
     }));
   };
