@@ -64,7 +64,7 @@ for (const width of [1440, 1280, 1024, 390]) {
 }
 
 // The same floor for every variant tab, measured on the variant's own (visible) player.
-for (const width of [1440, 1024, 390]) {
+for (const width of [1440, 1280, 1024, 390]) {
   test.describe(`variant label size at ${width}px`, () => {
     test.use({ viewport: { width, height: 900 } });
     for (const [slug, id] of variants) {
