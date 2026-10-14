@@ -34,3 +34,8 @@ export function edgeDescription(e: Pick<DiagramEdge, 'from' | 'to' | 'label' | '
 }
 
 export const nodeMap = (spec: Pick<DiagramSpec, 'nodes'>) => new Map(spec.nodes.map(n => [n.id, n]));
+
+const MODEL_KINDS: ReadonlySet<NodeKind> = new Set<NodeKind>(['llm', 'agent', 'router', 'evaluator', 'guard']);
+
+/** Whether a node is backed by a model call: explicit `model` wins, otherwise the default by kind. */
+export const isModelNode = (n: Pick<DiagramNode, 'kind' | 'model'>): boolean => n.model ?? MODEL_KINDS.has(n.kind);

@@ -48,7 +48,7 @@ diagram:
   nodes:
     - { id: user, kind: io, label: Brief }
     - { id: llm1, kind: llm, label: Outline }
-    - { id: gate, kind: guard, label: Check }
+    - { id: gate, kind: guard, label: Check, model: false }
     - { id: llm2, kind: llm, label: Draft }
     - { id: llm3, kind: llm, label: Polish }
     - { id: out, kind: io, label: Post }

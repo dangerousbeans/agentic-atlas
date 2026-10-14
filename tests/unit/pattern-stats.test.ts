@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
+import { isModelNode } from '../../src/lib/diagram/kinds';
 import { patternStats, statsLine } from '../../src/lib/pattern-stats';
 import type { DiagramSpec, DiagramEvent, NodeKind, Step } from '../../src/lib/diagram/types';
 
@@ -26,17 +27,20 @@ describe('patternStats (synthetic)', () => {
     expect(s.scenarios).toBe(2);
     expect(s.steps).toBe(4); // first scenario only: 3 repeats + 1
   });
-  it('llmCalls counts thinking activates on llm/agent plus branches on llm/agent only', () => {
+  it('llmCalls counts thinking activates plus branches on model nodes only', () => {
     const d = one([step('x', [
       { type: 'activate', node: 'b', status: 'thinking' },
       { type: 'activate', node: 'b', status: 'calling' },
       { type: 'activate', node: 'g', status: 'thinking' },
       { type: 'activate', node: 'a', status: 'thinking' },
       { type: 'activate', node: 'e', status: 'thinking' },
+      { type: 'activate', node: 'c', status: 'thinking' },
       { type: 'branch', node: 'g', taken: 'x' },
       { type: 'branch', node: 'e', taken: 'x' },
-    ])], { nodes: [node('a', 'io'), node('b', 'llm'), node('g', 'agent'), node('e', 'evaluator'), node('t', 'tool')] });
-    expect(patternStats(d).llmCalls).toBe(3); // b thinking, g thinking, g branch
+      { type: 'branch', node: 'c', taken: 'x' },
+    ])], { nodes: [node('a', 'io'), node('b', 'llm'), node('g', 'agent'), node('e', 'evaluator'), { ...node('c', 'evaluator'), model: false }, node('t', 'tool')] });
+    // b thinking, g thinking, g branch, e thinking, e branch = 5; code evaluator c (model: false) excluded
+    expect(patternStats(d).llmCalls).toBe(5);
   });
   it('toolCalls counts sends whose target node is a tool', () => {
     const d = one([step('x', [send('ab'), send('bt'), send('bt'), send('ba'), send('nope')])]);
@@ -61,6 +65,17 @@ describe('patternStats (synthetic)', () => {
   });
 });
 
+describe('isModelNode', () => {
+  it('defaults by kind', () => {
+    for (const k of ['llm', 'agent', 'router', 'evaluator', 'guard'] as const) expect(isModelNode({ kind: k })).toBe(true);
+    for (const k of ['io', 'tool', 'memory', 'human', 'aggregator'] as const) expect(isModelNode({ kind: k })).toBe(false);
+  });
+  it('explicit model wins', () => {
+    expect(isModelNode({ kind: 'evaluator', model: false })).toBe(false);
+    expect(isModelNode({ kind: 'aggregator', model: true })).toBe(true);
+  });
+});
+
 describe('statsLine', () => {
   const base = { nodes: 4, llmCalls: 3, toolCalls: 0, steps: 4, scenarios: 2, loop: false, parallel: false, branch: false, humanInLoop: false };
   it('includes only true flags in order', () => {
@@ -76,14 +91,14 @@ describe('patternStats (hand counts from YAML)', () => {
   it('evaluator-optimizer', () => {
     // nodes: input, generator, evaluator, output = 4
     // scenario 1 steps: start(1) + round repeat 2 (2) + pass (1) = 4; scenarios = 2
-    // llmCalls: generator(llm) thinking: round x2 + pass = 3; evaluator branches are on an evaluator node, not counted
+    // llmCalls: generator thinking round x2 + pass = 3, plus evaluator (model by default) branches round x2 + pass = 3, total 6
     // toolCalls: no tool nodes = 0; loop: edge `revise` style loop; branch: yes; parallel: sends in a step never overlap; human: none
-    expect(patternStats(load('evaluator-optimizer'))).toEqual({ nodes: 4, llmCalls: 3, toolCalls: 0, steps: 4, scenarios: 2, loop: true, parallel: false, branch: true, humanInLoop: false });
+    expect(patternStats(load('evaluator-optimizer'))).toEqual({ nodes: 4, llmCalls: 6, toolCalls: 0, steps: 4, scenarios: 2, loop: true, parallel: false, branch: true, humanInLoop: false });
   });
   it('sectioning', () => {
     // nodes: user, splitter, llm1-3, aggregator, out = 7
     // steps: arrive, fan-out, work, merge = 4; scenarios = 1
-    // llmCalls: llm1, llm2, llm3 thinking in `work` = 3 (aggregator thinking is not llm/agent kind)
+    // llmCalls: llm1, llm2, llm3 thinking in `work` = 3 (aggregator thinking excluded; splitter has model: false)
     // toolCalls: 0; loop: no loop edge, no repeat; parallel: fan-out sends s1-s3 all [0,1] overlap; branch: none; human: none
     expect(patternStats(load('sectioning'))).toEqual({ nodes: 7, llmCalls: 3, toolCalls: 0, steps: 4, scenarios: 1, loop: false, parallel: true, branch: false, humanInLoop: false });
   });

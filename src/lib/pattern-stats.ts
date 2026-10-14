@@ -1,4 +1,5 @@
-import type { DiagramSpec, NodeKind } from './diagram/types';
+import type { DiagramSpec } from './diagram/types';
+import { isModelNode } from './diagram/kinds';
 import { compileScenario } from './diagram/compile';
 
 export interface PatternStats {
@@ -13,11 +14,10 @@ export interface PatternStats {
   humanInLoop: boolean;
 }
 
-const LLM_KINDS: NodeKind[] = ['llm', 'agent'];
-
 /** Computed over the first scenario's compiled timeline (addendum §3). */
 export function patternStats(d: DiagramSpec): PatternStats {
   const kind = new Map(d.nodes.map(n => [n.id, n.kind]));
+  const model = new Map(d.nodes.map(n => [n.id, isModelNode(n)]));
   const edgeTo = new Map(d.edges.map(e => [e.id, e.to]));
   const first = d.scenarios[0];
   const tl = first ? compileScenario(first) : undefined;
@@ -28,10 +28,10 @@ export function patternStats(d: DiagramSpec): PatternStats {
   let toolCalls = 0;
   let branch = false;
   for (const { event } of events) {
-    if (event.type === 'activate' && event.status === 'thinking' && LLM_KINDS.includes(kind.get(event.node) as NodeKind)) llmCalls++;
+    if (event.type === 'activate' && event.status === 'thinking' && model.get(event.node)) llmCalls++;
     else if (event.type === 'branch') {
       branch = true;
-      if (LLM_KINDS.includes(kind.get(event.node) as NodeKind)) llmCalls++;
+      if (model.get(event.node)) llmCalls++;
     } else if (event.type === 'send') {
       const to = edgeTo.get(event.edge);
       if (to !== undefined && kind.get(to) === 'tool') toolCalls++;
