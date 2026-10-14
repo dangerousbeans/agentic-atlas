@@ -1,14 +1,16 @@
 ---
 import type { DiagramSpec } from '../../lib/diagram/types';
 import type { DiagramLayout } from '../../lib/diagram/layout';
+import { KIND_LABEL, nodeDescription, edgeDescription, edgeTitle, nodeMap } from '../../lib/diagram/kinds';
 import NodeShape from './NodeShape.astro';
-interface Props { uid: string; spec: DiagramSpec; layout: DiagramLayout; variant: 'wide' | 'narrow'; title: string }
-const { uid, spec, layout, variant, title } = Astro.props;
+interface Props { uid: string; spec: DiagramSpec; layout: DiagramLayout; variant: 'wide' | 'narrow'; title: string; compact?: boolean }
+const { uid, spec, layout, variant, title, compact = false } = Astro.props;
+const labels = nodeMap(spec);
 const pid = `${uid}-${variant}`;
 const hiddenIds = new Set(spec.nodes.filter(n => n.hidden).map(n => n.id));
 const pending = (e: { from: string; to: string }) => hiddenIds.has(e.from) || hiddenIds.has(e.to);
 ---
-<svg class="diagram-svg" data-layout={variant} viewBox={`0 0 ${layout.width} ${layout.height}`} style={variant === 'narrow' ? `--min-w:${Math.round(layout.width * 0.8)}px` : undefined} role="img" aria-labelledby={`${pid}-t ${pid}-d`}>
+<svg class="diagram-svg" data-layout={variant} viewBox={`0 0 ${layout.width} ${layout.height}`} style={variant === 'narrow' ? `--min-w:${Math.round(layout.width * 0.8)}px` : undefined} role={compact ? 'img' : 'group'} aria-labelledby={`${pid}-t ${pid}-d`}>
   <title id={`${pid}-t`}>{title} diagram</title>
   <desc id={`${pid}-d`}>{spec.nodes.map(n => n.label).join(', ')}. Step captions follow the diagram.</desc>
   <defs>
@@ -24,15 +26,19 @@ const pending = (e: { from: string; to: string }) => hiddenIds.has(e.from) || hi
   </g>
   <g class="edges">
     {spec.edges.map(e => (
-      <path id={`${pid}-e-${e.id}`} class={`edge edge--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} marker-end={`url(#${pid}-arrow)`} />
+      <path id={`${pid}-e-${e.id}`} class={`edge edge--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} marker-end={`url(#${pid}-arrow)`} data-from={e.from} data-to={e.to} />
     ))}
     {spec.edges.filter(e => e.label).map(e => (
-      <text class={`edge-label edge-label--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} x={layout.edges[e.id].mid.x} y={layout.edges[e.id].mid.y - 8} text-anchor="middle">{e.label}</text>
+      <text class={`edge-label edge-label--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} x={layout.edges[e.id].mid.x} y={layout.edges[e.id].mid.y - 8} text-anchor="middle" data-from={e.from} data-to={e.to} aria-hidden={compact ? undefined : 'true'}>{e.label}</text>
+    ))}
+    {!compact && spec.edges.map(e => (
+      <path class="edge-hit" data-hit={e.id} d={layout.edges[e.id].d} data-tip-t={edgeTitle(e, labels)} data-tip-k={e.label} data-tip-d={edgeDescription(e, labels)} data-tip-x={e.example} />
     ))}
   </g>
   <g class="nodes">
     {spec.nodes.map(n => { const b = layout.nodes[n.id]; return (
-      <g class="node" data-node={n.id} data-kind={n.kind} data-state={n.hidden ? 'hidden' : 'idle'} transform={`translate(${b.x},${b.y})`} style={`--halo:url(#${pid}-halo)`}>
+      <g class="node" data-node={n.id} data-kind={n.kind} data-state={n.hidden ? 'hidden' : 'idle'} transform={`translate(${b.x},${b.y})`} style={`--halo:url(#${pid}-halo)`}
+        {...(compact ? {} : { tabindex: n.hidden ? -1 : 0, role: 'img', 'aria-label': `${n.label}. ${nodeDescription(n)}`, 'data-tip-t': n.label, 'data-tip-k': KIND_LABEL[n.kind], 'data-tip-d': nodeDescription(n) })}>
         <NodeShape kind={n.kind} cx={b.w / 2} />
         <text class="label" x={b.w / 2} y={62} text-anchor="middle">{n.label}</text>
         {n.sublabel && <text class="sublabel" x={b.w / 2} y={74} text-anchor="middle">{n.sublabel}</text>}

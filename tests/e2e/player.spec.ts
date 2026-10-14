@@ -1,116 +1,244 @@
 import { test, expect, type Page } from '@playwright/test';
 const url = '/patterns/evaluator-optimizer/';
-// Autoplay starts when the player scrolls into view; wait for it, then pause, so every test starts from a known state.
-async function pause(page: Page) {
-  const fp = page.locator('flow-player').first();
-  await expect(fp).toHaveAttribute('data-playing', 'true');
-  await page.locator('[data-action="play"]').first().click();
-  await expect(fp).toHaveAttribute('data-playing', 'false');
-}
+const fpOf = (page: Page) => page.locator('flow-player').first();
+const node = (page: Page, id: string) => page.locator(`svg[data-layout="wide"] g.node[data-node="${id}"]`);
+const tip = (page: Page) => page.locator('.fp-tip').first();
+
+test('video controls are gone', async ({ page }) => {
+  await page.goto(url);
+  await expect(page.locator('.fp-controls, [data-action], input[data-scrub], select[data-speed], .fp-counter')).toHaveCount(0);
+});
 
 test('autoplays when visible and advances steps', async ({ page }) => {
   await page.goto(url);
-  const fp = page.locator('flow-player').first();
+  const fp = fpOf(page);
   await expect(fp).toHaveAttribute('data-playing', 'true');
   await expect(fp).toHaveAttribute('data-step-index', '1', { timeout: 4000 });
 });
 
-test('next/prev buttons step and pause', async ({ page }) => {
+test('hovering the stage pauses, leaving resumes', async ({ page }) => {
   await page.goto(url);
-  const fp = page.locator('flow-player').first();
-  await pause(page);
-  await page.locator('input[data-scrub]').fill('0');
-  await page.getByRole('button', { name: 'Next step' }).click();
-  await expect(fp).toHaveAttribute('data-step-index', '1', { timeout: 3000 });
-  await expect(fp).toHaveAttribute('data-playing', 'false', { timeout: 3000 });
-  await page.getByRole('button', { name: 'Previous step' }).click();
-  await expect(fp).toHaveAttribute('data-step-index', '0');
-});
-
-test('keyboard: space toggles, arrows step, End jumps to end (Review Focus 5)', async ({ page }) => {
-  await page.goto(url);
-  const fp = page.locator('flow-player').first();
+  const fp = fpOf(page);
   await expect(fp).toHaveAttribute('data-playing', 'true');
-  await page.locator('.diagram-stage').first().focus();
-  await page.keyboard.press('Space');
+  await page.locator('.diagram-stage').first().hover({ position: { x: 4, y: 4 } });
   await expect(fp).toHaveAttribute('data-playing', 'false');
-  await page.keyboard.press('End');
-  await expect(fp).toHaveAttribute('data-step-index', '3');
-  await expect(page.locator('svg[data-layout="wide"] g.node[data-node="output"]')).toHaveAttribute('data-state', 'done');
-  await expect(page.locator('svg[data-layout="wide"] path.edge[data-edge="accept"]')).toHaveAttribute('data-state', 'traversed');
-  await page.keyboard.press('Home');
-  await expect(fp).toHaveAttribute('data-step-index', '0');
-});
-
-test('space on a focused control button toggles exactly once', async ({ page }) => {
-  await page.goto(url);
-  const fp = page.locator('flow-player').first();
-  await pause(page);
-  await page.evaluate(() => {
-    (window as any).__toggles = 0;
-    new MutationObserver(() => { (window as any).__toggles++; }).observe(document.querySelector('flow-player')!, { attributes: true, attributeFilter: ['data-playing'] });
-  });
-  await page.locator('[data-action="play"]').first().focus();
-  await page.keyboard.press('Space');
+  const idx = await fp.getAttribute('data-step-index');
+  await page.waitForTimeout(700);
+  await expect(fp).toHaveAttribute('data-step-index', idx!);
+  await page.mouse.move(0, 0);
   await expect(fp).toHaveAttribute('data-playing', 'true');
-  await page.waitForTimeout(300);
-  expect(await page.evaluate(() => (window as any).__toggles)).toBe(1);
 });
 
-test('ArrowRight on a focused Next button still steps the player', async ({ page }) => {
+test('focus inside the player pauses until it blurs', async ({ page }) => {
   await page.goto(url);
-  const fp = page.locator('flow-player').first();
-  await pause(page);
-  await page.locator('input[data-scrub]').fill('0');
-  await page.getByRole('button', { name: 'Next step' }).focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(fp).toHaveAttribute('data-step-index', '1', { timeout: 3000 });
+  const fp = fpOf(page);
+  await expect(fp).toHaveAttribute('data-playing', 'true');
+  await page.locator('ol.fp-captions button').first().focus(); // no pointer use yet, so :focus-visible applies
+  await expect(fp).toHaveAttribute('data-playing', 'false');
+  await page.locator('ol.fp-captions button').first().blur();
+  await expect(fp).toHaveAttribute('data-playing', 'true');
 });
 
-test('arrow keys inside the speed select do not step the player', async ({ page }) => {
+test('clicking a step button jumps there and mirrors the code ref', async ({ page }) => {
   await page.goto(url);
-  const fp = page.locator('flow-player').first();
-  await pause(page);
-  const before = await fp.getAttribute('data-step-index');
-  await page.locator('select[data-speed]').focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(fp).toHaveAttribute('data-step-index', before!);
+  const fp = fpOf(page);
+  const list = page.locator('.fp-scenario-steps[data-scenario="fails-twice"]');
+  await list.locator('button[data-step-index="2"]').click();
+  await expect(fp).toHaveAttribute('data-step-index', '2');
+  await expect(fp).toHaveAttribute('data-playing', 'false');
+  await expect(page.locator('.fp-caption')).toContainText('The generator drafts');
+  await expect(list.locator('li[aria-current="step"] button')).toHaveAttribute('data-step-index', '2');
+  await expect(fp).toHaveAttribute('data-code-ref', 'loop:4-8');
+  await list.locator('button[data-step-index="0"]').click();
+  await expect(fp).toHaveAttribute('data-step-index', '0');
+  await expect(fp).toHaveAttribute('data-code-ref', 'loop:1-3');
 });
 
-test('scrubbing backwards restores hidden workers', async ({ page }) => {
+test('after a step jump, moving the pointer out resumes play', async ({ page }) => {
+  await page.goto(url);
+  const fp = fpOf(page);
+  await page.locator('.fp-scenario-steps[data-scenario="fails-twice"] button[data-step-index="1"]').click();
+  await expect(fp).toHaveAttribute('data-playing', 'false');
+  await page.mouse.move(0, 0);
+  await expect(fp).toHaveAttribute('data-playing', 'true');
+});
+
+test('jumping to the last step parks its end state', async ({ page }) => {
+  await page.goto(url);
+  await page.locator('.fp-scenario-steps[data-scenario="fails-twice"] button[data-step-index="3"]').click();
+  await expect(fpOf(page)).toHaveAttribute('data-step-index', '3');
+  await expect(node(page, 'output')).toHaveAttribute('data-state', 'done');
+  await expect(page.locator('svg[data-layout="wide"] path.edge[data-edge="accept"]')).toHaveAttribute('data-state', 'active'); // token parked at the end of the edge
+  await page.mouse.move(0, 0);
+  await expect(fpOf(page)).toHaveAttribute('data-playing', 'true');
+});
+
+test('jumping back restores hidden workers', async ({ page }) => {
   await page.goto('/patterns/orchestrator-workers/');
-  await pause(page);
-  await page.locator('input[data-scrub]').fill('1000');
-  await expect(page.locator('svg[data-layout="wide"] g.node[data-node="w1"]')).not.toHaveAttribute('data-state', 'hidden');
-  await page.locator('input[data-scrub]').fill('0');
-  await expect(page.locator('svg[data-layout="wide"] g.node[data-node="w1"]')).toHaveAttribute('data-state', 'hidden');
+  const list = page.locator('ol.fp-captions').first();
+  const last = await list.locator('button').count() - 1;
+  await list.locator(`button[data-step-index="${last}"]`).click();
+  await expect(node(page, 'w1')).not.toHaveAttribute('data-state', 'hidden');
+  await list.locator('button[data-step-index="0"]').click();
+  await expect(node(page, 'w1')).toHaveAttribute('data-state', 'hidden');
 });
 
-test('caption is announced and the list marks the current step', async ({ page }) => {
+test('scenario tabs switch the captions list', async ({ page }) => {
   await page.goto(url);
-  await pause(page);
-  await page.locator('input[data-scrub]').fill('0');
-  await expect(page.locator('.fp-caption')).toHaveText('The task arrives at the generator.');
-  await expect(page.locator('flow-player').first()).toHaveAttribute('data-code-ref', 'loop:1-3');
-  await expect(page.locator('ol.fp-captions li[aria-current="step"]').first()).toHaveAttribute('data-step-index', '0');
-});
-
-test('scenario switch swaps timeline and captions', async ({ page }) => {
-  await page.goto(url);
-  await page.locator('select[data-scenario]').selectOption({ index: 1 });
+  const tabs = page.locator('.fp-tabs').getByRole('tab');
+  await expect(tabs).toHaveCount(2);
+  await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+  await tabs.first().focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(tabs.nth(1)).toBeFocused();
   await expect(page.locator('.fp-scenario-steps[data-scenario="passes-first-time"]')).toBeVisible();
   await expect(page.locator('.fp-scenario-steps[data-scenario="fails-twice"]')).toBeHidden();
+  await tabs.nth(0).click();
+  await expect(page.locator('.fp-scenario-steps[data-scenario="fails-twice"]')).toBeVisible();
+});
+
+test('node hover shows a tooltip with label, kind and description; leaving hides it', async ({ page }) => {
+  await page.goto(url);
+  await node(page, 'evaluator').hover();
+  await expect(tip(page)).toBeVisible();
+  await expect(tip(page)).toHaveAttribute('role', 'tooltip');
+  await expect(tip(page)).toContainText('Evaluator');
+  await expect(tip(page)).toContainText('Judges each draft against the criteria');
+  await expect(node(page, 'evaluator')).toHaveClass(/is-hover/);
+  const box = await tip(page).boundingBox();
+  const vp = page.viewportSize()!;
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(vp.width);
+  await page.mouse.move(0, 0);
+  await expect(tip(page)).toBeHidden();
+});
+
+test('Escape dismisses a hover tooltip even though focus is outside the player', async ({ page }) => {
+  await page.goto(url);
+  await node(page, 'evaluator').hover();
+  await expect(tip(page)).toBeVisible();
+  await expect(page.locator('flow-player :focus')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(tip(page)).toBeHidden();
+});
+
+test('the tooltip is hoverable: the pointer can move onto it without it closing', async ({ page }) => {
+  await page.goto(url);
+  await node(page, 'output').locator('.shape').hover();
+  await expect(tip(page)).toBeVisible();
+  const box = (await tip(page).boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
+  await page.waitForTimeout(400);
+  await expect(tip(page)).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(tip(page)).toBeHidden();
+});
+
+test('an edge tooltip is hoverable and does not chase the pointer', async ({ page }) => {
+  await page.goto(url);
+  const pt = await page.locator('svg[data-layout="wide"] path.edge-hit[data-hit="revise"]').evaluate((p: SVGPathElement) => {
+    const m = p.getPointAtLength(p.getTotalLength() / 2), c = p.getScreenCTM()!;
+    return { x: m.x * c.a + c.e, y: m.y * c.d + c.f };
+  });
+  await page.mouse.move(pt.x, pt.y);
+  await expect(tip(page)).toBeVisible();
+  await page.waitForTimeout(300);
+  const before = (await tip(page).boundingBox())!;
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2, { steps: 6 });
+  await page.mouse.move(before.x + before.width / 2 + 5, before.y + before.height / 2 + 3);
+  await page.waitForTimeout(400);
+  await expect(tip(page)).toBeVisible();
+  const after = (await tip(page).boundingBox())!;
+  expect(Math.abs(after.x - before.x)).toBeLessThan(1);
+  expect(Math.abs(after.y - before.y)).toBeLessThan(1);
+});
+
+test('re-inserting the player clears stale hover state', async ({ page }) => {
+  await page.goto(url);
+  const fp = fpOf(page);
+  await node(page, 'evaluator').hover();
+  await expect(fp).toHaveAttribute('data-playing', 'false');
+  await page.evaluate(() => { const el = document.querySelector('flow-player')!; const parent = el.parentElement!, next = el.nextSibling; el.remove(); parent.insertBefore(el, next); });
+  await page.mouse.move(0, 0);
+  await expect(fp).toHaveAttribute('data-playing', 'true');
+  await expect(tip(page)).toBeHidden();
+});
+
+test('scenario tabs control labelled panels', async ({ page }) => {
+  await page.goto(url);
+  const tab = page.locator('.fp-tabs [role="tab"]').first();
+  const panel = page.locator(`#${await tab.getAttribute('aria-controls')}`);
+  await expect(panel).toHaveAttribute('role', 'tabpanel');
+  await expect(panel).toHaveAttribute('aria-labelledby', (await tab.getAttribute('id'))!);
+});
+
+test('kind fallback text appears when a node has no description', async ({ page }) => {
+  await page.goto('/patterns/orchestrator-workers/');
+  const n = page.locator('svg[data-layout="wide"] g.node[data-kind="llm"]').first();
+  await n.hover();
+  await expect(tip(page)).toContainText('A single LLM call with a specific prompt.');
+  await expect(tip(page)).toContainText('LLM call');
+});
+
+test('focusing a node by keyboard shows the tooltip', async ({ page }) => {
+  await page.goto(url);
+  await node(page, 'generator').focus();
+  await expect(tip(page)).toBeVisible();
+  await expect(tip(page)).toContainText('Generator');
+  await expect(tip(page)).toContainText('Writes the first draft');
+  await expect(node(page, 'generator')).toHaveAttribute('aria-label', /Generator\. Writes the first draft/);
+  await page.keyboard.press('Escape');
+  await expect(tip(page)).toBeHidden();
+});
+
+test('hovering an edge shows From → To, label, description and example', async ({ page }) => {
+  await page.goto(url);
+  // Hover the real midpoint of the path (the bounding-box centre can miss a curved edge).
+  const pt = await page.locator('svg[data-layout="wide"] path.edge-hit[data-hit="revise"]').evaluate((p: SVGPathElement) => {
+    const m = p.getPointAtLength(p.getTotalLength() / 2), c = p.getScreenCTM()!;
+    return { x: m.x * c.a + c.e, y: m.y * c.d + c.f };
+  });
+  await page.mouse.move(pt.x, pt.y);
+  await expect(tip(page)).toBeVisible();
+  await expect(tip(page)).toContainText('→');
+  await expect(tip(page)).toContainText('Evaluator → Generator');
+  await expect(tip(page)).toContainText('revise');
+  await expect(tip(page)).toContainText("The evaluator's critique goes back");
+  await expect(tip(page)).toContainText('{"passed": false, "critique": "Claim 2 has no citation; tone too casual for a board memo."}');
+  await expect(page.locator('svg[data-layout="wide"] path.edge[data-edge="revise"]')).toHaveClass(/is-hover/);
+});
+
+test('parts list covers every node and edge', async ({ page }) => {
+  await page.goto(url);
+  const parts = page.locator('details.fp-parts');
+  await parts.locator('summary').click();
+  await expect(parts.locator('dt')).toHaveCount(8);
+  await expect(parts).toContainText('Evaluator → Generator');
+  await expect(parts).toContainText('Claim 2 has no citation');
 });
 
 test.describe('reduced motion', () => {
   test.use({ reducedMotion: 'reduce' });
-  test('does not autoplay and shows no moving tokens', async ({ page }) => {
+  test('does not autoplay, and step buttons still jump', async ({ page }) => {
     await page.goto(url);
-    const fp = page.locator('flow-player').first();
+    const fp = fpOf(page);
     await page.waitForTimeout(1500);
     await expect(fp).toHaveAttribute('data-playing', 'false');
     await expect(fp).toHaveAttribute('data-step-index', '0');
-    await page.getByRole('button', { name: 'Next step' }).click();
+    await page.locator('ol.fp-captions button[data-step-index="1"]').first().click();
     await expect(fp).toHaveAttribute('data-step-index', '1');
+    await expect(fp).toHaveAttribute('data-playing', 'false');
+  });
+});
+
+test.describe('no JS', () => {
+  test.use({ javaScriptEnabled: false });
+  test('the parts list is present with node and edge text', async ({ page }) => {
+    await page.goto(url);
+    const parts = page.locator('details.fp-parts');
+    await expect(parts).toHaveCount(1);
+    await expect(parts.locator('dt')).toHaveCount(8);
+    await expect(parts).toContainText('Judges each draft against the criteria');
   });
 });
