@@ -55,18 +55,64 @@ prompts:
       Question: {{question}}
 diagram:
   nodes:
-    - { id: user, kind: io, label: Question }
-    - { id: agent, kind: llm, label: Agent }
-    - { id: search, kind: tool, label: Search }
-    - { id: calculator, kind: tool, label: Calculator }
-    - { id: out, kind: io, label: Answer }
+    - id: user
+      kind: io
+      label: Question
+      description: "The question to solve, e.g. how many years apart the Eiffel Tower and Golden Gate Bridge were completed."
+    - id: agent
+      kind: llm
+      label: Agent
+      description: "Writes a Thought and one Action each turn, reading every Observation, until it gives a Final Answer."
+    - id: search
+      kind: tool
+      label: Search
+      description: "The search tool: looks up facts such as the Eiffel Tower's completion year."
+    - id: calculator
+      kind: tool
+      label: Calculator
+      description: "The calculator tool: does exact arithmetic on figures the agent has gathered, like 1937-1889."
+    - id: out
+      kind: io
+      label: Answer
+      description: "The Final Answer the agent writes once it judges it has enough information."
   edges:
-    - { id: ask, from: user, to: agent }
-    - { id: act-search, from: agent, to: search, label: action }
-    - { id: obs-search, from: search, to: agent, style: dashed, label: observation }
-    - { id: act-calc, from: agent, to: calculator, label: action }
-    - { id: obs-calc, from: calculator, to: agent, style: dashed, label: observation }
-    - { id: finish, from: agent, to: out, label: final }
+    - id: ask
+      from: user
+      to: agent
+      description: "The question is inserted into the ReAct prompt, which sets the Thought/Action/Observation format."
+      example: "Question: How many years apart were the Eiffel Tower and Golden Gate Bridge completed?"
+    - id: act-search
+      from: agent
+      to: search
+      label: action
+      description: "A search action the agent chose after its Thought; generation stops before any Observation."
+      example: "Thought: I need the Eiffel Tower's completion year. Action: search[Eiffel Tower completion year]"
+    - id: obs-search
+      from: search
+      to: agent
+      style: dashed
+      label: observation
+      description: "The search result is appended to the transcript as an Observation for the next Thought."
+      example: "Observation: The Eiffel Tower was completed in 1889."
+    - id: act-calc
+      from: agent
+      to: calculator
+      label: action
+      description: "A calculator action, used once both dates are in the transcript."
+      example: "Thought: I have both dates; subtract. Action: calculator[1937-1889]"
+    - id: obs-calc
+      from: calculator
+      to: agent
+      style: dashed
+      label: observation
+      description: "The computed number returns as an Observation the agent can use in its answer."
+      example: "Observation: 48"
+    - id: finish
+      from: agent
+      to: out
+      label: final
+      description: "When the agent writes Final Answer instead of an Action, the loop ends and the answer is returned."
+      example: "Thought: I now have enough information. Final Answer: 48 years apart (1889 vs 1937)."
   scenarios:
     - id: years-apart
       label: '"How many years apart were the Eiffel Tower and Golden Gate Bridge completed?"'
