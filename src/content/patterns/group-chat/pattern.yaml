@@ -1,0 +1,167 @@
+slug: group-chat
+name: Group Chat
+family: multi-agent
+aliases: [Selector group chat, Round table, AutoGen GroupChat, Shared-thread multi-agent]
+summary: Agents share one thread; a manager picks who speaks next, everyone sees every message, and the chat runs until it is told to stop.
+badges: { autonomy: high, cost: high, latency: high }
+sources:
+  - title: "AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation (Wu et al., 2023)"
+    url: https://arxiv.org/abs/2308.08155
+  - title: Selector Group Chat (AutoGen docs)
+    url: https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/selector-group-chat.html
+related:
+  composesWith: [human-in-the-loop, guardrails]
+  confusedWith:
+    - { slug: supervisor, difference: "A supervisor delegates tasks and each result comes back to it privately; in a group chat every message goes to the shared thread, and the manager only picks the next speaker." }
+    - { slug: debate, difference: "In a debate every agent answers the same question each round in parallel; in a group chat one agent speaks per turn, chosen for what the conversation needs next." }
+origin:
+  by: Qingyun Wu et al.
+  org: Microsoft Research, Penn State University, University of Washington, Xidian University
+  year: 2023
+  url: https://arxiv.org/abs/2308.08155
+  kind: introduced
+  note: "AutoGen made the group-chat manager a framework primitive: it selects a speaker, broadcasts the reply to every agent, and repeats."
+build:
+  goal: "Let several role agents solve a task in one shared conversation, where a selector model chooses who speaks each turn, until the task is done or a turn cap is reached."
+  steps:
+    - "Define each participant with a name, a one-line role description and its own system prompt. Start one shared thread and post the user's task as its first message."
+    - "Each turn, call the selector model with the {{prompt:selector}}, passing the role descriptions and the thread. Parse its reply as one participant name or the word TERMINATE."
+    - "If the reply is not a known name, retry the selector once; if it is still invalid, fall back to the next participant in a fixed rotation."
+    - "Call the chosen participant with the {{prompt:participant}} and the whole thread, then append its reply to the thread, tagged with its name."
+    - "After every message, check the stop conditions: the selector said TERMINATE, a participant ended its message with TERMINATE, or the turn cap is hit."
+    - "Return the last substantive message as the answer, together with the full thread."
+  stop: "Stop when the selector or a participant says TERMINATE, or after 12 participant messages. On the cap, return the thread and the last message with a status of max_turns, so the caller knows no one declared the task done."
+  requirements:
+    - "Make the turn cap a parameter (default 12); the chat must never run without one."
+    - "Tag every message with its speaker's name, and give every participant the whole thread; when it grows past the context budget, keep the task message and trim from the oldest replies."
+    - "Validate the selector's choice against the participant list, and do not let the same agent speak twice in a row unless that is explicitly allowed."
+    - "Log each turn: the selected speaker, the message, and the token counts for both the selector and the participant call."
+    - "Add a test with a stub LLM whose selector returns planner, budget, planner, then TERMINATE; assert that the participants were called in exactly that order and the thread holds 4 messages."
+prompts:
+  - id: selector
+    title: Speaker selector prompt
+    lang: markdown
+    source: |
+      You are coordinating a group chat. Choose who speaks next.
+
+      <roles>
+      {{roles}}
+      </roles>
+
+      <conversation>
+      {{thread}}
+      </conversation>
+
+      Read the conversation, then pick the one participant from {{participants}}
+      whose role best fits what the conversation needs next.
+      If the latest messages fully answer the task, reply TERMINATE instead.
+      Reply with only the participant's name, or TERMINATE.
+  - id: participant
+    title: Participant prompt
+    lang: markdown
+    source: |
+      You are {{name}}, the {{role}} in a group chat working on the task below.
+      The other participants are: {{others}}.
+
+      <task>{{task}}</task>
+      <conversation>{{thread}}</conversation>
+
+      Write your next message. Speak only for your own role: build on or correct
+      what others said, and name who you are answering. Keep it under 150 words.
+      Never write messages for other participants.
+      If the task is complete and nothing is left for anyone to do, end with TERMINATE.
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Task, description: "The request that opens the chat, such as 'Plan a 3-day Tokyo trip for under $1,500'." }
+    - { id: thread, kind: memory, label: Shared thread, description: "The one transcript everyone shares. Every message is appended here, tagged with its speaker, and every agent sees all of it." }
+    - { id: manager, kind: router, label: Chat manager, description: "Reads the thread and picks the next speaker, or says TERMINATE. It never writes content itself; it only chooses who talks." }
+    - { id: planner, kind: agent, label: Planner, description: "Drafts and revises the day-by-day itinerary from what the others have said." }
+    - { id: local, kind: agent, label: Local expert, description: "Knows Tokyo: suggests neighbourhoods, transit passes and which sights to pair on the same day." }
+    - { id: budget, kind: agent, label: Budget checker, description: "Prices every item in the plan and flags it when the total goes over the limit." }
+    - { id: out, kind: io, label: Plan, description: "The final itinerary, returned when the manager decides the thread has answered the task." }
+  edges:
+    - { id: post, from: user, to: thread, description: "The task is posted as the first message of the shared thread.", example: "user: Plan a 3-day Tokyo trip for two, flights excluded, under $1,500 in total." }
+    - { id: history, from: thread, to: manager, style: dashed, label: history, description: "The manager reads the whole thread before each turn to decide who should speak next.", example: "[user] Plan a 3-day Tokyo trip... [planner] Day 1: Shinjuku, hotel $180/night... [budget] Total $1,700, over by $200." }
+    - { id: pick-planner, from: manager, to: planner, description: "The manager hands the turn to the planner, which is called with the whole thread.", example: "Next speaker: planner (the budget checker found an overrun the itinerary must fix)." }
+    - { id: pick-local, from: manager, to: local, description: "The manager hands the turn to the local expert.", example: "Next speaker: local (the plan needs neighbourhoods and a transit pass)." }
+    - { id: pick-budget, from: manager, to: budget, description: "The manager hands the turn to the budget checker.", example: "Next speaker: budget (a full itinerary is on the table and has not been priced)." }
+    - { id: say-planner, from: planner, to: thread, description: "The planner's reply is broadcast: appended to the thread, where every agent will see it.", example: "planner: Day 1 Shinjuku, Day 2 Asakusa and Ueno, Day 3 Shibuya. Hotel: Shinjuku business hotel, $180/night." }
+    - { id: say-local, from: local, to: thread, description: "The local expert's reply is appended to the shared thread.", example: "local: Pair Asakusa with Ueno on foot. A 72-hour subway pass is about $10 each." }
+    - { id: say-budget, from: budget, to: thread, description: "The budget checker's reply is appended to the shared thread.", example: "budget: Hotel $540, food $420, transit $60, sights $680. Total $1,700: over by $200." }
+    - { id: done, from: manager, to: out, label: TERMINATE, description: "When the thread answers the task, the manager ends the chat and the latest plan is returned.", example: "TERMINATE. Final: 3-day plan, Ueno hotel at $120/night, total $1,420." }
+  scenarios:
+    - id: three-turns
+      label: Three turns, then done
+      steps:
+        - id: start
+          caption: The task is posted to the shared thread.
+          duration: 1200
+          events:
+            - { type: send, edge: post, token: { kind: prompt, label: task } }
+            - { type: write, node: thread, at: [0.7, 1] }
+        - id: turn-planner
+          caption: The manager reads the thread and calls on the planner, whose draft itinerary is broadcast to everyone.
+          duration: 3200
+          events:
+            - { type: send, edge: history, token: { kind: prompt, label: thread }, at: [0, 0.2] }
+            - { type: activate, node: manager, status: thinking, at: [0.2, 0.35] }
+            - { type: branch, node: manager, taken: pick-planner, notTaken: [pick-local, pick-budget, done], at: [0.35, 0.5] }
+            - { type: activate, node: planner, status: thinking, at: [0.5, 0.75] }
+            - { type: send, edge: say-planner, token: { kind: result, label: itinerary }, at: [0.75, 0.95] }
+            - { type: write, node: thread, at: [0.9, 1] }
+        - id: turn-budget
+          caption: Next the manager picks the budget checker, which prices the plan and finds it $200 over.
+          duration: 3200
+          events:
+            - { type: send, edge: history, token: { kind: prompt, label: thread }, at: [0, 0.2] }
+            - { type: activate, node: manager, status: thinking, at: [0.2, 0.35] }
+            - { type: branch, node: manager, taken: pick-budget, notTaken: [pick-planner, pick-local, done], at: [0.35, 0.5] }
+            - { type: activate, node: budget, status: thinking, at: [0.5, 0.75] }
+            - { type: send, edge: say-budget, token: { kind: feedback, label: over $200 }, at: [0.75, 0.95] }
+            - { type: write, node: thread, at: [0.9, 1] }
+        - id: turn-fix
+          caption: Because everyone saw the overrun, the manager sends the turn back to the planner, which swaps the hotel.
+          duration: 3200
+          events:
+            - { type: send, edge: history, token: { kind: prompt, label: thread }, at: [0, 0.2] }
+            - { type: activate, node: manager, status: thinking, at: [0.2, 0.35] }
+            - { type: branch, node: manager, taken: pick-planner, notTaken: [pick-local, pick-budget, done], at: [0.35, 0.5] }
+            - { type: activate, node: planner, status: thinking, at: [0.5, 0.75] }
+            - { type: send, edge: say-planner, token: { kind: result, label: revised }, at: [0.75, 0.95] }
+            - { type: write, node: thread, at: [0.9, 1] }
+        - id: finish
+          caption: The thread now answers the task, so the manager says TERMINATE and the plan is returned.
+          duration: 2400
+          events:
+            - { type: send, edge: history, token: { kind: prompt, label: thread }, at: [0, 0.3] }
+            - { type: activate, node: manager, status: thinking, at: [0.3, 0.5] }
+            - { type: branch, node: manager, taken: done, notTaken: [pick-planner, pick-local, pick-budget], at: [0.5, 0.65] }
+            - { type: send, edge: done, token: { kind: result, label: plan }, at: [0.65, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
+    - id: max-turns
+      label: Hits the turn cap
+      steps:
+        - id: start
+          caption: The task is posted to the shared thread.
+          duration: 1200
+          events:
+            - { type: send, edge: post, token: { kind: prompt, label: task } }
+            - { type: write, node: thread, at: [0.7, 1] }
+        - id: argue
+          caption: The planner and the budget checker trade turns, but each new plan is still over budget.
+          duration: 3600
+          repeat: 3
+          events:
+            - { type: branch, node: manager, taken: pick-planner, notTaken: [pick-local, pick-budget, done], at: [0, 0.15] }
+            - { type: send, edge: say-planner, token: { kind: result, label: plan }, at: [0.15, 0.4] }
+            - { type: write, node: thread, at: [0.35, 0.45] }
+            - { type: branch, node: manager, taken: pick-budget, notTaken: [pick-planner, pick-local, done], at: [0.5, 0.65] }
+            - { type: send, edge: say-budget, token: { kind: feedback, label: still over }, at: [0.65, 0.9] }
+            - { type: write, node: thread, at: [0.85, 0.95] }
+        - id: cap
+          caption: The turn cap is reached before anyone says TERMINATE; the last plan returns flagged as unfinished.
+          duration: 2400
+          events:
+            - { type: activate, node: manager, status: error, at: [0, 0.4] }
+            - { type: send, edge: done, token: { kind: feedback, label: max_turns }, at: [0.4, 0.9] }
+            - { type: activate, node: out, status: error, at: [0.85, 1] }
