@@ -76,6 +76,7 @@ prompts:
       Fix exactly these errors and change nothing else.
       Return only the corrected result, in the format: {{format}}
 diagram:
+  direction: DOWN
   nodes:
     - id: problem
       kind: io

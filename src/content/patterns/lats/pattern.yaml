@@ -376,7 +376,7 @@ variants:
                 - { type: branch, node: reward, taken: backprop, notTaken: [done], at: [0.4, 0.55] }
                 - { type: send, edge: backprop, token: { kind: feedback, label: "0.0 · 0.7" }, at: [0.55, 1] }
             - id: rollout-2
-              caption: Rollout 2 follows the better branch and simulates three more actions, never touching real blocks.
+              caption: Rollout 2 follows the better branch, simulating one more action per round without touching real blocks.
               duration: 3400
               repeat: 3
               events:
