@@ -1,6 +1,6 @@
 ---
 import type { DiagramSpec } from '../../lib/diagram/types';
-import type { DiagramLayout } from '../../lib/diagram/layout';
+import { labelLines, shownLabelIds, type DiagramLayout } from '../../lib/diagram/layout';
 import { KIND_LABEL, nodeDescription, edgeDescription, edgeTitle, nodeMap } from '../../lib/diagram/kinds';
 import NodeShape from './NodeShape.astro';
 interface Props { uid: string; spec: DiagramSpec; layout: DiagramLayout; variant: 'wide' | 'narrow'; title: string; compact?: boolean }
@@ -9,10 +9,17 @@ const labels = nodeMap(spec);
 const pid = `${uid}-${variant}`;
 const hiddenIds = new Set(spec.nodes.filter(n => n.hidden).map(n => n.id));
 const pending = (e: { from: string; to: string }) => hiddenIds.has(e.from) || hiddenIds.has(e.to);
+// Edges that converge on one node with the same label (e.g. five "rate?" edges into an evaluator) show it once.
+const shown = shownLabelIds(spec);
+const labelled = spec.edges.filter(e => shown.has(e.id));
+// Narrow: never shrink text below ~78% (scroll instead), never blow a small diagram up past 125%.
+const sizing = variant === 'narrow' ? `--min-w:${Math.round(layout.width * 0.78)}px;--max-w:${Math.round(layout.width * 1.25)}px` : undefined;
+// Compact thumbnails sit inside a link whose heading names them, so they are decorative.
 ---
-<svg class="diagram-svg" data-layout={variant} viewBox={`0 0 ${layout.width} ${layout.height}`} style={variant === 'narrow' ? `--min-w:${Math.round(layout.width * 0.8)}px` : undefined} role={compact ? 'img' : 'group'} aria-labelledby={`${pid}-t ${pid}-d`}>
-  <title id={`${pid}-t`}>{title} diagram</title>
-  <desc id={`${pid}-d`}>{spec.nodes.map(n => n.label).join(', ')}. Step captions follow the diagram.</desc>
+<svg class="diagram-svg" data-layout={variant} viewBox={`0 0 ${layout.width} ${layout.height}`} style={sizing}
+  aria-hidden={compact ? 'true' : undefined} role={compact ? undefined : 'group'} aria-labelledby={compact ? undefined : `${pid}-t ${pid}-d`}>
+  {!compact && <title id={`${pid}-t`}>{title} diagram</title>}
+  {!compact && <desc id={`${pid}-d`}>{spec.nodes.map(n => n.label).join(', ')}. Step captions follow the diagram.</desc>}
   <defs>
     <marker id={`${pid}-arrow`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path class="arrow" d="M0,1 L9,5 L0,9 z" />
@@ -21,27 +28,27 @@ const pending = (e: { from: string; to: string }) => hiddenIds.has(e.from) || hi
   </defs>
   <g class="groups">
     {Object.entries(layout.groups).map(([id, g]) => (
-      <g class="group" data-group={id}><rect x={g.x} y={g.y} width={g.w} height={g.h} rx="16" /><text x={g.x + 14} y={g.y + 20}>{g.label}</text></g>
+      <g class="group" data-group={id}><rect x={g.x} y={g.y} width={g.w} height={g.h} rx={compact ? 10 : 16} />{!compact && <text x={g.x + 14} y={g.y + 20}>{g.label}</text>}</g>
     ))}
   </g>
   <g class="edges">
     {spec.edges.map(e => (
       <path id={`${pid}-e-${e.id}`} class={`edge edge--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} marker-end={`url(#${pid}-arrow)`} data-from={e.from} data-to={e.to} />
     ))}
-    {spec.edges.filter(e => e.label).map(e => (
-      <text class={`edge-label edge-label--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} x={layout.edges[e.id].mid.x} y={layout.edges[e.id].mid.y - 8} text-anchor="middle" data-from={e.from} data-to={e.to} aria-hidden={compact ? undefined : 'true'}>{e.label}</text>
+    {!compact && labelled.map(e => (
+      <text class={`edge-label edge-label--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} x={layout.edges[e.id].label.x} y={layout.edges[e.id].label.y} text-anchor={layout.edges[e.id].label.anchor} data-from={e.from} data-to={e.to} aria-hidden="true">{e.label}</text>
     ))}
     {!compact && spec.edges.map(e => (
       <path class="edge-hit" data-hit={e.id} d={layout.edges[e.id].d} data-tip-t={edgeTitle(e, labels)} data-tip-k={e.label} data-tip-d={edgeDescription(e, labels)} data-tip-x={e.example} />
     ))}
   </g>
   <g class="nodes">
-    {spec.nodes.map(n => { const b = layout.nodes[n.id]; return (
+    {spec.nodes.map(n => { const b = layout.nodes[n.id]; const lines = labelLines(n.label, variant); return (
       <g class="node" data-node={n.id} data-kind={n.kind} data-state={n.hidden ? 'hidden' : 'idle'} transform={`translate(${b.x},${b.y})`} style={`--halo:url(#${pid}-halo)`}
         {...(compact ? {} : { tabindex: n.hidden ? -1 : 0, role: 'img', 'aria-label': `${n.label}. ${nodeDescription(n)}`, 'data-tip-t': n.label, 'data-tip-k': KIND_LABEL[n.kind], 'data-tip-d': nodeDescription(n) })}>
         <NodeShape kind={n.kind} cx={b.w / 2} />
-        <text class="label" x={b.w / 2} y={62} text-anchor="middle">{n.label}</text>
-        {n.sublabel && <text class="sublabel" x={b.w / 2} y={74} text-anchor="middle">{n.sublabel}</text>}
+        {!compact && <text class="label" x={b.w / 2} y={62} text-anchor="middle">{lines.map((l, i) => <tspan x={b.w / 2} dy={i ? 12 : 0}>{l}</tspan>)}</text>}
+        {!compact && n.sublabel && <text class="sublabel" x={b.w / 2} y={74 + 12 * (lines.length - 1)} text-anchor="middle">{n.sublabel}</text>}
       </g>
     ); })}
   </g>

@@ -3,11 +3,25 @@ import type { Timeline } from '../../lib/diagram/compile';
 import type { DiagramSpec } from '../../lib/diagram/types';
 
 interface Payload { spec: DiagramSpec; timelines: Timeline[] }
-interface View { svg: SVGSVGElement; layer: SVGGElement; paths: Map<string, SVGPathElement>; lengths: Map<string, number>; pool: SVGGElement[]; active: boolean }
+interface Rect { x: number; y: number; w: number; h: number }
+interface View { svg: SVGSVGElement; layer: SVGGElement; paths: Map<string, SVGPathElement>; lengths: Map<string, number>; pool: SVGGElement[]; active: boolean; obstacles?: Rect[] }
 const NS = 'http://www.w3.org/2000/svg';
 const HOLD_MS = 1600;
 const EPS = 0.001;
 const TRAIL = [0.05, 0.1, 0.15];
+const hit = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+/** What a token label must not cover: node glyphs, labels and sublabels, edge labels and group titles, in SVG units. */
+function textObstacles(svg: SVGSVGElement): Rect[] {
+  const inv = svg.getScreenCTM()?.inverse();
+  if (!inv) return [];
+  const out: Rect[] = [];
+  svg.querySelectorAll<SVGGraphicsElement>('.node text, .node .shape, text.edge-label, .group text').forEach(t => {
+    const b = t.getBBox(), m = inv.multiply(t.getScreenCTM()!);
+    const p = new DOMPoint(b.x, b.y).matrixTransform(m), q = new DOMPoint(b.x + b.width, b.y + b.height).matrixTransform(m);
+    out.push({ x: Math.min(p.x, q.x) - 2, y: Math.min(p.y, q.y) - 1, w: Math.abs(q.x - p.x) + 4, h: Math.abs(q.y - p.y) + 2 });
+  });
+  return out;
+}
 const ease = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
 
 class FlowPlayer extends HTMLElement {
@@ -58,6 +72,7 @@ class FlowPlayer extends HTMLElement {
       svg.querySelectorAll<SVGPathElement>('path.edge').forEach(p => paths.set(p.dataset.edge!, p));
       this.views.push({ svg, layer: svg.querySelector('g.tokens')!, paths, lengths: new Map(), pool: [], active: false });
     });
+    document.fonts?.ready.then(() => { for (const v of this.views) v.obstacles = undefined; this.render(); });
     this.classList.add('is-enhanced');
     this.setAttribute('data-playing', 'false');
     if (!this.compact) this.bindExplore();
@@ -68,8 +83,24 @@ class FlowPlayer extends HTMLElement {
 
   private observe() {
     for (const view of this.views) {
-      const ro = new ResizeObserver(([entry]) => { view.active = entry.contentRect.width > 0; if (view.active) this.render(); });
+      const ro = new ResizeObserver(([entry]) => { view.active = entry.contentRect.width > 0; view.obstacles = undefined; if (view.active) this.render(); });
       ro.observe(view.svg); this.observers.push(ro);
+    }
+    // When the diagram is wider than the stage (big fan-outs on phones), start scrolled to the middle, where the
+    // hub is, and let CSS show an edge fade on whichever side has more to see.
+    const stage = this.querySelector<HTMLElement>('.diagram-stage');
+    if (stage && !this.compact) {
+      let centred = false;
+      const sync = () => {
+        const max = stage.scrollWidth - stage.clientWidth;
+        if (max > 1 && !centred) { stage.scrollLeft = max / 2; centred = true; }
+        if (max <= 1) centred = false;
+        stage.toggleAttribute('data-more-left', max > 1 && stage.scrollLeft > 2);
+        stage.toggleAttribute('data-more-right', max > 1 && stage.scrollLeft < max - 2);
+      };
+      stage.addEventListener('scroll', sync, { passive: true });
+      const ro = new ResizeObserver(sync);
+      ro.observe(stage); this.observers.push(ro);
     }
     const io = new IntersectionObserver(([e]) => { this.visible = e.isIntersecting; this.sync(); }, { threshold: 0.3 });
     io.observe(this); this.observers.push(io);
@@ -263,8 +294,32 @@ class FlowPlayer extends HTMLElement {
         parts[k].setAttribute('transform', `translate(${pt.x},${pt.y})`);
       });
       const label = parts[4] as SVGTextElement;
-      label.textContent = tok.label ?? '';
-      label.setAttribute('transform', `translate(${head.x},${head.y - 10})`);
+      const text = tok.label ?? '';
+      if (label.textContent !== text) label.textContent = text;
+      if (!text) return;
+      // Put the label beside the token, perpendicular to its direction of travel, on whichever side clears the
+      // static labels; hide it for the frames where no side is clear.
+      v.obstacles ??= textObstacles(v.svg);
+      const back = path.getPointAtLength(Math.max(0, ease(tok.progress) * len - 6));
+      let tx = head.x - back.x, ty = head.y - back.y;
+      const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+      const w = text.length * 6.2 + 4, h = 12;
+      let placed = false;
+      // beside the token first, then trailing behind it (clear of the glyph it is about to reach), then leading it
+      for (const [sgn, lag] of [[-1, 0], [1, 0], [-1, w / 2 + 8], [1, w / 2 + 8], [-1, -w / 2 - 8], [1, -w / 2 - 8]]) {
+        // normal (-ty, tx) or its opposite; for a horizontal edge -1 is above, for a vertical one it is right
+        const nx = -ty * sgn, ny = tx * sgn;
+        const cx = head.x + nx * 13 - tx * lag, cy = head.y + ny * 13 - ty * lag;
+        const anchor = Math.abs(nx) > 0.7 ? (nx > 0 ? 'start' : 'end') : 'middle';
+        const left = anchor === 'middle' ? cx - w / 2 : anchor === 'start' ? cx - 4 : cx - w + 4;
+        const box = { x: left, y: cy - h / 2, w, h };
+        if (v.obstacles.some(o => hit(o, box))) continue;
+        label.setAttribute('text-anchor', anchor);
+        label.setAttribute('transform', `translate(${anchor === 'middle' ? cx : anchor === 'start' ? cx - 4 : cx + 4},${cy + 3.5})`);
+        placed = true;
+        break;
+      }
+      if (placed) label.removeAttribute('display'); else label.setAttribute('display', 'none');
     });
   }
 

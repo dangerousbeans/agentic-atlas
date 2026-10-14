@@ -58,26 +58,109 @@ prompts:
       Then give one sentence of reasoning.
 diagram:
   nodes:
-    - { id: problem, kind: io, label: Problem }
-    - { id: t1, kind: llm, label: Thought 1 }
-    - { id: t2, kind: llm, label: Thought 2 }
-    - { id: t3, kind: llm, label: Thought 3 }
-    - { id: t2a, kind: llm, label: Thought 2a, hidden: true }
-    - { id: t2b, kind: llm, label: Thought 2b, hidden: true }
-    - { id: evaluator, kind: evaluator, label: Evaluator }
-    - { id: out, kind: io, label: Solution }
+    - id: problem
+      kind: io
+      label: Problem
+      description: "The puzzle to solve: make 24 from 4, 9, 10 and 13 using + - * /."
+    - id: t1
+      kind: llm
+      label: Thought 1
+      description: "First candidate move, 4+9=13, proposed alongside two alternatives."
+    - id: t2
+      kind: llm
+      label: Thought 2
+      description: "Second candidate move, 10-4=6, which the evaluator rates promising and the search expands."
+    - id: t3
+      kind: llm
+      label: Thought 3
+      description: "Third candidate move, 13*4=52, which looks too large to reach 24 and gets pruned."
+    - id: t2a
+      kind: llm
+      label: Thought 2a
+      hidden: true
+      description: "A follow-up from Thought 2, 6+9=15; the search tries it first, but every continuation fails."
+    - id: t2b
+      kind: llm
+      label: Thought 2b
+      hidden: true
+      description: "A follow-up from Thought 2, 13-9=4, leaving 6 and 4; the search backtracks here and finds 6*4=24."
+    - id: evaluator
+      kind: evaluator
+      label: Evaluator
+      description: "Rates each candidate sure, maybe or impossible so the search can expand good branches and prune dead ends."
+    - id: out
+      kind: io
+      label: Solution
+      description: "The finished path of moves that reaches 24, returned once a branch solves the puzzle."
   edges:
-    - { id: p1, from: problem, to: t1 }
-    - { id: p2, from: problem, to: t2 }
-    - { id: p3, from: problem, to: t3 }
-    - { id: g1, from: t2, to: t2a, label: expand }
-    - { id: g2, from: t2, to: t2b, label: expand }
-    - { id: s1, from: t1, to: evaluator, style: dashed, label: "rate?" }
-    - { id: s2, from: t2, to: evaluator, style: dashed, label: "rate?" }
-    - { id: s3, from: t3, to: evaluator, style: dashed, label: "rate?" }
-    - { id: s4, from: t2a, to: evaluator, style: dashed, label: "rate?" }
-    - { id: s5, from: t2b, to: evaluator, style: dashed, label: "rate?" }
-    - { id: solved, from: t2b, to: out, label: solved }
+    - id: p1
+      from: problem
+      to: t1
+      description: "The proposal prompt yields a first candidate move from the starting numbers."
+      example: "Propose 3 different next steps. A: 4+9=13 (left: 13, 10, 13)"
+    - id: p2
+      from: problem
+      to: t2
+      description: "The same prompt yields a second, different candidate, so the model does not commit to one line."
+      example: "B: 10-4=6 (left: 6, 9, 13)"
+    - id: p3
+      from: problem
+      to: t3
+      description: "A third distinct candidate rounds out the breadth of three."
+      example: "C: 13*4=52 (left: 52, 9, 10)"
+    - id: g1
+      from: t2
+      to: t2a
+      label: expand
+      description: "The promising Thought 2 is expanded with a new proposal prompt; this is one follow-up."
+      example: "Progress: 10-4=6 (left: 6, 9, 13). Next step A: 6+9=15 (left: 15, 13)"
+    - id: g2
+      from: t2
+      to: t2b
+      label: expand
+      description: "A second follow-up from Thought 2, a different next move."
+      example: "Next step B: 13-9=4 (left: 6, 4)"
+    - id: s1
+      from: t1
+      to: evaluator
+      style: dashed
+      label: "rate?"
+      description: "Thought 1 is sent to the evaluator to ask whether it can still reach 24."
+      example: "Candidate progress: 4+9=13 (left: 13, 10, 13). Answer sure, maybe or impossible."
+    - id: s2
+      from: t2
+      to: evaluator
+      style: dashed
+      label: "rate?"
+      description: "Thought 2 is sent to the evaluator for a rating."
+      example: "Candidate progress: 10-4=6 (left: 6, 9, 13). Answer sure, maybe or impossible."
+    - id: s3
+      from: t3
+      to: evaluator
+      style: dashed
+      label: "rate?"
+      description: "Thought 3 is sent to the evaluator for a rating."
+      example: "Candidate progress: 13*4=52 (left: 52, 9, 10). Answer sure, maybe or impossible."
+    - id: s4
+      from: t2a
+      to: evaluator
+      style: dashed
+      label: "rate?"
+      description: "The follow-up Thought 2a is rated before the search explores it."
+      example: "Candidate progress: 10-4=6, 6+9=15 (left: 15, 13). Answer sure, maybe or impossible."
+    - id: s5
+      from: t2b
+      to: evaluator
+      style: dashed
+      label: "rate?"
+      description: "The follow-up Thought 2b is rated before the search explores it."
+      example: "Candidate progress: 10-4=6, 13-9=4 (left: 6, 4). Answer sure, maybe or impossible."
+    - id: solved
+      from: t2b
+      to: out
+      label: solved
+      description: "The last move from Thought 2b makes 24, so the whole path is returned as the solution."
+      example: "10-4=6; 13-9=4; 6*4=24"
   scenarios:
     - id: game-of-24
       label: '"Make 24 from 4, 9, 10, 13"'

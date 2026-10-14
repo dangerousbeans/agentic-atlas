@@ -19,9 +19,10 @@ code:
     source: |
       def corrective_rag(question, max_checks=2):
           docs = retriever(question)
-          grades = [llm(GRADER_PROMPT, question=question, doc=d).relevant for d in docs]
+          verdicts = [llm(GRADER_PROMPT, question=question, doc=d) for d in docs]
+          grades = [v.relevant for v in verdicts]
           if not any(grades):
-              query = llm(REWRITER_PROMPT, question=question)
+              query = llm(REWRITER_PROMPT, question=question, rejected_reasons=[v.reason for v in verdicts])
               docs = web_search(query)
           else:
               docs = [d for d, ok in zip(docs, grades) if ok]
@@ -70,24 +71,24 @@ prompts:
       {"supported": true|false, "unsupported_claims": ["claim", "..."]}
 diagram:
   nodes:
-    - { id: user, kind: io, label: Question }
-    - { id: retriever, kind: memory, label: Retriever }
-    - { id: grader, kind: evaluator, label: Doc grader }
-    - { id: rewriter, kind: llm, label: Rewriter }
-    - { id: web, kind: tool, label: Web search }
-    - { id: generator, kind: llm, label: Generator }
-    - { id: check, kind: evaluator, label: Answer check }
-    - { id: out, kind: io, label: Answer }
+    - { id: user, kind: io, label: Question, description: "The user's question, e.g. 'Who is our current vendor for payroll?', sent to the internal index first." }
+    - { id: retriever, kind: memory, label: Retriever, description: "Searches the internal index and returns the top documents for the question, relevant or not." }
+    - { id: grader, kind: evaluator, label: Doc grader, description: "Reads each retrieved document and returns JSON saying whether it contains facts needed for the answer." }
+    - { id: rewriter, kind: llm, label: Rewriter, description: "When every document is rejected, turns the question into one sharp web query using the rejection reasons." }
+    - { id: web, kind: tool, label: Web search, description: "External web search that replaces the failed internal retrieval with fresh documents." }
+    - { id: generator, kind: llm, label: Generator, description: "Writes the answer from the kept or web documents, revising when the answer check flags claims." }
+    - { id: check, kind: evaluator, label: Answer check, description: "Checks every claim in the draft against the documents and lists any unsupported claims." }
+    - { id: out, kind: io, label: Answer, description: "The final answer: released once the check passes, or the best answer after retries run out." }
   edges:
-    - { id: ask, from: user, to: retriever }
-    - { id: docs, from: retriever, to: grader }
-    - { id: reject, from: grader, to: rewriter, label: irrelevant }
-    - { id: keep, from: grader, to: generator, label: relevant }
-    - { id: rewrite, from: rewriter, to: web }
-    - { id: fetch, from: web, to: generator }
-    - { id: draft, from: generator, to: check }
-    - { id: regen, from: check, to: generator, style: loop, label: unsupported }
-    - { id: accept, from: check, to: out, label: supported }
+    - { id: ask, from: user, to: retriever, description: "The question goes to the internal retriever.", example: "Question: Who is our current vendor for payroll?" }
+    - { id: docs, from: retriever, to: grader, description: "The top retrieved documents are handed to the grader one by one.", example: "4 docs: [{\"id\": \"kb-112\", \"text\": \"Payroll vendor evaluation notes, 2021...\"}, ...]" }
+    - { id: reject, from: grader, to: rewriter, label: irrelevant, description: "If no document is relevant, the grader's reasons go to the rewriter.", example: "{\"relevant\": false, \"reason\": \"Discusses a 2021 payroll vendor evaluation, not the current vendor.\"}" }
+    - { id: keep, from: grader, to: generator, label: relevant, description: "Documents graded relevant skip the web and go straight to the generator.", example: "{\"relevant\": true, \"reason\": \"States the current payroll vendor and contract end date.\"} -> 2 docs kept" }
+    - { id: rewrite, from: rewriter, to: web, description: "The rewriter's single query is sent to web search.", example: "Web query: \"Acme Corp payroll provider 2026\"" }
+    - { id: fetch, from: web, to: generator, description: "Web results become the generator's documents.", example: "web docs: [\"Acme Corp switched payroll to Gusto in March 2025 (press release)\", ...]" }
+    - { id: draft, from: generator, to: check, description: "Each draft answer goes to the check along with the documents it should rest on.", example: "Acme uses Gusto for payroll since March 2025, on a three-year contract." }
+    - { id: regen, from: check, to: generator, style: loop, label: unsupported, description: "Unsupported claims go back to the generator so it can drop or fix them.", example: "{\"supported\": false, \"unsupported_claims\": [\"on a three-year contract\"]}" }
+    - { id: accept, from: check, to: out, label: supported, description: "A fully supported answer leaves the pipeline unchanged.", example: "{\"supported\": true, \"unsupported_claims\": []}" }
   scenarios:
     - id: docs-irrelevant
       label: Retrieved docs are irrelevant
@@ -103,14 +104,14 @@ diagram:
         - id: grade
           caption: The grader reads each document and rejects them all as off-topic.
           duration: 2200
-          codeRef: { block: crag, lines: "3-4" }
+          codeRef: { block: crag, lines: "3-5" }
           events:
             - { type: activate, node: grader, status: error, at: [0, 0.6] }
             - { type: branch, node: grader, taken: reject, notTaken: [keep], at: [0.6, 1] }
         - id: rewrite
           caption: The rewriter turns the question into a sharper web query and the search runs.
           duration: 2800
-          codeRef: { block: crag, lines: "5-6" }
+          codeRef: { block: crag, lines: "6-7" }
           events:
             - { type: send, edge: reject, token: { kind: feedback, label: rejected }, at: [0, 0.25] }
             - { type: activate, node: rewriter, status: thinking, at: [0.25, 0.5] }
@@ -119,7 +120,7 @@ diagram:
         - id: generate
           caption: The generator writes the answer from the fresh web results.
           duration: 2400
-          codeRef: { block: crag, lines: "10-11" }
+          codeRef: { block: crag, lines: "11-12" }
           events:
             - { type: send, edge: fetch, token: { kind: result, label: web docs }, at: [0, 0.4] }
             - { type: activate, node: generator, status: thinking, at: [0.4, 0.7] }
@@ -127,7 +128,7 @@ diagram:
         - id: verify
           caption: The answer check finds every claim supported and the answer is returned.
           duration: 2000
-          codeRef: { block: crag, lines: "12-14" }
+          codeRef: { block: crag, lines: "13-15" }
           events:
             - { type: branch, node: check, taken: accept, notTaken: [regen], at: [0, 0.5] }
             - { type: send, edge: accept, token: { kind: result, label: answer }, at: [0.5, 1] }
@@ -145,7 +146,7 @@ diagram:
         - id: grade
           caption: The grader keeps the relevant documents and sends them straight to the generator.
           duration: 2200
-          codeRef: { block: crag, lines: "3-4" }
+          codeRef: { block: crag, lines: "3-5" }
           events:
             - { type: activate, node: grader, status: thinking, at: [0, 0.5] }
             - { type: branch, node: grader, taken: keep, notTaken: [reject], at: [0.5, 0.75] }
@@ -153,7 +154,7 @@ diagram:
         - id: first-draft
           caption: The first draft contains a claim no document supports, so the check sends it back.
           duration: 3200
-          codeRef: { block: crag, lines: "10-15" }
+          codeRef: { block: crag, lines: "11-16" }
           events:
             - { type: activate, node: generator, status: thinking, at: [0, 0.25] }
             - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.25, 0.5] }
@@ -162,7 +163,7 @@ diagram:
         - id: second-draft
           caption: The generator drops the unsupported claim, the check passes and the answer ships.
           duration: 2800
-          codeRef: { block: crag, lines: "10-14" }
+          codeRef: { block: crag, lines: "11-15" }
           events:
             - { type: activate, node: generator, status: thinking, at: [0, 0.3] }
             - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.3, 0.55] }
