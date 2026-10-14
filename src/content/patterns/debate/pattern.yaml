@@ -51,23 +51,23 @@ prompts:
       Respond in JSON: {"answer": "...", "why": "two sentences on the deciding evidence"}
 diagram:
   nodes:
-    - { id: user, kind: io, label: Question, pos: { x: 0, y: 0 } }
-    - { id: a, kind: agent, label: Debater A, pos: { x: 200, y: -130 } }
-    - { id: b, kind: agent, label: Debater B, pos: { x: 370, y: 0 } }
-    - { id: c, kind: agent, label: Debater C, pos: { x: 200, y: 130 } }
-    - { id: judge, kind: aggregator, label: Judge, pos: { x: 620, y: 0 } }
-    - { id: out, kind: io, label: Ruling, pos: { x: 800, y: 0 } }
+    - { id: user, kind: io, label: Question, pos: { x: 0, y: 0 }, description: "The question posed to every debater, e.g. 'Is 3,599 prime?'." }
+    - { id: a, kind: agent, label: Debater A, pos: { x: 200, y: -130 }, description: "Debater A answers independently, then rereads B's and C's answers and defends or fixes its own each round." }
+    - { id: b, kind: agent, label: Debater B, pos: { x: 370, y: 0 }, description: "Debater B answers independently, then critiques the other answers and revises its own each round." }
+    - { id: c, kind: agent, label: Debater C, pos: { x: 200, y: 130 }, description: "Debater C answers independently, then weighs A and B's reasoning and revises or defends its answer." }
+    - { id: judge, kind: aggregator, label: Judge, pos: { x: 620, y: 0 }, description: "Optional impartial judge. Reads the final answers and picks the best-supported one or merges them." }
+    - { id: out, kind: io, label: Ruling, pos: { x: 800, y: 0 }, description: "The single ruling the judge returns, with the deciding evidence." }
   edges:
-    - { id: q-a, from: user, to: a }
-    - { id: q-b, from: user, to: b }
-    - { id: q-c, from: user, to: c }
-    - { id: x-ab, from: a, to: b, style: dashed }
-    - { id: x-bc, from: b, to: c, style: dashed }
-    - { id: x-ca, from: c, to: a, style: dashed }
-    - { id: j-a, from: a, to: judge }
-    - { id: j-b, from: b, to: judge }
-    - { id: j-c, from: c, to: judge }
-    - { id: ruling, from: judge, to: out }
+    - { id: q-a, from: user, to: a, description: "The same question goes to debater A.", example: "Question: Is 3,599 prime? Show your reasoning." }
+    - { id: q-b, from: user, to: b, description: "The same question goes to debater B in parallel.", example: "Question: Is 3,599 prime? Show your reasoning." }
+    - { id: q-c, from: user, to: c, description: "The same question goes to debater C in parallel.", example: "Question: Is 3,599 prime? Show your reasoning." }
+    - { id: x-ab, from: a, to: b, style: dashed, description: "A's current answer is shown to B to read critically each round.", example: "A: Yes, 3,599 is prime; no small divisor found." }
+    - { id: x-bc, from: b, to: c, style: dashed, description: "B's current answer is shown to C each round.", example: "B: No, 3,599 = 59 x 61, so it is composite." }
+    - { id: x-ca, from: c, to: a, style: dashed, description: "C's current answer is shown to A each round.", example: "C: Not prime. 59 x 61 = 3,599, I checked by multiplying." }
+    - { id: j-a, from: a, to: judge, description: "A's final answer, after the last round, goes to the judge.", example: "A (final): Composite. I missed 59 earlier; 59 x 61 = 3,599." }
+    - { id: j-b, from: b, to: judge, description: "B's final answer goes to the judge.", example: "B (final): Composite, 59 x 61." }
+    - { id: j-c, from: c, to: judge, description: "C's final answer goes to the judge.", example: "C (final): Composite, 59 x 61." }
+    - { id: ruling, from: judge, to: out, description: "The judge's decision and short justification are returned.", example: "{\"answer\": \"No, 3,599 is not prime (59 x 61).\", \"why\": \"All three debaters converged and the factorisation is easy to verify.\"}" }
   scenarios:
     - id: three-debaters
       label: Three debaters, two rounds

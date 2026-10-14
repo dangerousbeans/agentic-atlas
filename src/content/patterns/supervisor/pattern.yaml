@@ -64,24 +64,24 @@ diagram:
   groups:
     - { id: coding-team, label: Coding team, children: [coder, tester] }
   nodes:
-    - { id: user, kind: io, label: Task }
-    - { id: supervisor, kind: agent, label: Supervisor }
-    - { id: researcher, kind: agent, label: Researcher }
-    - { id: coder, kind: agent, label: Coder }
-    - { id: tester, kind: agent, label: Tester }
-    - { id: writer, kind: agent, label: Writer }
-    - { id: out, kind: io, label: Result }
+    - { id: user, kind: io, label: Task, description: "The incoming task, such as 'Produce a report with a chart on last quarter's sales'." }
+    - { id: supervisor, kind: agent, label: Supervisor, description: "Plans the work, delegates one step at a time to a specialist, reads each result and decides when to finish." }
+    - { id: researcher, kind: agent, label: Researcher, description: "Specialist agent with search tools. Gathers facts for the brief and reports its findings back." }
+    - { id: coder, kind: agent, label: Coder, description: "Specialist agent that runs code, such as producing a chart; may lead its own sub-team with the tester." }
+    - { id: tester, kind: agent, label: Tester, description: "Sub-agent inside the coding team. Runs the tests the coder asks for and reports pass or fail." }
+    - { id: writer, kind: agent, label: Writer, description: "Specialist agent that turns the findings and chart it is given into the drafted report." }
+    - { id: out, kind: io, label: Result, description: "The finished deliverable the supervisor returns after judging the task complete." }
   edges:
-    - { id: task, from: user, to: supervisor }
-    - { id: d-research, from: supervisor, to: researcher }
-    - { id: r-research, from: researcher, to: supervisor, style: dashed }
-    - { id: d-code, from: supervisor, to: coder }
-    - { id: r-code, from: coder, to: supervisor, style: dashed }
-    - { id: d-write, from: supervisor, to: writer }
-    - { id: r-write, from: writer, to: supervisor, style: dashed }
-    - { id: sub-brief, from: coder, to: tester, label: sub-task }
-    - { id: sub-result, from: tester, to: coder, style: dashed }
-    - { id: finish, from: supervisor, to: out }
+    - { id: task, from: user, to: supervisor, description: "The task enters the supervisor, which plans before delegating.", example: "Task: Write a report with a chart on last quarter's sales by region." }
+    - { id: d-research, from: supervisor, to: researcher, description: "A self-contained brief delegating the research step to the researcher.", example: "{\"action\": \"delegate\", \"agent\": \"researcher\", \"instruction\": \"Find Q3 sales by region; return a table with sources.\"}" }
+    - { id: r-research, from: researcher, to: supervisor, style: dashed, description: "The researcher's findings return to the supervisor, not to other workers.", example: "Findings: EMEA $4.1M, APAC $2.7M, AMER $6.3M (source: finance_q3.xlsx)." }
+    - { id: d-code, from: supervisor, to: coder, description: "A brief sending the data to the coder, with what to return.", example: "{\"action\": \"delegate\", \"agent\": \"coder\", \"instruction\": \"Plot these Q3 sales by region as a bar chart; return the PNG path.\"}" }
+    - { id: r-code, from: coder, to: supervisor, style: dashed, description: "The coder's summarized result returns to the supervisor.", example: "Done: chart saved to out/q3_sales.png; tests pass." }
+    - { id: d-write, from: supervisor, to: writer, description: "A brief giving the writer the findings and chart to draft from.", example: "{\"action\": \"delegate\", \"agent\": \"writer\", \"instruction\": \"Draft a one-page Q3 sales report using the table and out/q3_sales.png.\"}" }
+    - { id: r-write, from: writer, to: supervisor, style: dashed, description: "The writer's draft returns to the supervisor for a final check.", example: "Draft: Q3 sales reached $13.1M, led by AMER at $6.3M... (chart attached)" }
+    - { id: sub-brief, from: coder, to: tester, label: sub-task, description: "Inside the coding team, the coder delegates testing to the tester.", example: "Run the unit tests for the login fix and report failures." }
+    - { id: sub-result, from: tester, to: coder, style: dashed, description: "The tester's verdict returns to the coder, which the supervisor never sees.", example: "12 passed, 0 failed." }
+    - { id: finish, from: supervisor, to: out, description: "The supervisor returns the final deliverable once the task is fully done.", example: "{\"action\": \"finish\", \"answer\": \"Q3 sales report with chart attached: out/q3_report.pdf\"}" }
   scenarios:
     - id: delegate
       label: One supervisor, three specialists

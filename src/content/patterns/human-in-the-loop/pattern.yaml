@@ -54,20 +54,20 @@ prompts:
       Respond in JSON: {"risk": "high" | "low", "reason": "one sentence"}
 diagram:
   nodes:
-    - { id: user, kind: io, label: Task }
-    - { id: agent, kind: agent, label: Agent }
-    - { id: risk, kind: router, label: Risk check }
-    - { id: human, kind: human, label: Reviewer }
-    - { id: tool, kind: tool, label: Action API }
-    - { id: out, kind: io, label: Done }
+    - { id: user, kind: io, label: Task, description: "The task that starts the run, such as 'Refund customer #4821 for the duplicate $480 charge'." }
+    - { id: agent, kind: agent, label: Agent, description: "Decides the next action and proposes a tool call; replans when the reviewer rejects it." }
+    - { id: risk, kind: router, label: Risk check, description: "Classifier that rates the proposed call high or low risk: irreversible, moves money, or changes production data." }
+    - { id: human, kind: human, label: Reviewer, description: "A person who sees the action, its rationale and effect, then approves, edits or rejects. The run waits." }
+    - { id: tool, kind: tool, label: Action API, description: "The real action API, e.g. issuing the refund. Runs only after a low-risk pass or human approval." }
+    - { id: out, kind: io, label: Done, description: "Confirmation that the action completed, such as 'refund sent'." }
   edges:
-    - { id: task, from: user, to: agent }
-    - { id: propose, from: agent, to: risk }
-    - { id: high, from: risk, to: human, label: high risk }
-    - { id: low, from: risk, to: tool, label: low risk }
-    - { id: approve, from: human, to: tool, label: approve }
-    - { id: reject, from: human, to: agent, style: dashed, label: reject }
-    - { id: result, from: tool, to: out }
+    - { id: task, from: user, to: agent, description: "The task goes to the agent, which decides what action to take.", example: "Refund customer #4821 for the duplicate $480 charge." }
+    - { id: propose, from: agent, to: risk, description: "The agent's proposed tool call goes to the risk check before anything executes.", example: "{\"tool\": \"issue_refund\", \"arguments\": {\"customer\": 4821, \"amount\": 480}}" }
+    - { id: high, from: risk, to: human, label: high risk, description: "High-risk calls are paused and sent to the reviewer as an approval request.", example: "Agent wants to take an action that needs your approval. Action: issue_refund. Arguments: customer 4821, $480. Reversible: no. Reply: approve, edit or reject." }
+    - { id: low, from: risk, to: tool, label: low risk, description: "Low-risk calls skip review and go straight to the tool.", example: "{\"tool\": \"get_order_status\", \"arguments\": {\"order\": \"A-1093\"}}" }
+    - { id: approve, from: human, to: tool, label: approve, description: "The reviewer's approval, with any edited arguments, lets the run resume and execute.", example: "{\"kind\": \"approve\"}   (or {\"kind\": \"edit\", \"edited_action\": {\"amount\": 240}})" }
+    - { id: reject, from: human, to: agent, style: dashed, label: reject, description: "A rejection with a reason goes back so the agent replans instead of acting.", example: "{\"kind\": \"reject\", \"reason\": \"Deleting account data needs legal sign-off first.\"}" }
+    - { id: result, from: tool, to: out, description: "The tool's result flows out as the final outcome.", example: "{\"status\": \"ok\", \"message\": \"Refund of $480 sent to customer 4821.\"}" }
   scenarios:
     - id: approve
       label: High risk, approved
