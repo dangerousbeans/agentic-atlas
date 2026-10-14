@@ -8,6 +8,8 @@ A <NodeRef id="router">classifier</NodeRef> reads the <NodeRef id="input">incomi
 
 The classifier can be an LLM call, a small fine-tuned model or a plain rules engine. The same shape also routes by difficulty: send easy questions to a small, cheap model and hard ones to a larger one.
 
+The variants swap out the classifier. An embedding router makes no LLM call at all: it compares the message with stored example utterances for each route and falls back to the general handler when nothing is close. A rules-first router lets plain keyword and pattern rules settle the obvious cases for free, and only sends what they miss to the LLM classifier.
+
 ## When to use
 
 - The input falls into distinct categories that are better handled separately.

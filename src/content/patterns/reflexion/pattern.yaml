@@ -11,6 +11,28 @@ related:
   composesWith: [react]
   confusedWith:
     - { slug: evaluator-optimizer, difference: "Evaluator-Optimizer critiques and revises one draft inside a single run; Reflexion distills each failed trial into a lesson saved in memory, so a fresh attempt starts smarter." }
+origin:
+  by: Noah Shinn et al.
+  org: Northeastern University, MIT and Princeton University
+  year: 2023
+  url: https://arxiv.org/abs/2303.11366
+  kind: introduced
+build:
+  goal: "Solve a task that has an automatic pass or fail check by retrying it in fresh trials, each carrying the plain-language lessons the model wrote after earlier failures."
+  steps:
+    - "Run trial 1: call the actor model with the {{prompt:actor}}, filling in the task and an empty lessons list."
+    - "Run the attempt against the unit tests in a sandbox and capture pass or fail, plus the failing test output."
+    - "If every test passes, return the attempt."
+    - "Otherwise call the reflector with the {{prompt:reflector}}, passing the task, the attempt and the test output, and append its lesson to the lessons list."
+    - "Start the next trial with a fresh actor call that includes the lessons list, but not the earlier attempts or their transcripts."
+  stop: "Stop when an attempt passes every test, or after 4 trials. At the cap, return the attempt that passed the most tests, with every lesson and a status saying it did not pass."
+  requirements:
+    - "Make the trial cap (default 4) and the number of lessons kept in the prompt (default the 3 most recent) parameters."
+    - "Run the tests with a timeout (default 30 seconds), and pass a timeout or crash to the reflector as the failure trace."
+    - "If the reflector's reply is empty or contains code, retry it once; if it fails again, use the first 500 characters of the test output as the lesson."
+    - "Store the lessons with the task id, so a rerun of the same task can start from them."
+    - "Add a test with a stub LLM whose first attempt fails a fake test and whose second passes; assert the reflector ran once and the second actor prompt contains its lesson verbatim."
+defaultVariantName: Unit tests
 prompts:
   - id: actor
     title: Actor prompt
@@ -149,3 +171,191 @@ diagram:
             - { type: send, edge: attempt, token: { kind: result, label: code v2 }, at: [0.3, 0.6] }
             - { type: branch, node: tests, taken: pass, notTaken: [fail], at: [0.6, 0.8] }
             - { type: send, edge: pass, token: { kind: result, label: solution }, at: [0.8, 1] }
+variants:
+  - id: llm-judge
+    name: LLM judge
+    summary: "With no unit tests to run, an LLM judge checks each trial against a rubric, and its verdict and reason feed the reflector."
+    build:
+      goal: "Retry a task that has no automatic tests in fresh trials, using an LLM judge with a rubric to decide success and carrying forward the lessons the model writes after each failed trial."
+      steps:
+        - "Call the actor with the {{prompt:actor}}, filling in the task and the lessons list (empty on trial 1)."
+        - "Send the task, its rubric and the attempt to a separate judge call with the {{prompt:judge}}; parse its JSON reply into passed and reason."
+        - "If passed is true, return the attempt."
+        - "Otherwise call the reflector with the {{prompt:reflector}}, passing the task, the attempt and the judge's reason, and append its lesson to the lessons list."
+        - "Start the next trial with a fresh actor call that includes the updated lessons list."
+      stop: "Stop when the judge passes an attempt, or after 4 trials. At the cap, return the last attempt with the judge's last reason and every lesson, flagged as not passed."
+      requirements:
+        - "Make the trial cap a parameter (default 4), and run the judge at temperature 0."
+        - "If the judge's reply is not valid JSON, retry it once; if it fails again, count the trial as failed with the raw reply as the reason."
+        - "Write the rubric as checkable items, such as a word limit or a required fact; a vague rubric lets weak attempts pass."
+        - "Log each trial's attempt, verdict, reason and lesson together."
+        - "Add a test with a stub LLM whose judge fails trial 1 with the reason 'no warranty' and passes trial 2; assert two actor calls, one reflector call, and that the second actor prompt contains the lesson."
+    prompts:
+      - id: actor
+        title: Actor prompt
+        lang: markdown
+        source: |
+          Complete the task below. A reviewer will check your work against a rubric.
+
+          <task>{{task}}</task>
+
+          {{#if lessons}}
+          You have attempted this before. Lessons you wrote for yourself:
+          <lessons>{{lessons}}</lessons>
+          Do not repeat a mistake listed here.
+          {{/if}}
+
+          Return only the result.
+      - id: judge
+        title: Judge prompt
+        lang: markdown
+        source: |
+          You check one attempt against a rubric. Be strict and literal.
+
+          <task>{{task}}</task>
+          <rubric>{{rubric}}</rubric>
+          <attempt>{{attempt}}</attempt>
+
+          Check every rubric item. Respond in JSON:
+          {"passed": true|false, "reason": "each failed item and why; empty if passed"}
+      - id: reflector
+        title: Reflection prompt
+        lang: markdown
+        source: |
+          Your attempt failed review. Work out why, and write a lesson for your next try.
+
+          <task>{{task}}</task>
+          <attempt>{{attempt}}</attempt>
+          <review>{{reason}}</review>
+
+          In two or three sentences, state:
+          1. the specific mistake
+          2. what to do differently next time
+
+          Write in the first person. Do not rewrite the attempt.
+    diagram:
+      nodes:
+        - { id: input, kind: io, label: Task, description: "A task with no unit tests, such as 'Write a product blurb under 50 words that mentions the 2-year warranty'." }
+        - { id: actor, kind: llm, label: Actor, description: "Writes an attempt each trial, with the saved lessons from earlier failed trials in its prompt." }
+        - { id: judge, kind: evaluator, label: LLM judge, description: "A separate model call that checks the attempt against the rubric and returns JSON with passed and a reason." }
+        - { id: reflector, kind: llm, label: Reflector, description: "Reads the task, the failed attempt and the judge's reason, then writes a short first-person lesson." }
+        - { id: memory, kind: memory, label: Lessons, description: "Episodic memory: the list of lessons that persists across trials and is recalled into the actor's prompt." }
+        - { id: out, kind: io, label: Result, description: "The attempt the judge passed, returned as the final result." }
+      edges:
+        - { id: start, from: input, to: actor, description: "The task enters the actor prompt; on trial 1 the lessons list is still empty. The rubric is kept for the judge.", example: "Task: Write a product blurb for the Aero kettle. Rubric: under 50 words; mentions the 2-year warranty." }
+        - { id: attempt, from: actor, to: judge, label: attempt, description: "The actor's attempt for this trial goes to the judge with the rubric.", example: "The Aero kettle boils a litre in three minutes, with a brushed-steel body and a soft-close lid... (72 words)" }
+        - { id: fail, from: judge, to: reflector, label: fail, description: "When the judge fails the attempt, its reason goes to the reflector along with the attempt.", example: "{\"passed\": false, \"reason\": \"72 words, over the 50 limit; no mention of the 2-year warranty.\"}" }
+        - { id: lesson, from: reflector, to: memory, label: lesson, description: "The reflector's lesson is appended to the lessons list so it outlives this trial.", example: "I wrote too much and left out the warranty. Next time I will write the warranty sentence first and keep to three short sentences." }
+        - { id: recall, from: memory, to: actor, style: loop, label: recall, description: "Saved lessons go into the next trial's actor prompt so it avoids repeating the mistake.", example: "Lessons: write the warranty sentence first; keep to three short sentences." }
+        - { id: pass, from: judge, to: out, label: pass, description: "When the judge passes the attempt, it leaves the loop as the result.", example: "{\"passed\": true, \"reason\": \"\"} -> 41-word blurb returned." }
+      scenarios:
+        - id: judged-twice
+          label: Fails review once, then passes
+          steps:
+            - id: start
+              caption: The task arrives at the actor and the lessons list is empty.
+              duration: 1000
+              events:
+                - { type: send, edge: start, token: { kind: prompt, label: task } }
+            - id: trial-1
+              caption: The first attempt goes to the judge, which fails it against the rubric.
+              duration: 3000
+              events:
+                - { type: activate, node: actor, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: attempt, token: { kind: result, label: blurb v1 }, at: [0.3, 0.6] }
+                - { type: activate, node: judge, status: thinking, at: [0.6, 0.8] }
+                - { type: branch, node: judge, taken: fail, notTaken: [pass], at: [0.8, 1] }
+            - id: reflect
+              caption: The judge's reason goes to the reflector, which writes a lesson and saves it.
+              duration: 3000
+              events:
+                - { type: send, edge: fail, token: { kind: feedback, label: too long }, at: [0, 0.3] }
+                - { type: activate, node: reflector, status: thinking, at: [0.3, 0.55] }
+                - { type: send, edge: lesson, token: { kind: tokens, label: lesson }, at: [0.55, 0.85] }
+                - { type: write, node: memory, at: [0.85, 1] }
+            - id: recall
+              caption: Trial 2 begins by recalling the lesson into the actor's prompt.
+              duration: 2000
+              events:
+                - { type: read, node: memory, at: [0, 0.4] }
+                - { type: send, edge: recall, token: { kind: tokens, label: lesson }, at: [0.4, 1] }
+            - id: trial-2
+              caption: The new attempt is short and names the warranty, so the judge passes it.
+              duration: 3000
+              events:
+                - { type: activate, node: actor, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: attempt, token: { kind: result, label: blurb v2 }, at: [0.3, 0.6] }
+                - { type: branch, node: judge, taken: pass, notTaken: [fail], at: [0.6, 0.8] }
+                - { type: send, edge: pass, token: { kind: result, label: result }, at: [0.8, 1] }
+  - id: insight-bank
+    name: Insight bank (ExpeL)
+    summary: "Lessons are distilled across many tasks into a shared insight bank, which every new task recalls from its first trial."
+    origin:
+      by: Andrew Zhao et al.
+      org: Tsinghua University
+      year: 2023
+      url: https://arxiv.org/abs/2308.10144
+      kind: introduced
+      note: "ExpeL: LLM Agents Are Experiential Learners (AAAI 2024). It extracts insights by comparing failed and successful trials across tasks."
+    build:
+      goal: "Make an agent improve across tasks by distilling insights from its past successes and failures into a shared bank that is recalled at the start of every new task."
+      steps:
+        - "Run each task with the actor as in plain Reflexion, and save every finished trial (task id, steps, outcome) to a trajectory store, failures and successes alike."
+        - "After every 20 new trajectories, send the extractor pairs of a failed and a successful trial on the same task, together with the current insight list."
+        - "Parse the extractor's reply as a list of operations (ADD, EDIT, UPVOTE, DOWNVOTE) and apply them to the insight bank; remove any insight whose score falls to zero."
+        - "When a new task starts, put the 5 highest-scored insights and the 2 most similar successful trajectories into the actor's first prompt (ExpeL itself includes the whole insight list; the cap keeps prompts short)."
+        - "Run the task and save its trajectories for the next round of extraction."
+      stop: "Each task stops as in Reflexion: on a pass or after 4 trials. Extraction runs in the background and never blocks a task."
+      requirements:
+        - "Make the extraction batch (default 20), the insights recalled (default 5) and the examples recalled (default 2) parameters."
+        - "If a line of the extractor's reply does not parse as an operation, skip it and log it; apply the rest."
+        - "Store each insight with its score, creation date and the trajectory ids it came from, so a bad insight can be traced and removed."
+        - "Cap the bank (default 30 insights), dropping the lowest-scored one when it is full."
+        - "Add a test with the extraction batch set to 1 and a stub extractor that returns 'ADD: check 29 February'; after one saved trajectory, assert the next new task's first actor prompt contains 'check 29 February'."
+    diagram:
+      nodes:
+        - { id: task, kind: io, label: New task, description: "A task never attempted before, such as 'Write days_between(a, b) for dates in two formats'." }
+        - { id: actor, kind: llm, label: Actor, description: "Attempts the new task with the bank's best insights in its first prompt, retrying as in Reflexion if it fails." }
+        - { id: history, kind: memory, label: Past trials, sublabel: fails and passes, description: "Every finished trial from every earlier task, failures and successes alike, with its steps and outcome." }
+        - { id: extractor, kind: llm, label: Extractor, description: "Compares failed and successful trials and edits the insight list: adding, rewording, upvoting or downvoting insights." }
+        - { id: insights, kind: memory, label: Insight bank, description: "General rules learned across many tasks, each with a score; the top ones go into every new task's prompt." }
+        - { id: out, kind: io, label: Result, description: "The new task's passing attempt." }
+      edges:
+        - { id: start, from: task, to: actor, description: "A new task arrives. It has never been tried, but the bank already holds lessons from similar ones.", example: "Task: Write days_between(a, b) for dates given as 'YYYY-MM-DD' or 'MM/DD/YYYY'." }
+        - { id: record, from: actor, to: history, label: trajectory, description: "Every finished trial, pass or fail, is saved with its task, steps and outcome.", example: "Task 52 days_between: trial 1 passed (8 of 8 tests)." }
+        - { id: mine, from: history, to: extractor, label: compare, description: "Batches of past trials, especially a failure next to a success on the same task, go to the extractor.", example: "Compare: task 31 parse_date trial 1 (fail: read 02/03 as 2 March) with trial 2 (pass: month first)." }
+        - { id: distil, from: extractor, to: insights, label: edit, description: "The extractor's operations add, reword, upvote or downvote insights that hold across tasks.", example: "ADD: 'For any date input, test month/day order and 29 February before returning.' UPVOTE insight 4." }
+        - { id: recall, from: insights, to: actor, style: loop, label: insights, description: "At the start of a new task, the top-scored insights go into the actor's first prompt.", example: "Insights: 1. For any date input, test month/day order and 29 February. 2. Return early on empty input." }
+        - { id: result, from: actor, to: out, label: pass, description: "With the insights in view, the new task often passes on its first trial.", example: "days_between passes all 8 tests on trial 1." }
+      scenarios:
+        - id: new-task
+          label: A new task starts with old insights
+          steps:
+            - id: learn
+              caption: Between tasks, the extractor compares failed and successful trials from earlier work.
+              duration: 2600
+              events:
+                - { type: read, node: history, at: [0, 0.3] }
+                - { type: send, edge: mine, token: { kind: tokens, label: fail vs pass }, at: [0.3, 0.65] }
+                - { type: activate, node: extractor, status: thinking, at: [0.65, 1] }
+            - id: distil
+              caption: It adds a general insight about dates to the bank.
+              duration: 2000
+              events:
+                - { type: send, edge: distil, token: { kind: tokens, label: date insight }, at: [0, 0.6] }
+                - { type: write, node: insights, at: [0.6, 1] }
+            - id: start
+              caption: A new task arrives, and the top insights are recalled into the actor's first prompt.
+              duration: 2600
+              events:
+                - { type: send, edge: start, token: { kind: prompt, label: new task }, at: [0, 0.35] }
+                - { type: read, node: insights, at: [0.35, 0.55] }
+                - { type: send, edge: recall, token: { kind: tokens, label: 2 insights }, at: [0.55, 1] }
+            - id: solve
+              caption: The first attempt already handles both date formats and passes; its trajectory is saved for later extraction.
+              duration: 3000
+              events:
+                - { type: activate, node: actor, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: result, token: { kind: result, label: passes }, at: [0.3, 0.6] }
+                - { type: send, edge: record, token: { kind: tokens, label: trajectory }, at: [0.6, 0.9] }
+                - { type: write, node: history, at: [0.85, 1] }

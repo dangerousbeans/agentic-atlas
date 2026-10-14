@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Locator, type CDPSession } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { catalogOrder, visibleFamilies } from '../catalog-fixture';
 
 const viewport = (page: Page) => page.locator('.atlas-viewport');
 const tiles = (page: Page) => page.locator('a.atlas-tile');
@@ -67,12 +68,12 @@ test.describe('hero', () => {
 });
 
 test.describe('atlas map', () => {
-  test('lays out 21 tile links in family-then-pattern DOM order', async ({ page }) => {
+  test('lays out a tile link per pattern in family-then-pattern DOM order', async ({ page }) => {
     await openMap(page);
-    await expect(tiles(page)).toHaveCount(21);
+    await expect(tiles(page)).toHaveCount(catalogOrder().length);
     const order = await tiles(page).evaluateAll(els => els.map(e => (e as HTMLElement).dataset.slug));
-    expect(order.slice(0, 7)).toEqual(['prompt-chaining', 'routing', 'sectioning', 'voting', 'orchestrator-workers', 'evaluator-optimizer', 'augmented-llm']);
-    await expect(page.locator('.atlas-island-label')).toHaveCount(6);
+    expect(order).toEqual(catalogOrder());
+    await expect(page.locator('.atlas-island-label')).toHaveCount(visibleFamilies().length);
   });
 
   test('the map is one tab stop; arrows walk tiles and Enter opens one', async ({ page }) => {
@@ -218,7 +219,7 @@ test.describe('atlas map', () => {
     await page.locator('[data-zoom-btn="home"]').focus();
     await page.keyboard.press('Tab');
     const overlays = ['.atlas-search', '[data-somewhere]', '.atlas-zoom', '.atlas-minimap'];
-    for (let i = 0; i < 21; i++) {
+    for (let i = 0; i < catalogOrder().length; i++) {
       await expect(page.locator('.atlas-plane')).not.toHaveClass(/is-flying/);
       const slug = (await focusedSlug(page))!;
       const t = (await tile(page, slug).boundingBox())!;
@@ -254,7 +255,7 @@ test.describe('atlas map', () => {
       }).length;
     });
     expect(await playing.count()).toBeLessThanOrEqual(inView);
-    expect(inView).toBeLessThan(21);
+    expect(inView).toBeLessThan(catalogOrder().length);
   });
 
   test('the minimap tracks the view and clicking it recentres', async ({ page }) => {
@@ -274,12 +275,12 @@ test.describe('atlas map', () => {
   });
 });
 
-test('without JS the map is a plain list of 21 tile links', async ({ browser }) => {
+test('without JS the map is a plain list of tile links', async ({ browser }) => {
   const ctx = await browser.newContext({ javaScriptEnabled: false });
   const page = await ctx.newPage();
   const res = await page.goto('/');
   expect(res?.status()).toBe(200);
-  await expect(tiles(page)).toHaveCount(21);
+  await expect(tiles(page)).toHaveCount(catalogOrder().length);
   await expect(page.locator('.atlas-map')).not.toHaveAttribute('data-enhanced', '');
   for (const t of await tiles(page).all()) await expect(t).toBeVisible();
   await expect(page.locator('.hero-stage flow-player')).toHaveCount(1);

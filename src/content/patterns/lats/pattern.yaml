@@ -1,0 +1,401 @@
+slug: lats
+name: Language Agent Tree Search
+family: planning-search
+aliases: [LATS, MCTS agent, Agent tree search]
+summary: Monte Carlo tree search over agent actions. Expand, act for real, score, back up the score along the path, and learn from failed branches.
+badges: { autonomy: high, cost: high, latency: high }
+sources:
+  - title: "Language Agent Tree Search Unifies Reasoning, Acting, and Planning in Language Models (Zhou et al., 2023)"
+    url: https://arxiv.org/abs/2310.04406
+  - title: "Reasoning with Language Model is Planning with World Model (Hao et al., 2023)"
+    url: https://arxiv.org/abs/2305.14992
+related:
+  composesWith: [react, reflexion]
+  confusedWith:
+    - { slug: tree-of-thoughts, difference: "Tree of Thoughts searches over thoughts the model only imagines. LATS runs each candidate action in a real environment, scores the result, and backs the score up the tree to steer the next rollout." }
+    - { slug: reflexion, difference: "Reflexion retries one attempt after another in a line. LATS keeps a whole tree of attempts, returns to the most promising one, and uses reflections only as extra context for new branches." }
+origin:
+  by: Andy Zhou et al.
+  org: University of Illinois Urbana-Champaign, Lapis Labs
+  year: 2023
+  url: https://arxiv.org/abs/2310.04406
+  kind: introduced
+  note: "Published at ICML 2024. It combines Monte Carlo tree search with ReAct-style acting and Reflexion-style self-reflection; the paper evaluates it on HumanEval, HotpotQA and WebShop. For programming, its environment runs tests the model wrote itself as well as the visible examples."
+build:
+  goal: "Find a sequence of actions that solves a task in an environment you can reset or branch, by running Monte Carlo tree search where a model proposes actions, the environment executes them, and a model scores the outcomes."
+  steps:
+    - "Represent the search as a tree of nodes. Each node holds an environment state, the trajectory that reached it, a visit count and a running value; the root is the task."
+    - "Select: starting at the root, repeatedly pick the child with the highest UCT score (value plus an exploration bonus that shrinks with visits) until you reach a node that has not been expanded. Do this in code, not with a model."
+    - "Expand: call the model with the {{prompt:expand}} k times (default 2) to sample different next actions from that node, including every saved reflection in the prompt."
+    - "Act: run each sampled action in the environment from that node's state, such as executing the code against the visible tests, and record the observation as a new child node."
+    - "Simulate (multi-step tasks only): roll a new child forward to a terminal state by repeating expand and act with one sample per step. Skip this when one action is a complete answer, such as a whole program."
+    - "Evaluate: if the environment says a child solved the task, return its trajectory. Otherwise score it with the {{prompt:value}}; blend that score with a self-consistency score or, where tests exist, the test pass rate, and use the blend as the child's value."
+    - "Backpropagate: walk from each new child up to the root, adding one to each node's visit count and folding the child's value into each node's running average."
+    - "Reflect: for each child that ends in a terminal failure, call the model with the {{prompt:reflect}}, passing its trajectory and the environment's feedback, and save the reflection for every later expansion. Then start the next rollout at the select step."
+  stop: "Stop as soon as the environment confirms a solution, or after a rollout budget (default 8). On the budget, return the trajectory of the highest-value node with a status saying no solution was confirmed."
+  requirements:
+    - "The environment must be resettable or snapshotable, because siblings start from the same state. Never run this over actions that cannot be undone."
+    - "Cap rollouts (default 8) and children per expansion (default 2), and log the model calls and environment runs for each rollout."
+    - "Parse the value prompt's score into a number between 0 and 1; if it does not parse, retry once, then score the child 0."
+    - "Keep the tree, with visit counts and values, in a form you can dump to a log, so a run can be inspected after it ends."
+    - "Add a test with a stub LLM and a fake test runner that fails both children of the first rollout and passes the child from the second; assert reflect was called twice, both lessons appear in every expand prompt of rollout 2, and the passing code is returned."
+defaultVariantName: Real environment
+prompts:
+  - id: expand
+    title: Expand prompt
+    lang: markdown
+    source: |
+      You are solving the task below step by step. Propose the next action.
+
+      <task>{{task}}</task>
+      <trajectory>{{trajectory_so_far}}</trajectory>
+
+      {{#if reflections}}
+      Earlier attempts failed. Lessons from them:
+      <reflections>{{reflections}}</reflections>
+      Do not repeat those mistakes.
+      {{/if}}
+
+      Think briefly about what is still missing, then give exactly one action
+      in this format: {{action_format}}
+  - id: value
+    title: Value prompt
+    lang: markdown
+    source: |
+      Judge how close this attempt is to solving the task.
+
+      <task>{{task}}</task>
+      <trajectory>{{trajectory}}</trajectory>
+      <latest_observation>{{observation}}</latest_observation>
+
+      Reason in two or three sentences about what is right and what is still wrong.
+      Then end with one line: SCORE: a number from 0 to 1, where 1 means solved.
+  - id: reflect
+    title: Reflection prompt
+    lang: markdown
+    source: |
+      This attempt failed. Work out why, so the next attempt avoids it.
+
+      <task>{{task}}</task>
+      <trajectory>{{trajectory}}</trajectory>
+      <feedback>{{environment_feedback}}</feedback>
+
+      In one or two sentences, name the specific mistake and what to do instead.
+      Do not write a solution.
+diagram:
+  nodes:
+    - id: task
+      kind: io
+      label: Task
+      description: "A HumanEval-style coding task: write is_valid_bracket_seq(s) so that the hidden unit tests pass."
+    - id: selector
+      kind: router
+      label: Selector
+      sublabel: UCT
+      model: false
+      description: "Plain code: walks the search tree from the root, picking the child with the best value plus exploration bonus."
+    - id: expander
+      kind: llm
+      label: Expander
+      description: "Samples k different next actions from the selected node, here two candidate implementations, with saved reflections in its prompt."
+    - id: env
+      kind: tool
+      label: Test runner
+      sublabel: the environment
+      description: "Executes each candidate for real against the visible tests and returns which passed and which failed."
+    - id: value
+      kind: evaluator
+      label: Value
+      description: "Scores each new child from 0 to 1, blending the test pass rate with a model score, then backs it up to every ancestor."
+    - id: reflector
+      kind: llm
+      label: Reflector
+      description: "For every failed attempt, writes a short lesson about what went wrong, without writing code."
+    - id: reflections
+      kind: memory
+      label: Reflections
+      description: "Saved lessons from failed branches, added to every later expand prompt."
+    - id: out
+      kind: io
+      label: Solution
+      description: "The code from the first child whose tests all pass."
+  edges:
+    - id: start
+      from: task
+      to: selector
+      description: "The task becomes the root of the search tree."
+      example: "Write is_valid_bracket_seq(s): return True if every bracket in s is closed in the right order."
+    - id: pick
+      from: selector
+      to: expander
+      label: select
+      description: "The selected node, with the trajectory that reached it, goes to the expander."
+      example: "Expand node B (visits 1, value 0.6): the stack-based draft that failed 1 of 4 tests."
+    - id: run
+      from: expander
+      to: env
+      label: k actions
+      description: "Each sampled action is run in the environment from the same starting state."
+      example: "Child A: return s.count('(') == s.count(')'). Child B: stack-based check that returns False when s is empty."
+    - id: score
+      from: env
+      to: value
+      description: "The observations, here test results, go to the value function."
+      example: "A: 2/4 passed (accepts ')('). B: 3/4 passed (fails on the empty string)."
+    - id: backprop
+      from: value
+      to: selector
+      style: loop
+      label: backprop
+      description: "Each child's score is added to its ancestors' averages, so the next selection favours the promising branch."
+      example: "A: 0.3, B: 0.6. Root: visits 2, value 0.45."
+    - id: fail
+      from: env
+      to: reflector
+      style: dashed
+      label: fail
+      description: "A failed attempt, with its test output, goes to the reflector."
+      example: "A failed test_order: ')(' returned True. B failed test_empty: '' returned False, expected True."
+    - id: note
+      from: reflector
+      to: reflections
+      description: "Each lesson is saved for every later expansion."
+      example: "A: counting alone accepts ')('; track depth and fail if it goes negative. B: an empty string is balanced; return True for it."
+    - id: recall
+      from: reflections
+      to: expander
+      style: dashed
+      label: lessons
+      description: "Saved lessons go into the expand prompt, so new branches avoid known mistakes."
+      example: "<reflections>Empty string is valid. Counting alone accepts ')('.</reflections>"
+    - id: solved
+      from: value
+      to: out
+      label: solved
+      description: "When a child passes every test, its trajectory is returned and the search stops."
+      example: "Child B1: stack-based check, returns True for an empty string. 4/4 tests passed."
+  scenarios:
+    - id: two-rollouts
+      label: Two rollouts
+      steps:
+        - id: start
+          caption: The task becomes the root of the search tree.
+          duration: 1200
+          events:
+            - { type: send, edge: start, token: { kind: prompt, label: task } }
+        - id: expand-root
+          caption: Rollout 1. The selector picks the root and the expander samples two different implementations.
+          duration: 2600
+          events:
+            - { type: send, edge: pick, token: { kind: prompt, label: root }, at: [0, 0.35] }
+            - { type: activate, node: expander, status: thinking, at: [0.35, 1] }
+        - id: act
+          caption: Both candidates run against the visible tests. Neither passes them all.
+          duration: 2600
+          events:
+            - { type: send, edge: run, token: { kind: tool-call, label: 2 programs }, at: [0, 0.35] }
+            - { type: activate, node: env, status: calling, at: [0.35, 0.75] }
+            - { type: send, edge: score, token: { kind: result, label: 2/4 · 3/4 }, at: [0.75, 1] }
+        - id: backprop
+          caption: The value function scores B higher than A, and the scores are backed up to the root.
+          duration: 2600
+          events:
+            - { type: activate, node: value, status: thinking, at: [0, 0.4] }
+            - { type: branch, node: value, taken: backprop, notTaken: [solved], at: [0.4, 0.55] }
+            - { type: send, edge: backprop, token: { kind: feedback, label: "A .3 · B .6" }, at: [0.55, 1] }
+        - id: reflect
+          caption: Both children are failed programs, so the reflector writes one lesson for each and saves them.
+          duration: 3000
+          events:
+            - { type: send, edge: fail, token: { kind: feedback, label: 2 failures }, at: [0, 0.35] }
+            - { type: activate, node: reflector, status: thinking, at: [0.35, 0.7] }
+            - { type: send, edge: note, token: { kind: result, label: 2 lessons }, at: [0.7, 0.95] }
+            - { type: write, node: reflections, at: [0.9, 1] }
+        - id: expand-b
+          caption: Rollout 2. The selector follows the higher value to B, and the expander reads both lessons.
+          duration: 2800
+          events:
+            - { type: send, edge: pick, token: { kind: prompt, label: node B }, at: [0, 0.35] }
+            - { type: read, node: reflections, at: [0.3, 0.45] }
+            - { type: send, edge: recall, token: { kind: prompt, label: lessons }, at: [0.35, 0.65] }
+            - { type: activate, node: expander, status: thinking, at: [0.65, 1] }
+        - id: solved
+          caption: The new child passes all four tests, so the search stops and returns it.
+          duration: 3000
+          events:
+            - { type: send, edge: run, token: { kind: tool-call, label: program }, at: [0, 0.25] }
+            - { type: activate, node: env, status: calling, at: [0.25, 0.45] }
+            - { type: send, edge: score, token: { kind: result, label: 4/4 }, at: [0.45, 0.6] }
+            - { type: branch, node: value, taken: solved, notTaken: [backprop], at: [0.6, 0.72] }
+            - { type: send, edge: solved, token: { kind: result, label: code }, at: [0.72, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
+variants:
+  - id: rap
+    name: World model (RAP)
+    summary: "No real environment: the model itself predicts the state each action leads to, and the tree search runs over those imagined states."
+    origin:
+      by: Shibo Hao et al.
+      org: UC San Diego, University of Florida, MBZUAI
+      year: 2023
+      url: https://arxiv.org/abs/2305.14992
+      kind: introduced
+      note: "RAP (Reasoning via Planning), EMNLP 2023. It came before LATS and uses the same Monte Carlo tree search, with the model acting as a world model instead of calling an environment."
+    build:
+      goal: "Plan a sequence of actions toward a goal without touching a real environment, by running Monte Carlo tree search where a model proposes actions, a model predicts the resulting state, and a reward scores progress."
+      steps:
+        - "Represent the search as a tree whose nodes are predicted states, each with a visit count and a running value; the root is the starting state from the task."
+        - "Select: from the root, repeatedly pick the child with the highest UCT score until you reach a node that has not been expanded. Do this in code."
+        - "Expand: call the model with the {{prompt:action}} to propose up to k (default 3) actions that are legal in the node's state."
+        - "Simulate: for each action, call the model with the {{prompt:world}} to predict the next state, and add it as a child. No real action is taken."
+        - "Reward: score each child with the {{prompt:reward}}, combined with any check in code (for example, how many goal conditions the predicted state already meets)."
+        - "Backpropagate each child's reward up to the root, then start the next rollout; when a predicted state meets the goal, return the actions on its path."
+      stop: "Stop when a predicted state meets every goal condition, or after a rollout budget (default 10). On the budget, return the highest-value path with a status saying the goal was not reached."
+      requirements:
+        - "Keep states as structured text (a list of facts) so a code check can test goal conditions instead of trusting the model."
+        - "Cap rollouts (default 10), depth (default 6) and actions per expansion (default 3)."
+        - "Validate each predicted state against simple rules in code where you have them (a block cannot be in two places) and drop children that break them."
+        - "Treat the plan as a proposal: if it will run in the real world, execute it step by step and replan when an observed state differs from the predicted one."
+        - "Add a test with a stub LLM whose world model reports the goal met after the fourth action on one path; assert the returned plan is exactly the four actions on that path, in order."
+    prompts:
+      - id: action
+        title: Action proposal prompt
+        lang: markdown
+        source: |
+          <goal>{{goal}}</goal>
+          <state>{{state}}</state>
+
+          List up to {{k}} different actions that are legal in this state and could
+          move toward the goal, one per line. Use only these action forms: {{action_forms}}
+      - id: world
+        title: World model prompt
+        lang: markdown
+        source: |
+          You simulate the environment. Given a state and an action, predict the new state.
+
+          <state>{{state}}</state>
+          <action>{{action}}</action>
+
+          If the action is not legal in this state, reply ILLEGAL and why.
+          Otherwise list every fact in the new state, one per line, and nothing else.
+      - id: reward
+        title: Reward prompt
+        lang: markdown
+        source: |
+          <goal>{{goal}}</goal>
+          <state>{{state}}</state>
+          <plan_so_far>{{actions}}</plan_so_far>
+
+          Is this a good step toward the goal? Answer Yes or No on the first line,
+          then one sentence of reasoning.
+    diagram:
+      nodes:
+        - id: task
+          kind: io
+          label: Goal
+          description: "A Blocksworld puzzle from the paper's benchmark: red is on blue; get blue onto red."
+        - id: selector
+          kind: router
+          label: Selector
+          sublabel: UCT
+          model: false
+          description: "Plain code: walks the tree from the root, picking the child with the best value plus exploration bonus."
+        - id: expander
+          kind: llm
+          label: Actions
+          description: "Proposes a few legal next actions for the selected state, such as 'unstack red from blue'."
+        - id: world
+          kind: llm
+          label: World model
+          description: "The same model, prompted to simulate: it predicts the state an action would lead to. Nothing is executed."
+        - id: reward
+          kind: evaluator
+          label: Reward
+          description: "Scores each predicted state for progress toward the goal, then backs the score up the tree."
+        - id: out
+          kind: io
+          label: Plan
+          description: "The sequence of actions on the path whose predicted state meets the goal."
+      edges:
+        - id: start
+          from: task
+          to: selector
+          description: "The starting state becomes the root of the search tree."
+          example: "Start: red on blue, blue on table, hand empty. Goal: blue on red."
+        - id: pick
+          from: selector
+          to: expander
+          label: select
+          description: "The selected state goes to the action proposer."
+          example: "State: red on blue, blue on table, hand empty."
+        - id: propose
+          from: expander
+          to: world
+          label: action
+          description: "Each proposed action is passed to the world model, which imagines its outcome."
+          example: "Action: pick up blue"
+        - id: predict
+          from: world
+          to: reward
+          label: next state
+          description: "The predicted state, or ILLEGAL, goes to the reward step."
+          example: "ILLEGAL: blue is not clear, red is on top of it."
+        - id: backprop
+          from: reward
+          to: selector
+          style: loop
+          label: backprop
+          description: "Rewards are added to every ancestor's average, so the next rollout favours promising states."
+          example: "pick up blue: 0.0. unstack red from blue: 0.7."
+        - id: done
+          from: reward
+          to: out
+          label: goal met
+          description: "When a predicted state meets the goal, the actions on its path are returned as the plan."
+          example: "1. unstack red from blue 2. put down red 3. pick up blue 4. stack blue on red"
+      scenarios:
+        - id: two-rollouts
+          label: Two simulated rollouts
+          steps:
+            - id: start
+              caption: The starting state becomes the root of the tree.
+              duration: 1200
+              events:
+                - { type: send, edge: start, token: { kind: prompt, label: start state } }
+            - id: rollout-1
+              caption: Rollout 1. The model proposes 'pick up blue'; the world model predicts it is illegal, because red is on top.
+              duration: 3600
+              events:
+                - { type: send, edge: pick, token: { kind: prompt, label: root }, at: [0, 0.2] }
+                - { type: activate, node: expander, status: thinking, at: [0.2, 0.4] }
+                - { type: send, edge: propose, token: { kind: prompt, label: pick up blue }, at: [0.4, 0.55] }
+                - { type: activate, node: world, status: thinking, at: [0.55, 0.75] }
+                - { type: send, edge: predict, token: { kind: result, label: ILLEGAL }, at: [0.75, 1] }
+            - id: backprop
+              caption: That branch scores zero; a sibling, 'unstack red from blue', scores well, and both scores are backed up.
+              duration: 2600
+              events:
+                - { type: activate, node: reward, status: thinking, at: [0, 0.4] }
+                - { type: branch, node: reward, taken: backprop, notTaken: [done], at: [0.4, 0.55] }
+                - { type: send, edge: backprop, token: { kind: feedback, label: "0.0 · 0.7" }, at: [0.55, 1] }
+            - id: rollout-2
+              caption: Each new rollout reselects from the root, goes one level deeper on the best branch, and backs up its reward. No real block moves.
+              duration: 4200
+              repeat: 2
+              events:
+                - { type: send, edge: pick, token: { kind: prompt, label: state }, at: [0, 0.18] }
+                - { type: send, edge: propose, token: { kind: prompt, label: action }, at: [0.2, 0.38] }
+                - { type: activate, node: world, status: thinking, at: [0.38, 0.52] }
+                - { type: send, edge: predict, token: { kind: result, label: next state }, at: [0.52, 0.68] }
+                - { type: activate, node: reward, status: thinking, at: [0.68, 0.8] }
+                - { type: send, edge: backprop, token: { kind: feedback, label: reward }, at: [0.8, 1] }
+            - id: goal
+              caption: One level deeper, 'stack blue on red' leads to a predicted state that meets the goal, so the four actions on that path are returned as the plan.
+              duration: 4000
+              events:
+                - { type: send, edge: pick, token: { kind: prompt, label: state }, at: [0, 0.15] }
+                - { type: send, edge: propose, token: { kind: prompt, label: stack blue }, at: [0.17, 0.33] }
+                - { type: activate, node: world, status: thinking, at: [0.33, 0.45] }
+                - { type: send, edge: predict, token: { kind: result, label: blue on red }, at: [0.45, 0.6] }
+                - { type: branch, node: reward, taken: done, notTaken: [backprop], at: [0.6, 0.7] }
+                - { type: send, edge: done, token: { kind: result, label: 4-step plan }, at: [0.7, 0.92] }
+                - { type: activate, node: out, status: done, at: [0.88, 1] }

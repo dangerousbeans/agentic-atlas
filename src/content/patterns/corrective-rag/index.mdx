@@ -8,9 +8,9 @@ The <NodeRef id="retriever">retriever</NodeRef> fetches candidate documents for 
 
 If the grader keeps some documents, they go straight to the <NodeRef id="generator">generator</NodeRef>. If it rejects all of them, a <NodeRef id="rewriter">rewriter</NodeRef> turns the question into a better query and a <NodeRef id="web">web search</NodeRef> supplies fresh documents instead. Imagine asking about a library's breaking change released last week: an index built in spring returns docs about old versions, the grader rejects them, and the web query "libfoo 4.0 breaking changes" finds the release notes.
 
-The Self-RAG variant adds a second check after generation. An <NodeRef id="check">answer check</NodeRef> verifies that every claim is supported by the documents. Unsupported claims loop back to the generator as feedback, and a supported answer goes to the <NodeRef id="out">output</NodeRef>.
+A second check runs after generation. An <NodeRef id="check">answer check</NodeRef> verifies that every claim is supported by the documents. Unsupported claims loop back to the generator as feedback, and a supported answer goes to the <NodeRef id="out">output</NodeRef>.
 
-This page shows a simplified composite of two papers. Real CRAG grades retrieval as correct, incorrect or ambiguous and refines documents by decomposing and recomposing them, and the answer check here is Self-RAG-style critique, which Self-RAG itself performs with trained reflection tokens rather than a separate prompt.
+This page shows a simplified composite of two papers. Real CRAG grades retrieval as correct, incorrect or ambiguous and refines documents by decomposing and recomposing them, and the answer check here is Self-RAG-style critique done with a separate prompt. The Self-RAG tab shows the original, where one model decides when to retrieve and critiques passages and its own output with trained reflection tokens. The Groundedness loop tab grades the answer instead of the documents, and retrieves again when the answer misses the question.
 
 ## When to use
 

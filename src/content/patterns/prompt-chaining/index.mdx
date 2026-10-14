@@ -10,6 +10,8 @@ Between steps you can put a programmatic <NodeRef id="gate">check</NodeRef>: ord
 
 The path never changes. The model fills in each step, but your code decides what the steps are and what order they run in. That is what makes this a workflow rather than an agent.
 
+Two variants change what happens at the edges of that sequence. With a retrying gate, a failed check sends its error back to the step that produced the output, for a capped number of attempts, instead of ending the chain. With incremental refinement, one step runs once per chunk of a long input and carries a running summary forward, which is how a chain summarizes a book that would never fit in one call.
+
 ## When to use
 
 - The task splits cleanly into fixed subtasks, such as outline then draft, extract then translate, or generate then format.

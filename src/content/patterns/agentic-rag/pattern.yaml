@@ -10,6 +10,31 @@ sources:
 related:
   composesWith: [routing]
   confusedWith: []
+origin:
+  by: Aditi Singh et al.
+  org: Cleveland State University, Kent State University, Northeastern University, University of Agder
+  year: 2025
+  url: https://arxiv.org/abs/2501.09136
+  kind: popularized
+  uncertain: true
+  note: "This survey systematizes agentic RAG but does not coin it; the term was in use before it, and no single originator was found."
+build:
+  goal: "Answer a question by letting a model decide, hop by hop, whether to search, which source to search and with what rewritten query, until the context it has gathered is enough for a cited answer."
+  steps:
+    - "Describe each source (vector index, web search, SQL) in one line, and keep a table from each source name to the function that searches it."
+    - "Call the model with the {{prompt:agent}}, filling in the question, the context gathered so far (empty at first) and the source descriptions, and parse its JSON step."
+    - "If action is answer, return the answer with its citations."
+    - "If action is search, look up the named source in the table, run the rewritten query, and append the top results to the context, each tagged with its source."
+    - "If the JSON does not parse or names an unknown source, retry the call once with the error appended; if it fails again, answer from the context so far."
+    - "If a search fails or times out, append a note saying that source failed, so the model can choose another, and loop."
+  stop: "Stop when the model answers, or after 4 search hops. At the cap, call the model once more with search removed from the allowed actions and return that answer, flagged as having hit the hop limit."
+  requirements:
+    - "Make the hop cap (default 4) and the results per search (default 3 chunks or rows) parameters."
+    - "Route with plain code, never a model call: the model names the source and the table dispatches the query."
+    - "Give the SQL source a read-only connection, a timeout and a row limit."
+    - "Log every hop: the chosen source, the rewritten query and the ids of the results."
+    - "Add a test with a stub LLM that searches vectordb, then web, then answers; assert one call to each of those two backends, none to SQL, and that the answer cites the web result."
+defaultVariantName: Source router
 prompts:
   - id: agent
     title: Retrieval agent prompt
@@ -96,3 +121,163 @@ diagram:
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.5] }
             - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.5, 1] }
+variants:
+  - id: interleaved
+    name: Interleaved (IRCoT)
+    summary: "One retriever is searched again after every sentence of reasoning, and each new sentence becomes the next search query."
+    origin:
+      by: Harsh Trivedi et al.
+      org: Stony Brook University, Allen Institute for AI
+      year: 2022
+      url: https://arxiv.org/abs/2212.10509
+      kind: introduced
+      note: "IRCoT: Interleaving Retrieval with Chain-of-Thought Reasoning for Knowledge-Intensive Multi-Step Questions (ACL 2023)."
+    build:
+      goal: "Answer a multi-hop question by alternating one sentence of reasoning with one retrieval, using each new sentence as the next search query."
+      steps:
+        - "Search the index with the question and put the top 4 paragraphs in a paragraph pool."
+        - "Call the model with the {{prompt:reasoner}}, filling in the question, the pool and the reasoning so far; keep only the first sentence of its reply."
+        - "If the sentence contains 'So the answer is:', return the text after it, with the reasoning and the ids of the paragraphs used."
+        - "Otherwise search the index with that sentence, add any new paragraphs to the pool, append the sentence to the reasoning, and call the model again."
+        - "If a search fails, keep the pool as it is and continue; the next sentence becomes the next query."
+      stop: "Stop when a sentence contains the answer marker, or after 6 sentences. At the cap, ask the model for the answer directly from the pool and return it, flagged as having hit the step limit."
+      requirements:
+        - "Make the sentence cap (default 6), the paragraphs per search (default 4) and the pool cap (default 15 paragraphs) parameters."
+        - "De-duplicate paragraphs by id before adding them, and drop the oldest when the pool is full."
+        - "Cut the model's reply to its first sentence, so a reply that runs ahead cannot skip retrievals."
+        - "Log each sentence with the paragraph ids its search returned."
+        - "Add a test with a stub LLM that writes 'X was directed by Y.' and then 'So the answer is: Z'; assert two searches, the second with the query 'X was directed by Y.', and the answer 'Z'."
+    prompts:
+      - id: reasoner
+        title: Step-by-step reasoner prompt
+        lang: markdown
+        source: |
+          Answer the question by reasoning one step at a time, using the paragraphs.
+
+          <paragraphs>{{paragraphs}}</paragraphs>
+          <question>{{question}}</question>
+          <reasoning_so_far>{{reasoning}}</reasoning_so_far>
+
+          Write exactly one next sentence of reasoning.
+          When you know the answer, write that sentence as: So the answer is: <answer>
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, description: "A multi-hop question, such as 'In which country was the director of the film Lisbon Story born?'." }
+        - { id: retriever, kind: memory, label: Retriever, sublabel: one index, description: "A single document index, searched first with the question and then with each new reasoning sentence." }
+        - { id: reasoner, kind: llm, label: Reasoner, description: "Reads the paragraphs found so far and writes exactly one next sentence of reasoning each step." }
+        - { id: out, kind: io, label: Answer, description: "The answer, taken from the sentence that starts 'So the answer is'." }
+      edges:
+        - { id: ask, from: user, to: retriever, label: first query, description: "The question itself is the first search query.", example: "In which country was the director of the film Lisbon Story born?" }
+        - { id: paras, from: retriever, to: reasoner, style: dashed, label: paragraphs, description: "The top paragraphs join the pool that the reasoner reads before writing its next sentence.", example: "Lisbon Story is a 1994 film written and directed by Wim Wenders..." }
+        - { id: think, from: reasoner, to: retriever, style: loop, label: next query, description: "Each new reasoning sentence is used as the next search query, so retrieval follows the chain of thought.", example: "Lisbon Story was directed by Wim Wenders." }
+        - { id: answer, from: reasoner, to: out, label: answer, description: "When a sentence contains 'So the answer is', the loop ends and the answer is returned.", example: "Wim Wenders was born in Düsseldorf, West Germany. So the answer is: Germany." }
+      scenarios:
+        - id: two-hops
+          label: Two hops to the answer
+          steps:
+            - id: start
+              caption: The question is the first query; the index returns paragraphs about the film.
+              duration: 2400
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.4] }
+                - { type: read, node: retriever, at: [0.4, 0.6] }
+                - { type: send, edge: paras, token: { kind: result, label: film paras }, at: [0.6, 1] }
+            - id: hop
+              caption: The reasoner writes that Wim Wenders directed it, and that sentence becomes the next query.
+              duration: 3200
+              events:
+                - { type: activate, node: reasoner, status: thinking, at: [0, 0.3] }
+                - { type: branch, node: reasoner, taken: think, notTaken: [answer], at: [0.3, 0.4] }
+                - { type: send, edge: think, token: { kind: tool-call, label: Wenders }, at: [0.4, 0.65] }
+                - { type: read, node: retriever, at: [0.65, 0.8] }
+                - { type: send, edge: paras, token: { kind: result, label: born paras }, at: [0.8, 1] }
+            - id: answer
+              caption: With the birthplace in the pool, the next sentence states the answer and the loop ends.
+              duration: 2400
+              events:
+                - { type: activate, node: reasoner, status: thinking, at: [0, 0.4] }
+                - { type: branch, node: reasoner, taken: answer, notTaken: [think], at: [0.4, 0.55] }
+                - { type: send, edge: answer, token: { kind: result, label: Germany }, at: [0.55, 1] }
+  - id: adaptive
+    name: Adaptive by complexity
+    summary: "A classifier rates each question's complexity first, then answers with no retrieval, one retrieval, or an iterative multi-step loop."
+    origin:
+      by: Soyeong Jeong et al.
+      org: KAIST
+      year: 2024
+      url: https://arxiv.org/abs/2403.14403
+      kind: introduced
+      note: "Adaptive-RAG: Learning to Adapt Retrieval-Augmented Large Language Models through Question Complexity (NAACL 2024)."
+    build:
+      goal: "Spend retrieval only where it pays off: classify each question as needing no retrieval, one retrieval or iterative multi-step retrieval, then run the matching strategy."
+      steps:
+        - "Send the question to a small classifier that returns one label: A (no retrieval), B (single-step) or C (multi-step)."
+        - "For A, call the model with the question alone and return its answer."
+        - "For B, search the index once with the question, then call the model with the question and the top 5 documents."
+        - "For C, loop: search, call the model with the {{prompt:agent}} (with the index as the only source) and every document so far, and either return its answer or search again with the follow-up query it writes."
+        - "If the classifier fails or returns an unknown label, treat the question as B. If a search fails, answer from the documents so far (for B, from the question alone) and flag the answer."
+      stop: "A and B end after one model call. C ends when the model answers, or after 4 searches; at the cap, answer from the documents gathered and flag the answer as having hit the limit."
+      requirements:
+        - "Make the search cap for C (default 4) and the documents per search (default 5) parameters."
+        - "Train or prompt the classifier on labelled examples of all three classes, and track how often each label is chosen."
+        - "Log the label, the strategy run, its search count and its latency for every question."
+        - "Add a test with a stub classifier that returns A and a stub retriever; assert the retriever is never called and the model is called exactly once."
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, description: "The user's question, simple or multi-step, such as 'Where was the director of Lisbon Story born?'." }
+        - { id: classifier, kind: router, label: Classifier, sublabel: small model, description: "A small model trained to label each question A (no retrieval), B (one search) or C (multi-step)." }
+        - { id: retriever, kind: memory, label: Retriever, description: "The document index: searched once for B questions and repeatedly for C questions." }
+        - { id: llm, kind: llm, label: LLM, description: "Writes the answer; for C questions it may instead write a follow-up query and loop." }
+        - { id: out, kind: io, label: Answer, description: "The final answer, from whichever strategy the classifier picked." }
+      edges:
+        - { id: ask, from: user, to: classifier, description: "Every question is classified before any retrieval happens.", example: "Simple: What is the capital of Portugal? Multi-step: Where was the director of the film Lisbon Story born?" }
+        - { id: simple, from: classifier, to: llm, label: "A: none", description: "Simple questions go straight to the model with no retrieval at all.", example: "Q: What is the capital of Portugal? -> label A, no retrieval" }
+        - { id: retrieve, from: classifier, to: retriever, label: "B/C: search", description: "Questions that need facts are searched once (B) or iteratively (C).", example: "Q: Where was the director of Lisbon Story born? -> label C, multi-step" }
+        - { id: docs, from: retriever, to: llm, style: dashed, label: docs, description: "Retrieved documents are added to the model's context.", example: "Lisbon Story is a 1994 film written and directed by Wim Wenders..." }
+        - { id: more, from: llm, to: retriever, style: loop, label: next query, description: "For C questions only, the model writes a follow-up query and the search repeats until it can answer.", example: "Follow-up query: Wim Wenders birthplace" }
+        - { id: answer, from: llm, to: out, description: "The model's answer, once its strategy has gathered what it needs.", example: "Wim Wenders was born in Düsseldorf, so the answer is Germany." }
+      scenarios:
+        - id: multi-step
+          label: A multi-step question
+          steps:
+            - id: classify
+              caption: The classifier labels the question C, multi-step, and sends it to the retriever.
+              duration: 2400
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.3] }
+                - { type: activate, node: classifier, status: thinking, at: [0.3, 0.55] }
+                - { type: branch, node: classifier, taken: retrieve, notTaken: [simple], at: [0.55, 0.7] }
+                - { type: send, edge: retrieve, token: { kind: tool-call, label: label C }, at: [0.7, 1] }
+            - id: hop-1
+              caption: The first documents name the director, so the model writes a follow-up query.
+              duration: 3000
+              events:
+                - { type: read, node: retriever, at: [0, 0.2] }
+                - { type: send, edge: docs, token: { kind: result, label: Wenders }, at: [0.2, 0.5] }
+                - { type: activate, node: llm, status: thinking, at: [0.5, 0.7] }
+                - { type: send, edge: more, token: { kind: tool-call, label: birthplace }, at: [0.7, 1] }
+            - id: hop-2
+              caption: The second search finds the birthplace and the model answers.
+              duration: 3000
+              events:
+                - { type: read, node: retriever, at: [0, 0.2] }
+                - { type: send, edge: docs, token: { kind: result, label: Düsseldorf }, at: [0.2, 0.5] }
+                - { type: branch, node: llm, taken: answer, notTaken: [more], at: [0.5, 0.65] }
+                - { type: send, edge: answer, token: { kind: result, label: Germany }, at: [0.65, 1] }
+        - id: simple
+          label: A simple question
+          steps:
+            - id: classify
+              caption: The classifier labels the question A, so retrieval is skipped entirely.
+              duration: 2400
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.3] }
+                - { type: activate, node: classifier, status: thinking, at: [0.3, 0.55] }
+                - { type: branch, node: classifier, taken: simple, notTaken: [retrieve], at: [0.55, 0.7] }
+                - { type: send, edge: simple, token: { kind: prompt, label: label A }, at: [0.7, 1] }
+            - id: answer
+              caption: The model answers from what it already knows, in a single call.
+              duration: 2000
+              events:
+                - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: answer, token: { kind: result, label: Lisbon }, at: [0.5, 1] }

@@ -8,8 +8,7 @@ The work is cut into independent parts, and each part gets its own call. A <Node
 
 The calls run in parallel, so the whole step takes as long as the slowest one, not the sum. Their reports return at different moments, which is why the diagram shows staggered finishes. A <NodeRef id="aggregator">merge</NodeRef> step waits until all have arrived and combines them, using code or one more LLM call, into the final <NodeRef id="out">review</NodeRef>.
 
-The same shape handles other splits: one chunk of a long document per call, or a guardrail model screening a request while the main model answers it.
-
+The variants change what the parts are. In map-reduce, code cuts one long input into chunks, the same prompt runs on every chunk, and the partial results are merged pairwise in a tree. In answer-and-screen, the parallel calls do different kinds of job: one answers the message while another screens it, and the final step is a gate that releases or blocks the answer rather than a merge.
 ## When to use
 
 - The subtasks are independent and the split is known before the input arrives.
