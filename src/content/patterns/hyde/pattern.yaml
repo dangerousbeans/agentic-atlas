@@ -20,7 +20,7 @@ origin:
   year: 2022
   url: https://arxiv.org/abs/2212.10496
   kind: introduced
-  note: "Published at ACL 2023. The paper generates passages with InstructGPT and encodes them with an unsupervised dense encoder (Contriever), with no relevance labels at all."
+  note: "Published at ACL 2023. The paper generates passages with InstructGPT and encodes them with an unsupervised, contrastively trained encoder (Contriever), with no relevance labels at all."
 build:
   goal: "Answer a question from a document index by searching with the embedding of a model-written hypothetical answer instead of the embedding of the question, then answering only from the real documents found."
   steps:
@@ -32,7 +32,7 @@ build:
   stop: "Stop after one retrieval and one generation. If no document clears the similarity floor, say the index has no answer instead of answering from the hypothetical passage."
   requirements:
     - "Use one embedding model for both the index and the passage vectors; a mismatched encoder makes the search meaningless."
-    - "Never pass the hypothetical passage to the generator; it may contain invented facts."
+    - "Never pass the hypothetical passage to the generator; it may contain invented facts. If the writer call fails or times out, embed the question itself and continue, logging the fallback."
     - "Make k, the number of hypothetical passages and the similarity floor configurable, with defaults 3, 1 and 0.3."
     - "Log the hypothetical passage next to the IDs and scores of the documents it retrieved, so bad retrievals can be traced to the passage."
     - "Add a test with a stub LLM that returns a fixed passage and a fake embedder that records its inputs; assert the embedder received the passage, not the question, and the generator prompt holds the question and exactly 3 documents but not the passage."
