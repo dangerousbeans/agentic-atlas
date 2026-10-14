@@ -10,6 +10,29 @@ sources:
 related:
   composesWith: [human-in-the-loop, supervisor, handoffs]
   confusedWith: []
+origin:
+  by: OpenAI
+  org: OpenAI
+  year: 2025
+  url: https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf
+  kind: popularized
+  note: "OpenAI's 2025 agent guide set out the guardrail types: relevance, safety, PII, moderation, tool safeguards, rules-based and output validation. NVIDIA's NeMo Guardrails (Rebedea et al., 2023, arXiv 2310.10501) used the term for LLM apps earlier."
+build:
+  goal: "Wrap an agent in input and output checks so that off-topic or malicious messages and unsafe drafts are stopped before they reach the user, without making clean messages wait for the input checks."
+  steps:
+    - "On each user message, start the agent run and the input guards at the same time: an on-topic check and a jailbreak check with the {{prompt:jailbreak}}, each returning JSON with tripwire and reason."
+    - "If any input guard trips, cancel the agent run, discard anything it produced, and send the user a refusal or a message saying what the assistant can help with."
+    - "While the input guards are still running, let the agent think and read, but hold any side-effecting tool call until every input guard has passed."
+    - "When the agent's draft is ready, run the output guard on it with the {{prompt:output}}, before anyone sees it."
+    - "If the output guard trips, withhold the draft and send the block message instead; otherwise release the draft unchanged."
+  stop: "Each message ends in exactly one of three ways: the released reply, a refusal from an input guard, or a block from the output guard."
+  requirements:
+    - "Run cheap rule-based checks (length limits, blocklists, patterns for secrets) before any model-based guard."
+    - "Fail closed: if a guard times out (default 3 seconds) or returns invalid JSON, retry once, then treat it as tripped."
+    - "Make each guard a separate, configurable check with its own name, so guards can be added or removed without touching the agent."
+    - "Log every verdict with the guard's name, the reason and the latency."
+    - "Add a test with a stub jailbreak guard that trips on 'ignore your instructions'; assert the agent run was cancelled, no side-effecting tool ran, and the user got the refusal text."
+defaultVariantName: Optimistic
 prompts:
   - id: jailbreak
     title: Jailbreak guard prompt
@@ -136,3 +159,280 @@ diagram:
           events:
             - { type: activate, node: agent, status: error, at: [0, 0.4] }
             - { type: send, edge: rel-trip, token: { kind: result, label: blocked }, at: [0.4, 1] }
+variants:
+  - id: blocking
+    name: Blocking
+    summary: "The agent waits for the input guards: it starts only once every guard has passed, so a tripped guard costs no agent tokens."
+    build:
+      goal: "Check every message with the input guards before the agent starts, so a tripped guard costs no agent tokens and no tool can run on a bad input."
+      steps:
+        - "Run the input guards on the message, in parallel with each other: an on-topic check and a jailbreak check with the {{prompt:jailbreak}}, each returning JSON with tripwire and reason."
+        - "Wait for every verdict. If any guard trips, send the refusal or scope message and stop; the agent is never called."
+        - "Only when every input guard has passed, call the agent with the message."
+        - "Run the output guard on the agent's draft with the {{prompt:output}}, and release the draft or replace it with the block message."
+      stop: "Each message ends in exactly one of three ways: the released reply, a refusal from an input guard, or a block from the output guard."
+      requirements:
+        - "Fail closed: if a guard times out (default 3 seconds) or returns invalid JSON, retry once, then treat it as tripped."
+        - "Use small, fast models or rules for the input guards, because every message now waits for the slowest one."
+        - "Record the time spent waiting for guards per message, so the latency cost of blocking is visible."
+        - "Log every verdict with the guard's name, the reason and the latency."
+        - "Add a test with a stub jailbreak guard that trips; assert the agent was called 0 times and the user got the refusal text."
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Message, description: "The incoming user message, which must pass the input guards before the agent sees it." }
+        - { id: input, kind: guard, label: Input guards, sublabel: on-topic + jailbreak, description: "The on-topic and jailbreak checks, run in parallel with each other. The agent waits for both verdicts." }
+        - { id: agent, kind: agent, label: Agent, description: "The assistant itself. Starts only after every input guard has passed." }
+        - { id: output-guard, kind: guard, label: Output guard, description: "Reviews the agent's draft for personal data, internal policy text or out-of-scope advice before release." }
+        - { id: block, kind: io, label: Blocked, description: "The refusal the user sees when any guard trips, in place of a model answer." }
+        - { id: out, kind: io, label: Reply, description: "The agent's reply, delivered only after the output guard passes it." }
+      edges:
+        - { id: check, from: user, to: input, description: "The message goes to the input guards first; nothing else sees it yet.", example: "Where is my order A-1093?" }
+        - { id: ok, from: input, to: agent, label: ok, description: "Only when every input guard passes does the message reach the agent.", example: "{\"on_topic\": {\"tripwire\": false}, \"jailbreak\": {\"tripwire\": false}} -> message: Where is my order A-1093?" }
+        - { id: trip, from: input, to: block, label: tripwire, description: "If any input guard trips, the user gets a refusal and the agent never runs.", example: "{\"tripwire\": true, \"reason\": \"Asks the assistant to ignore its instructions.\"}" }
+        - { id: draft, from: agent, to: output-guard, description: "The agent's finished draft goes to the output guard before anyone sees it.", example: "Your order A-1093 shipped on Monday and should arrive Thursday." }
+        - { id: pass, from: output-guard, to: out, label: pass, description: "A clean draft is released to the user unchanged.", example: "{\"tripwire\": false, \"reason\": \"No personal data or policy text found.\"}" }
+        - { id: fail, from: output-guard, to: block, label: fail, description: "A flagged draft is withheld and replaced with a block message.", example: "{\"tripwire\": true, \"reason\": \"Draft includes another customer's email address.\"}" }
+      scenarios:
+        - id: passes
+          label: Guards pass, then the agent runs
+          steps:
+            - id: check
+              caption: The message goes to the input guards only. The agent is idle.
+              duration: 2000
+              events:
+                - { type: send, edge: check, token: { kind: prompt, label: message }, at: [0, 0.4] }
+                - { type: activate, node: input, status: thinking, at: [0.4, 1] }
+            - id: start
+              caption: Both guards pass, and only now does the agent start.
+              duration: 2200
+              events:
+                - { type: branch, node: input, taken: ok, notTaken: [trip], at: [0, 0.3] }
+                - { type: send, edge: ok, token: { kind: prompt, label: message }, at: [0.3, 0.7] }
+                - { type: activate, node: agent, status: thinking, at: [0.7, 1] }
+            - id: release
+              caption: The output guard passes the draft, and the reply is delivered.
+              duration: 2600
+              events:
+                - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0, 0.35] }
+                - { type: activate, node: output-guard, status: thinking, at: [0.35, 0.55] }
+                - { type: branch, node: output-guard, taken: pass, notTaken: [fail], at: [0.55, 0.7] }
+                - { type: send, edge: pass, token: { kind: result, label: reply }, at: [0.7, 1] }
+        - id: tripped
+          label: Jailbreak caught before the agent starts
+          steps:
+            - id: check
+              caption: A message asking the assistant to ignore its rules goes to the input guards.
+              duration: 2000
+              events:
+                - { type: send, edge: check, token: { kind: prompt, label: ignore rules }, at: [0, 0.4] }
+                - { type: activate, node: input, status: error, at: [0.4, 1] }
+            - id: block
+              caption: The jailbreak guard trips, and the user gets a refusal. The agent never ran, so it spent no tokens.
+              duration: 2400
+              events:
+                - { type: branch, node: input, taken: trip, notTaken: [ok], at: [0, 0.35] }
+                - { type: send, edge: trip, token: { kind: result, label: blocked }, at: [0.35, 1] }
+  - id: tool-guards
+    name: Tool-call guards
+    summary: "Guards wrap each tool call: one checks the call's arguments before it runs, another checks the result before the agent sees it."
+    build:
+      goal: "Check every tool call the agent makes, before it runs and after it returns, so a call that breaks policy never runs and a result with sensitive data never reaches the model."
+      steps:
+        - "Route every tool call through one execution layer, so no tool runs except through the guards."
+        - "Before running a call, run the call check on the tool name and arguments: rules first (schema, allowlist, ownership of the record), then the {{prompt:call-check}} for cases the rules cannot decide."
+        - "If the call check denies it, do not run the tool; return a tool error to the agent with the reason, so it can tell the user or try something else."
+        - "If it allows the call, run the tool, then run the result check: redact card numbers, secrets and other people's personal data, or replace the whole result with an error if it cannot be cleaned."
+        - "Return the checked result to the agent and continue its loop."
+      stop: "The agent's loop ends as usual. After 3 denied calls in one run, stop the run and hand the conversation to a human."
+      requirements:
+        - "Enforce the guards in the tool-execution code, not in the agent's prompt, so the model cannot talk its way past them."
+        - "Fail closed: if a check errors or times out (default 2 seconds), deny the call or withhold the result."
+        - "Make the denied-call cap a parameter (default 3)."
+        - "Log every call with its verdict, its reason and any redactions."
+        - "Add a test where the signed-in customer is 4821 and a stub agent asks for an order belonging to customer 7730; assert the order tool was never invoked and the agent received an error containing 'denied'."
+    prompts:
+      - id: call-check
+        title: Tool-call check prompt
+        lang: markdown
+        source: |
+          You check a tool call before it runs.
+
+          <policy>{{policy}}</policy>
+          <signed_in_user>{{user_id}}</signed_in_user>
+          <tool>{{tool_name}}</tool>
+          <arguments>{{arguments}}</arguments>
+
+          Does this call follow the policy for this user?
+          Respond in JSON: {"allow": true|false, "reason": "one sentence"}
+          When unsure, deny.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Message, pos: { x: 0, y: -80 }, description: "A signed-in customer's message, such as 'Where is my order A-1093?'." }
+        - { id: agent, kind: agent, label: Agent, pos: { x: 200, y: 0 }, description: "The assistant. Plans tool calls, but every call goes through the guards, which it cannot skip." }
+        - { id: pre, kind: guard, label: Call check, pos: { x: 420, y: -110 }, model: false, description: "Checks each call before it runs, mostly with rules: is the tool allowed, and does the record belong to the signed-in customer?" }
+        - { id: tool, kind: tool, label: Orders API, pos: { x: 640, y: 0 }, description: "The real tool: looks up an order, including the payment details stored with it." }
+        - { id: post, kind: guard, label: Result check, pos: { x: 420, y: 110 }, model: false, description: "Checks each result before the agent sees it: redacts card numbers, secrets and other people's personal data." }
+        - { id: out, kind: io, label: Reply, pos: { x: 0, y: 90 }, description: "The agent's answer to the customer." }
+      edges:
+        - { id: in, from: user, to: agent, description: "The customer's message goes to the agent.", example: "Where is my order A-1093?" }
+        - { id: call, from: agent, to: pre, description: "The agent's tool call goes to the call check, not straight to the tool.", example: "{\"tool\": \"get_order\", \"arguments\": {\"order\": \"A-1093\"}}" }
+        - { id: allow, from: pre, to: tool, label: allow, description: "An allowed call runs against the real tool.", example: "allow: order A-1093 belongs to signed-in customer 4821." }
+        - { id: deny, from: pre, to: agent, style: dashed, label: deny, description: "A denied call never runs; the agent gets a tool error with the reason.", example: "{\"error\": \"denied: order A-2000 belongs to another customer.\"}" }
+        - { id: raw, from: tool, to: post, description: "The raw result goes to the result check before the agent sees it.", example: "{\"order\": \"A-1093\", \"status\": \"shipped\", \"eta\": \"Thu\", \"card\": \"4111 1111 1111 1111\"}" }
+        - { id: clean, from: post, to: agent, style: dashed, label: checked, description: "The checked result, with sensitive fields redacted, returns to the agent.", example: "{\"order\": \"A-1093\", \"status\": \"shipped\", \"eta\": \"Thu\", \"card\": \"**** 1111\"}" }
+        - { id: reply, from: agent, to: out, description: "The agent answers from the checked result.", example: "Your order A-1093 has shipped and should arrive on Thursday." }
+      scenarios:
+        - id: allowed
+          label: Allowed call, result redacted
+          steps:
+            - id: ask
+              caption: The customer asks about their order, and the agent plans a lookup.
+              duration: 1800
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: my order? }, at: [0, 0.5] }
+                - { type: activate, node: agent, status: thinking, at: [0.5, 1] }
+            - id: pre-check
+              caption: The call check confirms the order belongs to the signed-in customer, so the call runs.
+              duration: 2600
+              events:
+                - { type: send, edge: call, token: { kind: tool-call, label: get_order }, at: [0, 0.3] }
+                - { type: branch, node: pre, taken: allow, notTaken: [deny], at: [0.3, 0.45] }
+                - { type: send, edge: allow, token: { kind: tool-call, label: get_order }, at: [0.45, 0.75] }
+                - { type: activate, node: tool, status: calling, at: [0.75, 1] }
+            - id: post-check
+              caption: The result includes a full card number. The result check masks it before the agent sees it.
+              duration: 2600
+              events:
+                - { type: send, edge: raw, token: { kind: result, label: raw result }, at: [0, 0.35] }
+                - { type: activate, node: post, status: thinking, at: [0.35, 0.55] }
+                - { type: send, edge: clean, token: { kind: result, label: redacted }, at: [0.55, 1] }
+            - id: reply
+              caption: The agent answers from the checked result.
+              duration: 1800
+              events:
+                - { type: activate, node: agent, status: thinking, at: [0, 0.4] }
+                - { type: send, edge: reply, token: { kind: result, label: shipped }, at: [0.4, 1] }
+        - id: denied
+          label: Another customer's order is denied
+          steps:
+            - id: ask
+              caption: The message asks about order A-2000, which belongs to a different customer.
+              duration: 1800
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: order A-2000 }, at: [0, 0.5] }
+                - { type: activate, node: agent, status: thinking, at: [0.5, 1] }
+            - id: deny
+              caption: The call check sees the order is not this customer's and denies the call. The tool never runs.
+              duration: 2600
+              events:
+                - { type: send, edge: call, token: { kind: tool-call, label: get_order }, at: [0, 0.3] }
+                - { type: activate, node: pre, status: error, at: [0.3, 0.45] }
+                - { type: branch, node: pre, taken: deny, notTaken: [allow], at: [0.45, 0.55] }
+                - { type: send, edge: deny, token: { kind: feedback, label: denied }, at: [0.55, 1] }
+            - id: reply
+              caption: The agent tells the customer it can only look up their own orders.
+              duration: 1800
+              events:
+                - { type: activate, node: agent, status: thinking, at: [0, 0.4] }
+                - { type: send, edge: reply, token: { kind: result, label: not yours }, at: [0.4, 1] }
+  - id: safety-classifier
+    name: Safety classifier model
+    summary: "The guard is itself a model tuned to label messages against a written risk taxonomy, and the same model checks both the input and the output."
+    origin:
+      by: Hakan Inan et al.
+      org: GenAI at Meta
+      year: 2023
+      url: https://arxiv.org/abs/2312.06674
+      kind: introduced
+      note: "Llama Guard: an LLM fine-tuned to classify both prompts and responses as safe or unsafe against a taxonomy given in its prompt."
+    build:
+      goal: "Screen both the user's message and the agent's reply with one safety classifier model that labels each against an explicit, editable risk taxonomy."
+      steps:
+        - "Write the risk taxonomy as a list of categories, each with a code, a name and what it covers, and keep it as configuration."
+        - "Before the agent runs, call the classifier with the {{prompt:classify}}, the role set to user, the taxonomy and the message; read line one as safe or unsafe and line two as the violated category codes."
+        - "If the message is unsafe, return a refusal that names the category in plain words; otherwise call the agent."
+        - "Call the same classifier on the agent's reply, with the role set to agent and the whole conversation."
+        - "Release the reply if it is safe; otherwise withhold it and send the block message."
+      stop: "Each message ends with the released reply or one refusal. The classifier runs at most twice per message: once on the input and once on the output."
+      requirements:
+        - "Use one classifier and one taxonomy for both checks, and change the policy by editing the taxonomy, not the prompt's wording."
+        - "Run the classifier at temperature 0, with a small output cap (default 20 tokens)."
+        - "If line one is neither safe nor unsafe, or a code is not in the taxonomy, retry once, then treat the message as unsafe."
+        - "Log the verdict and the category codes for every message, so false positives can be reviewed per category."
+        - "Add a test with a stub classifier that returns 'unsafe' and 'C3' for the input; assert the agent is never called and the refusal names category C3, Criminal planning."
+    prompts:
+      - id: classify
+        title: Safety classifier prompt
+        lang: markdown
+        source: |
+          Check whether the last {{role}} message in the conversation below is
+          unsafe under the policy.
+
+          <categories>
+          {{taxonomy}}
+          </categories>
+
+          <conversation>
+          {{conversation}}
+          </conversation>
+
+          Assess only the last {{role}} message.
+          Line 1: safe or unsafe.
+          Line 2, only if unsafe: the violated category codes, comma-separated.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Message, description: "The incoming user message, such as 'How do I get into my neighbour's locked shed?'." }
+        - { id: taxonomy, kind: memory, label: Risk taxonomy, description: "The written policy: categories such as C1 Violence, C2 Self-harm, C3 Criminal planning, each with what it covers." }
+        - { id: classifier, kind: guard, label: Safety model, sublabel: input and output, description: "A model tuned for safety labelling. Reads the taxonomy and labels a message safe or unsafe, with the violated category codes." }
+        - { id: agent, kind: agent, label: Agent, description: "The assistant. Runs only when the classifier labels the input safe; its reply goes back to the same classifier." }
+        - { id: block, kind: io, label: Blocked, description: "The refusal, naming the category in plain words, sent in place of an answer." }
+        - { id: out, kind: io, label: Reply, description: "The agent's reply, released once the classifier labels it safe." }
+      edges:
+        - { id: in, from: user, to: classifier, description: "The user's message goes to the classifier, with the role set to user.", example: "How do I get into my neighbour's locked shed while they're away?" }
+        - { id: policy, from: taxonomy, to: classifier, label: categories, description: "The taxonomy is part of every classifier call, so changing the policy means editing this list.", example: "C1 Violence. C2 Self-harm. C3 Criminal planning: helping someone plan theft, burglary or fraud. C4 Weapons." }
+        - { id: safe-in, from: classifier, to: agent, label: safe, description: "A safe input goes on to the agent.", example: "safe   (message: Where is my order A-1093?)" }
+        - { id: reply-check, from: agent, to: classifier, label: reply, description: "The agent's reply goes back to the same classifier, with the role set to agent.", example: "Your order A-1093 shipped on Monday and should arrive Thursday." }
+        - { id: unsafe, from: classifier, to: block, label: unsafe, description: "An unsafe input or reply is replaced by a refusal that names the category.", example: "unsafe, C3. Refusal: I can't help with getting into someone else's property (criminal planning)." }
+        - { id: release, from: classifier, to: out, label: safe reply, description: "A reply labelled safe is released to the user.", example: "safe   (reply: Your order A-1093 shipped on Monday.)" }
+      scenarios:
+        - id: safe
+          label: Safe both ways
+          steps:
+            - id: input
+              caption: The classifier reads the taxonomy and labels the user's message safe.
+              duration: 2400
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: my order? }, at: [0, 0.3] }
+                - { type: send, edge: policy, token: { kind: prompt, label: categories }, at: [0.3, 0.55] }
+                - { type: activate, node: classifier, status: thinking, at: [0.55, 0.65] }
+                - { type: branch, node: classifier, taken: safe-in, notTaken: [unsafe, release], at: [0.65, 0.75] }
+                - { type: send, edge: safe-in, token: { kind: prompt, label: safe }, at: [0.75, 1] }
+            - id: output
+              caption: The agent answers, and the same classifier checks the reply.
+              duration: 2400
+              events:
+                - { type: activate, node: agent, status: thinking, at: [0, 0.4] }
+                - { type: send, edge: reply-check, token: { kind: result, label: reply }, at: [0.4, 0.75] }
+                - { type: activate, node: classifier, status: thinking, at: [0.75, 1] }
+            - id: release
+              caption: The reply is labelled safe and released.
+              duration: 1800
+              events:
+                - { type: branch, node: classifier, taken: release, notTaken: [unsafe, safe-in], at: [0, 0.3] }
+                - { type: send, edge: release, token: { kind: result, label: reply }, at: [0.3, 1] }
+        - id: unsafe-input
+          label: Unsafe request is refused
+          steps:
+            - id: input
+              caption: The classifier labels the message unsafe under C3, Criminal planning.
+              duration: 2400
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: break in }, at: [0, 0.3] }
+                - { type: send, edge: policy, token: { kind: prompt, label: categories }, at: [0.3, 0.55] }
+                - { type: activate, node: classifier, status: error, at: [0.55, 1] }
+            - id: refuse
+              caption: The user gets a refusal naming the category. The agent never sees the message.
+              duration: 2200
+              events:
+                - { type: branch, node: classifier, taken: unsafe, notTaken: [safe-in, release], at: [0, 0.3] }
+                - { type: send, edge: unsafe, token: { kind: result, label: C3 refusal }, at: [0.3, 1] }

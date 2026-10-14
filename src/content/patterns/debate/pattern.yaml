@@ -11,6 +11,29 @@ related:
   composesWith: [evaluator-optimizer]
   confusedWith:
     - { slug: evaluator-optimizer, difference: "Evaluator-optimizer has one generator revising against one critic; in a debate several peers answer the same question and update by reading each other." }
+origin:
+  by: Yilun Du et al.
+  org: MIT CSAIL and Google Brain
+  year: 2023
+  url: https://arxiv.org/abs/2305.14325
+  kind: introduced
+  note: "Concurrent work: Liang et al. (Tencent AI Lab, Tsinghua University and Shanghai Jiao Tong University) gave two debaters fixed opposing sides and added a judge, arXiv 2305.19118: see the Adversarial tab."
+build:
+  goal: "Answer a hard question more reliably by having several debaters answer independently, read and critique each other's answers over a few rounds, and then settle on one answer by majority or an optional judge."
+  steps:
+    - "Send the question to every debater (default 3) in parallel and collect their independent first answers, each ending in a one-line answer."
+    - "For each round, give every debater its own previous answer and all the other debaters' answers with the {{prompt:revise}}, and call all of them in parallel."
+    - "After each round, pull the one-line answer out of each reply; if every debater gives the same answer, end the rounds early."
+    - "After the last round, take the majority answer. If there is no majority, or you always want a ruling, send the final answers to the judge with the {{prompt:judge}} and parse its JSON into answer and why."
+    - "Return the answer together with every debater's final answer, so a reader can see where they disagreed."
+  stop: "Stop after 2 rounds, or earlier when every debater gives the same one-line answer. With no majority and no judge, return all the final answers with a status saying the debate did not converge."
+  requirements:
+    - "Make the number of debaters (default 3) and the round cap (default 2) parameters."
+    - "Vary the debaters by model, temperature or persona so their mistakes are independent."
+    - "Normalize the one-line answers (trim, lowercase, strip punctuation) before comparing them. If a reply has no answer line, retry that debater once, then leave it out of the vote."
+    - "Shuffle the order of the other answers in each prompt, so no debater always reads the same peer first."
+    - "Add a test with stub debaters whose first answers are yes, no, no and whose round-1 answers are all no; assert exactly 6 debater calls, no judge call, and the answer no."
+defaultVariantName: Optional judge
 prompts:
   - id: revise
     title: Debater revision prompt
@@ -98,3 +121,201 @@ diagram:
           events:
             - { type: activate, node: judge, status: thinking, at: [0, 0.5] }
             - { type: send, edge: ruling, token: { kind: result, label: ruling }, at: [0.5, 1] }
+variants:
+  - id: adversarial-judge
+    name: Adversarial + judge
+    summary: "Two debaters argue fixed opposite sides, and a judge reads every round and stops the debate as soon as one side has the right answer."
+    origin:
+      by: Tian Liang et al.
+      org: Tencent AI Lab, Tsinghua University and Shanghai Jiao Tong University
+      year: 2023
+      url: https://arxiv.org/abs/2305.19118
+      kind: introduced
+      note: "Multi-Agent Debate (MAD): one side must argue against the other, so the model escapes the degeneration of thought that self-reflection falls into; a judge decides when to stop."
+    build:
+      goal: "Get past a model's first, tempting answer by making two debaters argue fixed opposite sides, while a judge ends the debate as soon as one side is right."
+      steps:
+        - "Start an empty transcript. Call the affirmative debater with the {{prompt:debater}}, side set to affirmative, and append its answer and argument."
+        - "Call the negative debater with the same prompt, side set to negative, and the transcript; it must find the flaw and argue for a different answer. Append its rebuttal."
+        - "At the end of each round, call the judge with the {{prompt:moderator}} and the transcript, and parse its JSON into decided, answer and reason."
+        - "If decided is true, return the answer and the reason."
+        - "Otherwise run the next round: the affirmative replies to the latest rebuttal, then the negative replies."
+        - "If the round cap is hit, call the judge once more with final set to true, so it must pick the better-supported answer from the transcript."
+      stop: "Stop when the judge decides, or after 3 rounds, when the judge must pick an answer. If its final reply is still unusable, return both sides' last answers with a status saying the debate was not settled."
+      requirements:
+        - "Make the round cap a parameter (default 3)."
+        - "Keep the sides fixed for the whole debate, and tell the negative to disagree even when the affirmative sounds plausible."
+        - "If the judge's reply is not valid JSON, retry once, then treat the round as undecided."
+        - "Let the judge use a different model from the debaters, at a low temperature."
+        - "Add a test with stub debaters and a stub judge that is undecided after round 1 and decides after round 2; assert 4 debater calls, 2 judge calls, and that the judge's answer is returned."
+    prompts:
+      - id: debater
+        title: Debater prompt (fixed side)
+        lang: markdown
+        source: |
+          You are the {{side}} side in a debate. Question: {{question}}
+
+          <transcript>{{transcript}}</transcript>
+
+          {{#if affirmative}}
+          State your answer and the argument for it. If the other side has attacked
+          it, reply to each point, and concede only if the attack is correct.
+          {{else}}
+          You disagree with the affirmative side. Find the flaw in its argument and
+          argue for a different answer, step by step.
+          {{/if}}
+          End with your current answer in one line.
+      - id: moderator
+        title: Judge prompt
+        lang: markdown
+        source: |
+          You judge a debate between an affirmative and a negative side.
+
+          <question>{{question}}</question>
+          <transcript>{{transcript}}</transcript>
+
+          Decide whether one side has given a correct, well-supported answer.
+          {{#if final}}This is the last round: you must pick the better-supported answer.{{/if}}
+          Respond in JSON:
+          {"decided": true|false, "answer": "only when decided", "reason": "one or two sentences"}
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, description: "A question with a tempting wrong answer, such as 'Up a hill at 1 m/s, down at 3 m/s: what is the average speed?'." }
+        - { id: aff, kind: agent, label: Affirmative, description: "The fixed 'for' side. States an answer, defends it, and must reply to the negative's attack point by point each round." }
+        - { id: neg, kind: agent, label: Negative, description: "The fixed 'against' side. It must disagree: it hunts for the flaw in the affirmative's argument and argues for a different answer." }
+        - { id: judge, kind: evaluator, label: Judge, description: "Reads each round's transcript and decides whether one side has the right answer; if not, it calls another round." }
+        - { id: out, kind: io, label: Answer, description: "The answer the judge settles on, with its reason." }
+      edges:
+        - { id: topic, from: user, to: aff, description: "The question opens the debate, and the affirmative speaks first.", example: "Up a hill at 1 m/s, then back down the same path at 3 m/s. What is the average speed for the round trip?" }
+        - { id: argue, from: aff, to: neg, label: argue, description: "The affirmative's answer and argument go to the negative, whose job is to attack it.", example: "Affirmative: 2 m/s. The two speeds are 1 and 3, and their average is 2." }
+        - { id: rebut, from: neg, to: judge, label: rebut, description: "The negative's rebuttal closes the round, and the judge reads both sides' arguments.", example: "Negative: Wrong. The climb takes three times as long as the descent. Distance 2d in time d + d/3, so 2d / (4d/3) = 1.5 m/s." }
+        - { id: next, from: judge, to: aff, style: loop, label: next round, description: "No side has won yet: the judge calls another round, and the affirmative must reply to the rebuttal.", example: "{\"decided\": false, \"reason\": \"The sides disagree on whether to average the speeds or the times.\"}" }
+        - { id: decide, from: judge, to: out, label: decide, description: "Once one side's answer is well supported, the judge stops the debate and returns it.", example: "{\"decided\": true, \"answer\": \"1.5 m/s\", \"reason\": \"Average speed is total distance over total time, and the affirmative conceded.\"}" }
+      scenarios:
+        - id: two-rounds
+          label: Wrong first answer, settled in round two
+          steps:
+            - id: open
+              caption: The question opens the debate with the affirmative side.
+              duration: 1200
+              events:
+                - { type: send, edge: topic, token: { kind: prompt, label: question } }
+                - { type: activate, node: aff, status: thinking, at: [0.5, 1] }
+            - id: round-one
+              caption: "The affirmative answers 2 m/s; the negative attacks it and argues for 1.5 m/s. The judge sees no winner yet and calls another round."
+              duration: 4200
+              events:
+                - { type: send, edge: argue, token: { kind: result, label: 2 m/s }, at: [0, 0.25] }
+                - { type: activate, node: neg, status: thinking, at: [0.25, 0.45] }
+                - { type: send, edge: rebut, token: { kind: feedback, label: 1.5 m/s }, at: [0.45, 0.65] }
+                - { type: branch, node: judge, taken: next, notTaken: [decide], at: [0.65, 0.8] }
+                - { type: send, edge: next, token: { kind: feedback, label: continue }, at: [0.8, 1] }
+            - id: round-two
+              caption: "The affirmative checks the times and concedes; the negative confirms 1.5 m/s, and the judge decides."
+              duration: 4200
+              events:
+                - { type: activate, node: aff, status: thinking, at: [0, 0.2] }
+                - { type: send, edge: argue, token: { kind: result, label: concede }, at: [0.2, 0.4] }
+                - { type: activate, node: neg, status: thinking, at: [0.4, 0.5] }
+                - { type: send, edge: rebut, token: { kind: result, label: 1.5 m/s }, at: [0.5, 0.7] }
+                - { type: branch, node: judge, taken: decide, notTaken: [next], at: [0.7, 0.8] }
+                - { type: send, edge: decide, token: { kind: result, label: 1.5 m/s }, at: [0.8, 1] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
+  - id: consensus
+    name: Consensus, no judge
+    summary: "The original form: no judge. After each round a plain check hands every debater the others' answers, until they agree or the majority wins."
+    build:
+      goal: "Answer a hard question by letting several debaters revise their answers after reading each other's, with no judge: the rounds end when they agree, and otherwise the majority wins."
+      steps:
+        - "Send the question to every debater (default 3) in parallel and collect their first answers, each ending in a one-line answer."
+        - "Pull out each one-line answer and compare them after normalizing (trim, lowercase, strip punctuation). If they all agree, return that answer."
+        - "Otherwise give each debater the other debaters' full answers with the {{prompt:update}}, and call all of them in parallel for the next round."
+        - "Repeat the agreement check after every round."
+        - "After the last round, return the majority answer with every debater's final answer attached."
+      stop: "Stop as soon as every debater agrees, or after 2 rounds. If there is no majority after the last round, return all the final answers with a status saying there was no consensus."
+      requirements:
+        - "Make the number of debaters (default 3) and the round cap (default 2) parameters; an odd number of debaters avoids most ties."
+        - "Keep the round check in plain code: no model call decides the outcome."
+        - "If a debater's reply has no answer line, retry it once, then leave it out of that round's check."
+        - "Log every debater's answer per round, so you can see who changed their mind and when."
+        - "Add a test with stub debaters whose first answers are yes, no, no and whose round-1 answers are all no; assert 6 debater calls and the answer no."
+    prompts:
+      - id: update
+        title: Debater update prompt
+        lang: markdown
+        source: |
+          Question: {{question}}
+
+          These are the answers to the question from the other agents:
+          {{#each others}}
+          <agent_answer>{{this}}</agent_answer>
+          {{/each}}
+
+          Using the other agents' reasoning as additional advice, give an updated
+          answer. Check each step yourself; do not just adopt the majority.
+          End with your answer in one line.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, pos: { x: 0, y: 0 }, description: "The question posed to every debater, e.g. 'Is 3,599 prime?'." }
+        - { id: a, kind: agent, label: Debater A, pos: { x: 210, y: -130 }, description: "Answers independently, then updates its answer each round after reading B's and C's." }
+        - { id: b, kind: agent, label: Debater B, pos: { x: 210, y: 0 }, description: "Answers independently, then updates its answer each round after reading A's and C's." }
+        - { id: c, kind: agent, label: Debater C, pos: { x: 210, y: 130 }, description: "Answers independently, then updates its answer each round after reading A's and B's." }
+        - { id: check, kind: aggregator, label: Round check, pos: { x: 440, y: 0 }, description: "Plain code, not a model. Collects each round's answers, checks whether they agree, and if not hands every debater the others' answers." }
+        - { id: out, kind: io, label: Answer, pos: { x: 630, y: 0 }, description: "The answer every debater agreed on, or the majority answer after the last round." }
+      edges:
+        - { id: q-a, from: user, to: a, description: "The same question goes to debater A.", example: "Question: Is 3,599 prime? Show your reasoning." }
+        - { id: q-b, from: user, to: b, description: "The same question goes to debater B in parallel.", example: "Question: Is 3,599 prime? Show your reasoning." }
+        - { id: q-c, from: user, to: c, description: "The same question goes to debater C in parallel.", example: "Question: Is 3,599 prime? Show your reasoning." }
+        - { id: a-in, from: a, to: check, description: "A's answer for this round goes to the round check.", example: "A (first answer): Yes, 3,599 is prime. I found no divisor up to 50." }
+        - { id: b-in, from: b, to: check, description: "B's answer for this round goes to the round check.", example: "B (first answer): No, 3,599 = 59 x 61." }
+        - { id: c-in, from: c, to: check, description: "C's answer for this round goes to the round check.", example: "C (first answer): Not prime: 3,599 = 60 squared minus 1 = 59 x 61." }
+        - { id: to-a, from: check, to: a, description: "The answers differ, so A gets B's and C's answers to read before the next round.", example: "These are the answers from the other agents: B: No, 3,599 = 59 x 61. C: Not prime, 60 squared minus 1 = 59 x 61. Give an updated answer." }
+        - { id: to-b, from: check, to: b, description: "B gets A's and C's answers to read before the next round.", example: "These are the answers from the other agents: A: Yes, 3,599 is prime. C: Not prime, 59 x 61. Give an updated answer." }
+        - { id: to-c, from: check, to: c, description: "C gets A's and B's answers to read before the next round.", example: "These are the answers from the other agents: A: Yes, 3,599 is prime. B: No, 59 x 61. Give an updated answer." }
+        - { id: agreed, from: check, to: out, label: agreed, description: "When every debater gives the same answer, or the last round ends, the agreed or majority answer is returned.", example: "Round 1: A, B and C all answer 'not prime (59 x 61)'. They agree, so the debate ends." }
+      scenarios:
+        - id: agrees-after-one-round
+          label: Disagree, then agree after one round
+          steps:
+            - id: fan-out
+              caption: The same question goes to all three debaters at once.
+              duration: 1400
+              events:
+                - { type: send, edge: q-a, token: { kind: prompt, label: question } }
+                - { type: send, edge: q-b, token: { kind: prompt, label: question } }
+                - { type: send, edge: q-c, token: { kind: prompt, label: question } }
+            - id: first-answers
+              caption: Each debater answers alone, and the answers reach the round check. A says prime; B and C say 59 x 61.
+              duration: 2600
+              events:
+                - { type: activate, node: a, status: thinking, at: [0, 0.5] }
+                - { type: activate, node: b, status: thinking, at: [0, 0.5] }
+                - { type: activate, node: c, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: a-in, token: { kind: result, label: prime }, at: [0.5, 1] }
+                - { type: send, edge: b-in, token: { kind: result, label: 59 x 61 }, at: [0.5, 1] }
+                - { type: send, edge: c-in, token: { kind: result, label: 59 x 61 }, at: [0.5, 1] }
+            - id: share
+              caption: The answers differ, so the check hands every debater the other two answers.
+              duration: 2400
+              events:
+                - { type: branch, node: check, taken: to-a, notTaken: [agreed], at: [0, 0.3] }
+                - { type: send, edge: to-a, token: { kind: feedback, label: others }, at: [0.3, 1] }
+                - { type: send, edge: to-b, token: { kind: feedback, label: others }, at: [0.3, 1] }
+                - { type: send, edge: to-c, token: { kind: feedback, label: others }, at: [0.3, 1] }
+            - id: round-one
+              caption: "Each debater rechecks the others' reasoning; A multiplies 59 by 61 and changes its answer."
+              duration: 2600
+              events:
+                - { type: activate, node: a, status: thinking, at: [0, 0.5] }
+                - { type: activate, node: b, status: thinking, at: [0, 0.5] }
+                - { type: activate, node: c, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: a-in, token: { kind: result, label: 59 x 61 }, at: [0.5, 1] }
+                - { type: send, edge: b-in, token: { kind: result, label: 59 x 61 }, at: [0.5, 1] }
+                - { type: send, edge: c-in, token: { kind: result, label: 59 x 61 }, at: [0.5, 1] }
+            - id: agree
+              caption: All three answers now agree, so the debate ends with no judge.
+              duration: 2000
+              events:
+                - { type: branch, node: check, taken: agreed, notTaken: [to-a, to-b, to-c], at: [0, 0.3] }
+                - { type: send, edge: agreed, token: { kind: result, label: not prime }, at: [0.3, 0.9] }
+                - { type: activate, node: out, status: done, at: [0.8, 1] }

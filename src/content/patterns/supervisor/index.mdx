@@ -10,6 +10,8 @@ The supervisor reads each result, decides the next step, and eventually returns 
 
 Teams can nest. In the hierarchical scenario the coder is the lead of a small coding team, and it delegates test runs to the <NodeRef id="tester">tester</NodeRef>. The top supervisor sees only the coder's summarized result, so its own context stays small.
 
+Two variants change how the supervisor works. In the Parallel subagents tab, a lead agent spawns several subagents at once, each with a clean context, and a citation agent finishes the report. In the Ledger orchestrator tab, from Microsoft's Magentic-One, the supervisor keeps a written plan and a per-turn progress check, and replans when the team stalls.
+
 ## When to use
 
 - The task needs different tools, prompts or permissions for different parts.

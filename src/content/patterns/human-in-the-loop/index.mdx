@@ -10,6 +10,8 @@ At that point the run pauses. The agent's state is checkpointed, which can be ho
 
 Frameworks expose this as an interrupt: a call that stops the graph, saves state, and later resumes with the human's answer as its return value.
 
+The same pause serves other purposes, shown in the variant tabs. In Agent asks, the agent itself stops to ask a person for information it is missing, with no risky action involved. In Act, then review, the agent acts at once against a saved checkpoint, and a person reviews afterwards and can roll the change back. That only suits changes that can be undone.
+
 ## When to use
 
 - Actions are irreversible, costly or customer-visible.

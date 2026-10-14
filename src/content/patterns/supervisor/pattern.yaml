@@ -14,6 +14,32 @@ related:
   confusedWith:
     - { slug: orchestrator-workers, difference: "Orchestrator-workers hands subtasks to plain LLM calls; a supervisor delegates to full agents that have their own tools and loops." }
     - { slug: handoffs, difference: "A supervisor keeps control and every result returns to it; with handoffs the conversation itself moves to another agent, with no manager." }
+origin:
+  by: OpenAI and LangChain
+  org: OpenAI; LangChain
+  year: 2025
+  url: https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf
+  kind: popularized
+  uncertain: true
+  note: "No single inventor. OpenAI's 2025 agent guide calls it the manager pattern and LangGraph ships a supervisor; manager agents over specialist agents already appear in MetaGPT and AutoGen (2023)."
+build:
+  goal: "Turn a task into a finished deliverable by having a supervisor agent delegate one step at a time to specialist agents, each with its own tools, and read every result before choosing the next step."
+  steps:
+    - "Define each specialist as a full agent with its own instructions, tools and loop, and write a one-line description of each for the supervisor."
+    - "Call the supervisor with the {{prompt:supervisor}}, filling in the team descriptions, the task and the results so far, and parse its JSON reply into action, agent, instruction and answer."
+    - "If action is delegate, run the named specialist with the {{prompt:specialist}} and the instruction as its brief; it runs its own tool loop and returns a short report."
+    - "Append the agent name, the instruction and the report to the results list, then call the supervisor again."
+    - "If action is finish, return the answer together with the results list."
+    - "A specialist may lead a sub-team of its own: it runs this same loop over its sub-agents and reports one summarized result upward."
+  stop: "Stop when the supervisor returns finish, or after 8 delegations. On the cap, return the results gathered so far with a status saying the task was not finished."
+  requirements:
+    - "Cap delegations per task (default 8) and tool calls per specialist run (default 10)."
+    - "If the supervisor's reply is not valid JSON or names an agent not on the team, retry once with the error appended, then stop with a failed status."
+    - "If a specialist errors or hits its cap, return that as its report, so the supervisor can retry, reassign or finish; never crash the run."
+    - "Give each specialist only its brief, not the supervisor's history, and keep the specialist's own tool calls out of the supervisor's context."
+    - "Log each delegation with the agent, the instruction, the report, the tokens and the duration."
+    - "Add a test with a stub supervisor that delegates to the researcher, then the coder, then finishes; assert exactly two specialist runs in that order and that the finish answer is returned."
+defaultVariantName: One step at a time
 prompts:
   - id: supervisor
     title: Supervisor prompt
@@ -136,3 +162,260 @@ diagram:
           events:
             - { type: send, edge: r-code, token: { kind: result, label: chart + tests }, at: [0, 0.6] }
             - { type: send, edge: finish, token: { kind: result, label: report }, at: [0.6, 1] }
+variants:
+  - id: parallel-subagents
+    name: Parallel subagents
+    summary: "A lead agent saves a plan, spawns several subagents at once with clean contexts, reads their condensed findings, and a citation pass runs before the answer goes out."
+    origin:
+      by: Anthropic
+      org: Anthropic
+      year: 2025
+      url: https://www.anthropic.com/engineering/multi-agent-research-system
+      kind: popularized
+      note: "Described in 'How we built our multi-agent research system' (June 2025): a lead researcher spawns parallel subagents, keeps its plan in memory, and a citation agent finishes the report."
+    build:
+      goal: "Answer a broad research question by having a lead agent plan, run several subagents in parallel on separate parts of it, and combine their condensed findings into one cited report."
+      steps:
+        - "Call the lead agent with the {{prompt:lead}} and the question; parse its JSON into action, subtasks (objective, output, tools, boundaries) and report, and save its plan to memory before spawning anything."
+        - "For each subtask, start a subagent with the {{prompt:subagent}}, a fresh context and only that brief; run all of them in parallel."
+        - "Each subagent runs its own tool loop and returns condensed findings with a source for each fact, or an error saying what it could not find."
+        - "Reload the plan from memory, and call the lead again with every finding so far; it either spawns more subtasks for the gaps or replies done with a draft report."
+        - "Send the draft and every source to the citation agent with the {{prompt:citer}}, and return the cited report."
+      stop: "Stop when the lead replies done, or after 3 spawn rounds. On the cap, have the lead write the report from what it has and list the open questions in it."
+      requirements:
+        - "Cap subagents per round (default 4), spawn rounds (default 3) and tool calls per subagent (default 15)."
+        - "Give each subagent a timeout (default 5 minutes); report a timeout or crash to the lead as that subagent's finding instead of dropping it."
+        - "Subagents never see each other's context or the lead's; they get only their brief."
+        - "If the lead's reply is not valid JSON, retry once with the parse error, then write the report from the findings so far."
+        - "Add a test with a stub lead that spawns two subagents and then replies done; assert both subagents started before either finished, and the citation agent ran once."
+    prompts:
+      - id: lead
+        title: Lead agent prompt
+        lang: markdown
+        source: |
+          You lead a research effort. You plan and delegate; subagents do the searching.
+
+          <question>{{question}}</question>
+          <plan>{{plan}}</plan>
+          <findings_so_far>{{findings}}</findings_so_far>
+
+          Decide whether the findings answer the question. Respond in JSON:
+          {"action": "spawn" | "done",
+           "subtasks": [{"objective": "...", "output": "what to return",
+                         "tools": ["..."], "boundaries": "what not to cover"}],
+           "report": "only when done: the full answer, a source for each claim"}
+          Spawn only subtasks that do not overlap each other or the findings so far.
+          Use 1 subagent for a simple fact, 2 to 4 for a comparison.
+      - id: subagent
+        title: Subagent prompt
+        lang: markdown
+        source: |
+          You are a research subagent. Work only on this brief:
+          <objective>{{objective}}</objective>
+          Return: {{output}}. Do not cover: {{boundaries}}.
+
+          Use your tools ({{tools}}). Start with broad searches, then narrow down.
+          Stop when you can answer, or after {{max_tool_calls}} tool calls.
+          Reply with condensed findings in under 300 words, a source for each fact,
+          and anything you could not find.
+      - id: citer
+        title: Citation agent prompt
+        lang: markdown
+        source: |
+          Add citations to the report below. Do not change its wording or its claims.
+
+          <report>{{report}}</report>
+          <sources>{{sources}}</sources>
+
+          After each claim, cite the source that supports it.
+          List any claim that no source supports under "Unsupported claims".
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Question, description: "The research question, such as 'What did customers say about onboarding in Q3?'." }
+        - { id: lead, kind: agent, label: Lead agent, description: "Plans the research, spawns subagents in parallel, reads their findings and decides whether to spawn more or write the report." }
+        - { id: plan, kind: memory, label: Plan, description: "The lead's plan, saved outside its context window so it survives if a long run truncates the lead's context." }
+        - { id: r1, kind: agent, label: Subagent 1, sublabel: support tickets, hidden: true, description: "Spawned with a clean context and one brief. Searches the support tickets and returns condensed findings with sources." }
+        - { id: r2, kind: agent, label: Subagent 2, sublabel: call transcripts, hidden: true, description: "Spawned at the same time as subagent 1. Searches the sales-call transcripts and returns condensed findings with sources." }
+        - { id: citer, kind: agent, label: Citation agent, description: "Runs once at the end. Matches every claim in the lead's draft to a source and inserts the citations." }
+        - { id: out, kind: io, label: Report, description: "The cited report returned to the user." }
+      edges:
+        - { id: question, from: user, to: lead, description: "The question goes to the lead agent, which plans before it spawns anything.", example: "What did customers say about onboarding in Q3? Group the themes and quote examples." }
+        - { id: save, from: lead, to: plan, label: plan, description: "The lead writes its plan to memory, so it can recover the plan if its context fills up.", example: "Plan: 1) onboarding themes in Q3 support tickets; 2) onboarding themes in Q3 sales calls; 3) merge and rank by frequency." }
+        - { id: spawn-1, from: lead, to: r1, label: brief, description: "A self-contained brief: the objective, what to return, which tools to use and what not to cover.", example: "{\"objective\": \"Onboarding themes in Q3 support tickets\", \"output\": \"top 5 themes with ticket IDs\", \"tools\": [\"ticket_search\"], \"boundaries\": \"ignore billing tickets\"}" }
+        - { id: spawn-2, from: lead, to: r2, label: brief, description: "A second brief, sent at the same moment, for a part that does not overlap the first.", example: "{\"objective\": \"Onboarding questions raised in Q3 sales calls\", \"output\": \"top themes with call dates\", \"tools\": [\"transcript_search\"], \"boundaries\": \"prospects only\"}" }
+        - { id: back-1, from: r1, to: lead, style: dashed, description: "Condensed findings, not raw search results, come back to the lead.", example: "1. SSO setup is confusing (41 tickets, e.g. #8812). 2. CSV import fails on files over 10 MB (23 tickets, e.g. #9034)." }
+        - { id: back-2, from: r2, to: lead, style: dashed, description: "The second subagent's condensed findings come back to the lead.", example: "Prospects asked about SSO setup in 9 of 14 calls (e.g. Acme, 14 Aug). Two asked for a guided import." }
+        - { id: draft, from: lead, to: citer, label: draft, description: "When the findings answer the question, the lead's draft goes to the citation agent with every source.", example: "Draft: SSO setup is the top onboarding complaint in both tickets and calls; CSV import failures come second." }
+        - { id: final, from: citer, to: out, description: "The report goes out with a citation on every claim.", example: "SSO setup is the top onboarding complaint [tickets #8812, #9034; Acme call, 14 Aug]. CSV import failures come second [23 tickets]." }
+      scenarios:
+        - id: two-subagents
+          label: Two subagents, then one more
+          steps:
+            - id: plan
+              caption: The question reaches the lead, which writes a plan and saves it to memory.
+              duration: 2200
+              events:
+                - { type: send, edge: question, token: { kind: prompt, label: question }, at: [0, 0.35] }
+                - { type: activate, node: lead, status: thinking, at: [0.35, 0.6] }
+                - { type: send, edge: save, token: { kind: result, label: plan }, at: [0.6, 0.9] }
+                - { type: write, node: plan, at: [0.85, 1] }
+            - id: spawn
+              caption: The lead spawns two subagents at once, each with a clean context and its own brief.
+              duration: 2000
+              events:
+                - { type: appear, node: r1, at: [0, 0.3] }
+                - { type: appear, node: r2, at: [0, 0.3] }
+                - { type: send, edge: spawn-1, token: { kind: prompt, label: brief }, at: [0.3, 1] }
+                - { type: send, edge: spawn-2, token: { kind: prompt, label: brief }, at: [0.3, 1] }
+            - id: search
+              caption: Both subagents search in parallel and return condensed findings with sources.
+              duration: 3000
+              events:
+                - { type: activate, node: r1, status: calling, at: [0, 0.6] }
+                - { type: activate, node: r2, status: calling, at: [0, 0.6] }
+                - { type: send, edge: back-1, token: { kind: result, label: findings }, at: [0.6, 1] }
+                - { type: send, edge: back-2, token: { kind: result, label: findings }, at: [0.6, 1] }
+            - id: gap
+              caption: The lead rereads its plan, finds a gap (did SSO complaints drop after the August docs fix?) and spawns one more subagent.
+              duration: 3200
+              events:
+                - { type: read, node: plan, at: [0, 0.15] }
+                - { type: activate, node: lead, status: thinking, at: [0.1, 0.35] }
+                - { type: branch, node: lead, taken: spawn-1, notTaken: [draft], at: [0.35, 0.45] }
+                - { type: send, edge: spawn-1, token: { kind: prompt, label: new brief }, at: [0.45, 0.65] }
+                - { type: activate, node: r1, status: calling, at: [0.65, 0.8] }
+                - { type: send, edge: back-1, token: { kind: result, label: findings }, at: [0.8, 1] }
+            - id: cite
+              caption: The findings now answer the question; the lead drafts the report and the citation agent adds a source to every claim.
+              duration: 3000
+              events:
+                - { type: branch, node: lead, taken: draft, notTaken: [spawn-1, spawn-2], at: [0, 0.2] }
+                - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.2, 0.5] }
+                - { type: activate, node: citer, status: thinking, at: [0.5, 0.7] }
+                - { type: send, edge: final, token: { kind: result, label: report }, at: [0.7, 1] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
+  - id: ledger-orchestrator
+    name: Ledger orchestrator
+    summary: "The orchestrator keeps a task ledger (facts, guesses, plan) and a per-turn progress ledger, and replans from scratch when progress stalls."
+    origin:
+      by: Adam Fourney et al.
+      org: Microsoft Research AI Frontiers
+      year: 2024
+      url: https://arxiv.org/abs/2411.04468
+      kind: introduced
+      note: "Magentic-One: an outer loop keeps the task ledger and an inner loop the progress ledger; when the inner loop stalls, the orchestrator updates the task ledger and makes a new plan."
+    build:
+      goal: "Complete an open-ended task with a team of worker agents by keeping a written plan and a per-turn progress check, and replanning whenever progress stalls."
+      steps:
+        - "Call the orchestrator with the {{prompt:task-ledger}} to fill the task ledger: the given facts, facts to look up, educated guesses and a step-by-step plan."
+        - "Each turn, call the orchestrator with the {{prompt:progress-ledger}}, passing the task ledger and the turn history, and parse its JSON into is_complete, is_progressing, is_in_loop, next_speaker and instruction."
+        - "If is_complete is true, ask the orchestrator for the final answer from the history and return it."
+        - "Otherwise send the instruction to the agent named in next_speaker, run it, and append its reply, or its error, to the history."
+        - "If the turn was not progressing or was in a loop, add one to a stall counter; otherwise reset the counter to zero."
+        - "When the stall counter reaches 2, run the {{prompt:task-ledger}} again with everything learned so far to update the facts, guesses and plan; then reset the counter and clear the workers' history."
+      stop: "Stop when the progress ledger says the task is complete, after 20 turns, or after 3 replans. On a cap, return the best partial result with the latest task ledger and a status saying the task was not finished."
+      requirements:
+        - "Make the stall threshold (default 2), the turn cap (default 20) and the replan cap (default 3) parameters."
+        - "If the progress ledger reply is not valid JSON or names an unknown agent, retry once, then count the turn as a stall."
+        - "Store both ledgers outside the orchestrator's context and log every version, so a run can be audited turn by turn."
+        - "Give each worker only the instruction for its turn, not the ledgers."
+        - "Add a test with a stub orchestrator whose progress ledger reports no progress on turns 1 and 2 and completion on turn 4; assert the task-ledger prompt ran exactly twice and the stall counter was 0 after the replan."
+    prompts:
+      - id: task-ledger
+        title: Task ledger prompt
+        lang: markdown
+        source: |
+          You lead a team: {{team_descriptions}}.
+
+          <task>{{task}}</task>
+          {{#if history}}<what_happened_so_far>{{history}}</what_happened_so_far>{{/if}}
+
+          Write the task ledger:
+          1. Facts given in the task.
+          2. Facts to look up, and where.
+          3. Facts to derive (by reasoning or computation).
+          4. Educated guesses.
+          5. A short plan: which team member does what, in order.
+          {{#if history}}The old plan stalled. Say why, then write a new plan that avoids it.{{/if}}
+      - id: progress-ledger
+        title: Progress ledger prompt
+        lang: markdown
+        source: |
+          <task_ledger>{{task_ledger}}</task_ledger>
+          <history>{{history}}</history>
+
+          Answer in JSON:
+          {"is_complete": true|false,
+           "is_progressing": true|false,
+           "is_in_loop": true|false,
+           "next_speaker": "one of {{team_names}}",
+           "instruction": "what that member should do next, self-contained"}
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Task, description: "The task, such as 'Find the cheapest refundable fare from Wellington to Sydney on 7 November and save it to fares.csv'." }
+        - { id: orch, kind: agent, label: Orchestrator, description: "Plans in the task ledger, checks the progress ledger every turn, picks who acts next, and replans when progress stalls." }
+        - { id: facts, kind: memory, label: Task ledger, sublabel: facts + plan, description: "Outer-loop memory: given facts, facts to look up, educated guesses and the current plan. Rewritten on every replan." }
+        - { id: progress, kind: memory, label: Progress ledger, sublabel: "stuck? next?", description: "Inner-loop memory, refreshed every turn: is the task complete, is it progressing or looping, who acts next, and the instruction." }
+        - { id: web, kind: agent, label: Web surfer, description: "A worker agent that drives a browser: opens pages, clicks, types, and reports what it sees." }
+        - { id: coder, kind: agent, label: Coder, description: "A worker agent that writes and runs code, here to save the chosen fare to a CSV file." }
+        - { id: out, kind: io, label: Result, description: "The final answer, returned once the progress ledger says the task is complete." }
+      edges:
+        - { id: task, from: user, to: orch, description: "The task goes to the orchestrator, which writes the task ledger before anyone acts.", example: "Find the cheapest refundable fare from Wellington to Sydney on 7 November and save it to fares.csv." }
+        - { id: plan, from: orch, to: facts, label: "plan, replan", description: "The orchestrator fills the task ledger before anyone acts, and rewrites it after two stalled turns in a row.", example: "Given: WLG to SYD, 7 Nov, refundable. Look up: fares on the airline site. Guess: the fare search works without a login. Plan: web surfer searches; coder saves the cheapest fare." }
+        - { id: check, from: orch, to: progress, label: each turn, description: "Every turn, the orchestrator answers the progress questions and records them.", example: "{\"is_complete\": false, \"is_progressing\": false, \"is_in_loop\": true, \"next_speaker\": \"web_surfer\", \"instruction\": \"Retry the fare search for 7 Nov.\"}" }
+        - { id: to-web, from: orch, to: web, label: instruct, description: "The instruction from the progress ledger goes to the worker it named.", example: "Open the airline's fare calendar for WLG to SYD in November and read the refundable fares for the 7th." }
+        - { id: from-web, from: web, to: orch, style: dashed, description: "The worker reports what happened, including failures.", example: "Fare calendar, 7 Nov, refundable: NZ$389 (NZ 247, 07:00) and NZ$412 (QF 162, 10:30)." }
+        - { id: to-coder, from: orch, to: coder, label: instruct, description: "When the next step needs code, the instruction goes to the coder.", example: "Write fares.csv with columns date, flight, price_nzd and one row: 2026-11-07, NZ 247, 389." }
+        - { id: from-coder, from: coder, to: orch, style: dashed, description: "The coder reports the result of running its code.", example: "Wrote fares.csv (1 row). Checked by reading it back." }
+        - { id: finish, from: orch, to: out, description: "When the progress ledger says the task is complete, the orchestrator writes the final answer.", example: "Cheapest refundable fare on 7 Nov: NZ 247 at 07:00, NZ$389. Saved to fares.csv." }
+      scenarios:
+        - id: stall-and-replan
+          label: Stalls, replans, then finishes
+          steps:
+            - id: plan
+              caption: The task arrives, and the orchestrator writes the task ledger before anyone acts.
+              duration: 2200
+              events:
+                - { type: send, edge: task, token: { kind: prompt, label: task }, at: [0, 0.35] }
+                - { type: activate, node: orch, status: thinking, at: [0.35, 0.6] }
+                - { type: send, edge: plan, token: { kind: result, label: plan }, at: [0.6, 0.9] }
+                - { type: write, node: facts, at: [0.85, 1] }
+            - id: stuck
+              caption: The progress ledger names the web surfer next, but the fare search hits a login wall. No progress.
+              duration: 3200
+              repeat: 2
+              events:
+                - { type: send, edge: check, token: { kind: result, label: "next: web" }, at: [0, 0.25] }
+                - { type: write, node: progress, at: [0.2, 0.3] }
+                - { type: branch, node: orch, taken: to-web, notTaken: [to-coder, finish], at: [0.3, 0.4] }
+                - { type: send, edge: to-web, token: { kind: prompt, label: search }, at: [0.4, 0.6] }
+                - { type: activate, node: web, status: error, at: [0.6, 0.75] }
+                - { type: send, edge: from-web, token: { kind: result, label: login wall }, at: [0.75, 1] }
+            - id: replan
+              caption: "Two stalled turns in a row trigger a replan. The task ledger gets a new fact (search needs a login) and a new plan (use the public fare calendar)."
+              duration: 3000
+              events:
+                - { type: send, edge: check, token: { kind: feedback, label: stalled }, at: [0, 0.3] }
+                - { type: write, node: progress, at: [0.25, 0.35] }
+                - { type: activate, node: orch, status: thinking, at: [0.35, 0.55] }
+                - { type: send, edge: plan, token: { kind: feedback, label: new plan }, at: [0.55, 0.9] }
+                - { type: write, node: facts, at: [0.85, 1] }
+            - id: progress
+              caption: Under the new plan the web surfer reads the public fare calendar, then the coder saves the cheapest fare.
+              duration: 4000
+              events:
+                - { type: send, edge: to-web, token: { kind: prompt, label: calendar }, at: [0, 0.2] }
+                - { type: activate, node: web, status: calling, at: [0.2, 0.35] }
+                - { type: send, edge: from-web, token: { kind: result, label: NZ$389 }, at: [0.35, 0.5] }
+                - { type: branch, node: orch, taken: to-coder, notTaken: [to-web, finish], at: [0.5, 0.6] }
+                - { type: send, edge: to-coder, token: { kind: prompt, label: save csv }, at: [0.6, 0.75] }
+                - { type: activate, node: coder, status: calling, at: [0.75, 0.85] }
+                - { type: send, edge: from-coder, token: { kind: result, label: saved }, at: [0.85, 1] }
+            - id: finish
+              caption: The progress ledger now says complete, so the orchestrator returns the answer.
+              duration: 2200
+              events:
+                - { type: send, edge: check, token: { kind: result, label: complete }, at: [0, 0.35] }
+                - { type: branch, node: orch, taken: finish, notTaken: [to-web, to-coder], at: [0.35, 0.5] }
+                - { type: send, edge: finish, token: { kind: result, label: answer }, at: [0.5, 0.9] }
+                - { type: activate, node: out, status: done, at: [0.85, 1] }

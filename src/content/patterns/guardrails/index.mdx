@@ -10,6 +10,8 @@ To avoid adding latency, the guards run in parallel with the <NodeRef id="agent"
 
 After the agent drafts a reply, an <NodeRef id="output-guard">output guard</NodeRef> checks it for leaked personal data, policy text or off-limits advice. Only a passing draft reaches the <NodeRef id="out">reply</NodeRef>. Guards stack: several cheap, specialized checks beat one all-purpose filter.
 
+The variants move or change the guards. Blocking guards make the agent wait for the input checks, trading latency for zero wasted agent work. Tool-call guards check each tool call before it runs and each result before the agent reads it. A safety classifier model, as in Meta's Llama Guard, labels both the input and the output against a written risk taxonomy.
+
 ## When to use
 
 - The agent is public-facing or handles untrusted input.
