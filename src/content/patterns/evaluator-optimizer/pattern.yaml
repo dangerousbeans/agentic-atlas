@@ -9,23 +9,34 @@ sources:
     url: https://www.anthropic.com/engineering/building-effective-agents
   - title: "Self-Refine: Iterative Refinement with Self-Feedback (Madaan et al., 2023)"
     url: https://arxiv.org/abs/2303.17651
+  - title: "CRITIC: Large Language Models Can Self-Correct with Tool-Interactive Critiquing (Gou et al., 2023)"
+    url: https://arxiv.org/abs/2305.11738
 related:
   composesWith: [routing]
   confusedWith: []
-code:
-  - id: loop
-    title: evaluator_optimizer.py
-    lang: python
-    source: |
-      def evaluator_optimizer(task, criteria, max_rounds=3):
-          feedback = None
-          for round in range(max_rounds):
-              draft = llm(GENERATOR_PROMPT, task=task, feedback=feedback)
-              verdict = llm(EVALUATOR_PROMPT, draft=draft, criteria=criteria)
-              if verdict.passed:
-                  return draft
-              feedback = verdict.critique
-          return draft  # best effort once the budget is spent
+origin:
+  by: Erik Schluntz and Barry Zhang
+  org: Anthropic
+  year: 2024
+  url: https://www.anthropic.com/engineering/building-effective-agents
+  kind: popularized
+  note: "Anthropic named the pattern in 2024. The draft, critique and revise loop itself was introduced as Self-Refine by Madaan et al. (CMU, AI2, UW, NVIDIA, UC San Diego, Google Research) in 2023: see the Same model tab."
+build:
+  goal: "Turn a task plus a list of pass criteria into an output that a separate evaluator model has checked against every criterion, revising until it passes or a round budget runs out."
+  steps:
+    - "Take the task and its acceptance criteria as inputs. The generator sees only the task; the criteria go to the evaluator."
+    - "Call the generator model with the {{prompt:generator}}, filling in the task and, after the first round, the latest critique."
+    - "Send the draft and the criteria to the evaluator model with the {{prompt:evaluator}}, and parse its JSON reply into passed and critique."
+    - "If passed is true, return the draft."
+    - "Otherwise append the critique to a running list and call the generator again with every critique so far, so a later fix does not undo an earlier one."
+  stop: "Stop as soon as the evaluator passes a draft, or after 3 rounds. If the budget runs out, return the last draft together with its unresolved critique and a status saying it did not pass."
+  requirements:
+    - "Make the round cap a parameter (default 3); the loop must never run without one."
+    - "If the evaluator's reply is not valid JSON, retry that call once, then count the round as failed with the raw reply as the critique."
+    - "Let the generator and the evaluator use different models and temperatures, configured separately (a strict, low-temperature evaluator works best)."
+    - "Log each round: the draft, the verdict, the critique and the token counts."
+    - "Add a test with a stub LLM whose evaluator rejects the first two drafts and passes the third; assert three generator calls and that the third draft is returned."
+defaultVariantName: Separate judge
 prompts:
   - id: generator
     title: Generator prompt
@@ -102,14 +113,12 @@ diagram:
         - id: start
           caption: The task arrives at the generator.
           duration: 1000
-          codeRef: { block: loop, lines: "1-3" }
           events:
             - { type: send, edge: task, token: { kind: prompt, label: task } }
         - id: round
           caption: The generator drafts; the evaluator finds problems and sends a critique back.
           duration: 3200
           repeat: 2
-          codeRef: { block: loop, lines: "4-8" }
           events:
             - { type: activate, node: generator, status: thinking, at: [0, 0.25] }
             - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.25, 0.5] }
@@ -118,7 +127,6 @@ diagram:
         - id: pass
           caption: The revised draft meets every criterion and is returned.
           duration: 2600
-          codeRef: { block: loop, lines: "4-7" }
           events:
             - { type: activate, node: generator, status: thinking, at: [0, 0.3] }
             - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.3, 0.6] }
@@ -131,16 +139,306 @@ diagram:
         - id: start
           caption: The task arrives at the generator.
           duration: 1000
-          codeRef: { block: loop, lines: "1-3" }
           events:
             - { type: send, edge: task, token: { kind: prompt, label: task } }
         - id: pass
           caption: The first draft already meets every criterion and is returned.
           duration: 2600
-          codeRef: { block: loop, lines: "4-7" }
           events:
             - { type: activate, node: generator, status: thinking, at: [0, 0.3] }
             - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.3, 0.6] }
             - { type: branch, node: evaluator, taken: accept, notTaken: [revise], at: [0.6, 0.8] }
             - { type: send, edge: accept, token: { kind: result, label: final }, at: [0.8, 1] }
             - { type: activate, node: output, status: done, at: [0.9, 1] }
+variants:
+  - id: self-critique
+    name: Same model
+    summary: "One model drafts, critiques its own draft under a second prompt, and rewrites from its notes until its own critique says stop."
+    origin:
+      by: Aman Madaan et al.
+      org: CMU, AI2, UW, NVIDIA, UC San Diego, Google Research
+      year: 2023
+      url: https://arxiv.org/abs/2303.17651
+      kind: introduced
+      note: "Self-Refine: the same model gives the feedback and does the refining, with no extra training and no second model."
+    build:
+      goal: "Have one model improve its own output: draft, critique the draft against the criteria, and rewrite from the critique, until its own critique finds nothing left to fix."
+      steps:
+        - "Call the model with the {{prompt:draft}} to write the first draft from the task."
+        - "Call the same model with the {{prompt:feedback}}, passing the draft and the criteria. It lists concrete problems, or replies with the single word STOP when there are none."
+        - "If the feedback is STOP, return the current draft."
+        - "Otherwise append the draft and its feedback to a history list."
+        - "Call the model with the {{prompt:refine}}, passing the task and the whole history, to write the next draft; then go back to the feedback step."
+      stop: "Stop when the feedback is STOP, or after 3 refinements. If the cap is hit, return the latest draft with its last feedback and a status saying the model was still finding problems."
+      requirements:
+        - "Use one model client for all three prompts; only the prompt changes between the roles."
+        - "Cap refinements with a configurable limit (default 3)."
+        - "Pass every earlier draft and its feedback to the refine prompt, oldest first, so a fix does not undo an earlier one."
+        - "Treat the feedback as STOP only on an exact match after trimming whitespace, so a critique that merely mentions the word does not end the loop."
+        - "Add a test with a stub LLM whose first feedback lists one problem and whose second is STOP; assert two drafts were written and the second is returned."
+    prompts:
+      - id: draft
+        title: Draft prompt
+        lang: markdown
+        source: |
+          You are writing {{artifact}} for the task below.
+
+          <task>{{task}}</task>
+
+          Return only the {{artifact}}, with no commentary.
+      - id: feedback
+        title: Self-critique prompt
+        lang: markdown
+        source: |
+          You wrote the draft below. Review it as a strict editor, against each criterion.
+
+          <criteria>{{criteria}}</criteria>
+          <draft>{{draft}}</draft>
+
+          List every concrete problem, one per line, each with the fix it needs.
+          If every criterion is fully met, reply with exactly: STOP
+      - id: refine
+        title: Refine prompt
+        lang: markdown
+        source: |
+          Improve your {{artifact}} using the feedback on each earlier version.
+
+          <task>{{task}}</task>
+          <history>{{drafts_and_feedback}}</history>
+
+          Fix every listed problem without bringing back an earlier one.
+          Return only the revised {{artifact}}, with no commentary.
+    diagram:
+      nodes:
+        - id: input
+          kind: io
+          label: Task
+          description: "The request that starts the loop, such as 'Write a board memo on the Q3 churn spike'."
+        - id: model
+          kind: llm
+          label: Model
+          sublabel: draft, critique, refine
+          description: "One model in three roles: it writes the draft, critiques it under a second prompt, and rewrites it under a third."
+        - id: history
+          kind: memory
+          label: Draft history
+          description: "Every draft so far, each with the model's own critique of it, passed back in full to the refine prompt."
+        - id: output
+          kind: io
+          label: Output
+          description: "The draft in which the model's own critique found nothing left to fix."
+      edges:
+        - id: task
+          from: input
+          to: model
+          description: "The task and the criteria go to the model, which writes its first draft."
+          example: "Task: Write a one-page board memo on Q3 churn. Criteria: cite a source for every number; formal tone."
+        - id: note
+          from: model
+          to: history
+          label: draft + notes
+          description: "The draft and the model's critique of it are saved together, so the next rewrite sees both."
+          example: "Draft 1: '2. Folks mostly bailed over the new pricing.' Feedback: claim 2 has no source; the tone is too casual for a board."
+        - id: refine
+          from: history
+          to: model
+          style: loop
+          label: refine
+          description: "The whole history goes into the refine prompt, so the rewrite fixes every listed problem without undoing earlier fixes."
+          example: "<history>Draft 1 ... Feedback: claim 2 uncited; casual tone.</history> Fix every listed problem."
+        - id: done
+          from: model
+          to: output
+          label: STOP
+          description: "When the model's self-critique replies STOP, the current draft leaves the loop unchanged."
+          example: "Feedback: STOP. Returning draft 2: '2. Most churned accounts cited the new pricing (exit survey, n=212).'"
+      scenarios:
+        - id: one-refinement
+          label: Refines once, then stops
+          steps:
+            - id: start
+              caption: The task arrives at the model.
+              duration: 1000
+              events:
+                - { type: send, edge: task, token: { kind: prompt, label: task } }
+            - id: critique
+              caption: The model drafts, then critiques its own draft and finds an uncited claim; the draft and its notes are saved.
+              duration: 3200
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.35] }
+                - { type: branch, node: model, taken: note, notTaken: [done], at: [0.35, 0.5] }
+                - { type: send, edge: note, token: { kind: feedback, label: notes }, at: [0.5, 0.75] }
+                - { type: write, node: history, at: [0.7, 0.8] }
+                - { type: send, edge: refine, token: { kind: prompt, label: history }, at: [0.8, 1] }
+            - id: stop
+              caption: The model rewrites from its notes; its next self-critique finds nothing to fix and replies STOP.
+              duration: 2800
+              events:
+                - { type: read, node: history, at: [0, 0.15] }
+                - { type: activate, node: model, status: thinking, at: [0.1, 0.45] }
+                - { type: branch, node: model, taken: done, notTaken: [note], at: [0.45, 0.6] }
+                - { type: send, edge: done, token: { kind: result, label: final }, at: [0.6, 0.9] }
+                - { type: activate, node: output, status: done, at: [0.85, 1] }
+  - id: tool-checked
+    name: Tool-checked
+    summary: "The evaluator checks the draft's claims with a tool, such as a query, a test run or a search, so its critique rests on evidence rather than opinion."
+    origin:
+      by: Zhibin Gou et al.
+      org: Tsinghua University, Microsoft Research Asia, Microsoft Azure AI
+      year: 2023
+      url: https://arxiv.org/abs/2305.11738
+      kind: introduced
+      note: "CRITIC (ICLR 2024): the critique step calls tools such as search or a code interpreter, and the revision works from what they return."
+    build:
+      goal: "Revise an output until an evaluator that verifies its checkable claims with tools passes it, so that every critique quotes evidence from a tool result."
+      steps:
+        - "Call the generator model with the {{prompt:generator}}, filling in the task and, after the first round, the latest critique."
+        - "Send the draft and the criteria to the evaluator model with the {{prompt:evaluator}} and the tool definitions; it picks the claims a tool can check and requests tool calls."
+        - "Run each requested tool call (a database query, a test run, a search) and return every result, or its error, to the evaluator."
+        - "Parse the evaluator's final JSON reply: passed, plus a critique that quotes the evidence for every failed claim."
+        - "If passed is true, return the draft; otherwise send the critique to the generator and run another round."
+      stop: "Stop when the evaluator passes a draft, or after 3 rounds. On the cap, return the last draft with its critique and the tool evidence, and a status saying it did not pass."
+      requirements:
+        - "Give the evaluator read-only tools only, each with a timeout; report a failed or timed-out call to the evaluator as an error instead of retrying it silently."
+        - "Cap tool calls per round (default 5) as well as rounds (default 3)."
+        - "Reject a failing verdict whose critique quotes no tool result, and retry the evaluator once."
+        - "Log every tool call with its arguments and result, next to the verdict it supported."
+        - "Add a test with a stub LLM and a fake tool that returns a different figure from the first draft's; assert the critique quotes the tool's figure and the second draft passes."
+    prompts:
+      - id: generator
+        title: Generator prompt
+        lang: markdown
+        source: |
+          You are writing {{artifact}} for the task below.
+
+          <task>{{task}}</task>
+
+          {{#if feedback}}
+          A reviewer checked your previous draft against the data and rejected it.
+          Fix every point, using the evidence they quote:
+          <feedback>{{feedback}}</feedback>
+          {{/if}}
+
+          Return only the {{artifact}}, with no commentary.
+      - id: evaluator
+        title: Tool-checking evaluator prompt
+        lang: markdown
+        source: |
+          You are a strict reviewer with tools. Before judging, use the tools to check
+          every number, name and date in the draft that they can confirm.
+
+          <criteria>{{criteria}}</criteria>
+          <draft>{{draft}}</draft>
+
+          When you have checked the claims, respond in JSON:
+          {"passed": true|false, "critique": "each failed claim, the tool evidence, and the fix; empty if passed"}
+          Fail the draft if any checked claim disagrees with the evidence.
+    diagram:
+      nodes:
+        - id: input
+          kind: io
+          label: Task
+          description: "The request that starts the loop, such as 'Write a board memo on the Q3 churn spike'."
+        - id: generator
+          kind: llm
+          label: Generator
+          description: "Writes the draft from the task, then rewrites it to match the evidence the evaluator quotes back."
+        - id: evaluator
+          kind: evaluator
+          label: Evaluator
+          description: "An LLM reviewer with tools: it picks out the draft's checkable claims, verifies them, then returns JSON with passed and a critique."
+        - id: data
+          kind: tool
+          label: Metrics DB
+          sublabel: read-only SQL
+          description: "A read-only query tool over the company's metrics, which the evaluator uses to check every figure in the draft."
+        - id: output
+          kind: io
+          label: Output
+          description: "The accepted draft, returned only once every figure it states matches the tool's evidence."
+      edges:
+        - id: task
+          from: input
+          to: generator
+          description: "The task goes to the generator; the criteria are kept for the evaluator."
+          example: "Task: Write a one-page board memo on Q3 churn. Criteria: every number matches the metrics DB; formal tone."
+        - id: draft
+          from: generator
+          to: evaluator
+          description: "Each draft is sent to the evaluator, which decides which of its claims a tool can check."
+          example: "1. Churn hit 4.1% in Q3 (Finance dashboard). 2. Most churned accounts cited the new pricing. 3. We expect recovery by Q1."
+        - id: check
+          from: evaluator
+          to: data
+          label: check
+          description: "The evaluator asks the tool to confirm a claim from the draft, one query per checkable figure."
+          example: "SELECT churn_rate FROM quarterly_metrics WHERE quarter = '2026-Q3'"
+        - id: evidence
+          from: data
+          to: evaluator
+          label: evidence
+          description: "The tool's answer comes back as evidence, which the critique must quote when a claim fails."
+          example: "churn_rate = 3.6% (quarterly_metrics, refreshed 2026-10-01)"
+        - id: revise
+          from: evaluator
+          to: generator
+          style: loop
+          label: revise
+          description: "The critique goes back with the evidence attached, so the generator corrects the claim instead of guessing."
+          example: '{"passed": false, "critique": "Claim 1: Q3 churn was 3.6%, not 4.1% (quarterly_metrics). Use 3.6% and cite the metrics DB."}'
+        - id: accept
+          from: evaluator
+          to: output
+          label: pass
+          description: "When every checked claim matches the evidence and the criteria are met, the draft leaves the loop."
+          example: '{"passed": true, "critique": ""}'
+      scenarios:
+        - id: corrected-by-evidence
+          label: A figure is wrong, then fixed
+          steps:
+            - id: start
+              caption: The task arrives at the generator.
+              duration: 1000
+              events:
+                - { type: send, edge: task, token: { kind: prompt, label: task } }
+            - id: round
+              caption: The generator drafts; the evaluator queries the churn figure, finds it is wrong, and sends a critique quoting the evidence.
+              duration: 4200
+              events:
+                - { type: activate, node: generator, status: thinking, at: [0, 0.2] }
+                - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.2, 0.35] }
+                - { type: send, edge: check, token: { kind: tool-call, label: churn Q3? }, at: [0.38, 0.52] }
+                - { type: activate, node: data, status: calling, at: [0.5, 0.58] }
+                - { type: send, edge: evidence, token: { kind: result, label: "3.6%" }, at: [0.58, 0.72] }
+                - { type: branch, node: evaluator, taken: revise, notTaken: [accept], at: [0.72, 0.8] }
+                - { type: send, edge: revise, token: { kind: feedback, label: critique }, at: [0.8, 1] }
+            - id: pass
+              caption: The revised draft says 3.6%; the query confirms it, and the draft is returned.
+              duration: 3600
+              events:
+                - { type: activate, node: generator, status: thinking, at: [0, 0.2] }
+                - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.2, 0.35] }
+                - { type: send, edge: check, token: { kind: tool-call, label: churn Q3? }, at: [0.38, 0.5] }
+                - { type: send, edge: evidence, token: { kind: result, label: matches }, at: [0.52, 0.64] }
+                - { type: branch, node: evaluator, taken: accept, notTaken: [revise], at: [0.66, 0.76] }
+                - { type: send, edge: accept, token: { kind: result, label: final }, at: [0.76, 0.95] }
+                - { type: activate, node: output, status: done, at: [0.9, 1] }
+        - id: verified-first-time
+          label: Every figure checks out
+          steps:
+            - id: start
+              caption: The task arrives at the generator.
+              duration: 1000
+              events:
+                - { type: send, edge: task, token: { kind: prompt, label: task } }
+            - id: pass
+              caption: Every figure in the first draft matches the query results, so it is returned.
+              duration: 3600
+              events:
+                - { type: activate, node: generator, status: thinking, at: [0, 0.2] }
+                - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.2, 0.35] }
+                - { type: send, edge: check, token: { kind: tool-call, label: churn Q3? }, at: [0.38, 0.5] }
+                - { type: send, edge: evidence, token: { kind: result, label: matches }, at: [0.52, 0.64] }
+                - { type: branch, node: evaluator, taken: accept, notTaken: [revise], at: [0.66, 0.76] }
+                - { type: send, edge: accept, token: { kind: result, label: final }, at: [0.76, 0.95] }
+                - { type: activate, node: output, status: done, at: [0.9, 1] }
