@@ -54,12 +54,23 @@ test('clicking a step button jumps there and mirrors the code ref', async ({ pag
   await expect(fp).toHaveAttribute('data-code-ref', 'loop:1-3');
 });
 
+test('after a step jump, moving the pointer out resumes play', async ({ page }) => {
+  await page.goto(url);
+  const fp = fpOf(page);
+  await page.locator('.fp-scenario-steps[data-scenario="fails-twice"] button[data-step-index="1"]').click();
+  await expect(fp).toHaveAttribute('data-playing', 'false');
+  await page.mouse.move(0, 0);
+  await expect(fp).toHaveAttribute('data-playing', 'true');
+});
+
 test('jumping to the last step parks its end state', async ({ page }) => {
   await page.goto(url);
   await page.locator('.fp-scenario-steps[data-scenario="fails-twice"] button[data-step-index="3"]').click();
   await expect(fpOf(page)).toHaveAttribute('data-step-index', '3');
   await expect(node(page, 'output')).toHaveAttribute('data-state', 'done');
-  await expect(page.locator('svg[data-layout="wide"] path.edge[data-edge="accept"]')).not.toHaveAttribute('data-state', 'dim');
+  await expect(page.locator('svg[data-layout="wide"] path.edge[data-edge="accept"]')).toHaveAttribute('data-state', 'active'); // token parked at the end of the edge
+  await page.mouse.move(0, 0);
+  await expect(fpOf(page)).toHaveAttribute('data-playing', 'true');
 });
 
 test('jumping back restores hidden workers', async ({ page }) => {
@@ -93,7 +104,7 @@ test('node hover shows a tooltip with label, kind and description; leaving hides
   await expect(tip(page)).toBeVisible();
   await expect(tip(page)).toHaveAttribute('role', 'tooltip');
   await expect(tip(page)).toContainText('Evaluator');
-  await expect(tip(page)).toContainText('Checks each draft against explicit criteria');
+  await expect(tip(page)).toContainText('Judges each draft against the criteria');
   await expect(node(page, 'evaluator')).toHaveClass(/is-hover/);
   const box = await tip(page).boundingBox();
   const vp = page.viewportSize()!;
@@ -101,6 +112,46 @@ test('node hover shows a tooltip with label, kind and description; leaving hides
   expect(box!.x + box!.width).toBeLessThanOrEqual(vp.width);
   await page.mouse.move(0, 0);
   await expect(tip(page)).toBeHidden();
+});
+
+test('Escape dismisses a hover tooltip even though focus is outside the player', async ({ page }) => {
+  await page.goto(url);
+  await node(page, 'evaluator').hover();
+  await expect(tip(page)).toBeVisible();
+  await expect(page.locator('flow-player :focus')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(tip(page)).toBeHidden();
+});
+
+test('the tooltip is hoverable: the pointer can move onto it without it closing', async ({ page }) => {
+  await page.goto(url);
+  await node(page, 'output').locator('.shape').hover();
+  await expect(tip(page)).toBeVisible();
+  const box = (await tip(page).boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 8 });
+  await page.waitForTimeout(400);
+  await expect(tip(page)).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(tip(page)).toBeHidden();
+});
+
+test('re-inserting the player clears stale hover state', async ({ page }) => {
+  await page.goto(url);
+  const fp = fpOf(page);
+  await node(page, 'evaluator').hover();
+  await expect(fp).toHaveAttribute('data-playing', 'false');
+  await page.evaluate(() => { const el = document.querySelector('flow-player')!; const parent = el.parentElement!, next = el.nextSibling; el.remove(); parent.insertBefore(el, next); });
+  await page.mouse.move(0, 0);
+  await expect(fp).toHaveAttribute('data-playing', 'true');
+  await expect(tip(page)).toBeHidden();
+});
+
+test('scenario tabs control labelled panels', async ({ page }) => {
+  await page.goto(url);
+  const tab = page.locator('.fp-tabs [role="tab"]').first();
+  const panel = page.locator(`#${await tab.getAttribute('aria-controls')}`);
+  await expect(panel).toHaveAttribute('role', 'tabpanel');
+  await expect(panel).toHaveAttribute('aria-labelledby', (await tab.getAttribute('id'))!);
 });
 
 test('kind fallback text appears when a node has no description', async ({ page }) => {
@@ -134,8 +185,8 @@ test('hovering an edge shows From → To, label, description and example', async
   await expect(tip(page)).toContainText('→');
   await expect(tip(page)).toContainText('Evaluator → Generator');
   await expect(tip(page)).toContainText('revise');
-  await expect(tip(page)).toContainText('A specific critique goes back');
-  await expect(tip(page)).toContainText('Critique: claim 2 has no citation; tone too casual for a board memo.');
+  await expect(tip(page)).toContainText("The evaluator's critique goes back");
+  await expect(tip(page)).toContainText('{"passed": false, "critique": "Claim 2 has no citation; tone too casual for a board memo."}');
   await expect(page.locator('svg[data-layout="wide"] path.edge[data-edge="revise"]')).toHaveClass(/is-hover/);
 });
 
@@ -145,7 +196,7 @@ test('parts list covers every node and edge', async ({ page }) => {
   await parts.locator('summary').click();
   await expect(parts.locator('dt')).toHaveCount(8);
   await expect(parts).toContainText('Evaluator → Generator');
-  await expect(parts).toContainText('Critique: claim 2 has no citation');
+  await expect(parts).toContainText('Claim 2 has no citation');
 });
 
 test.describe('reduced motion', () => {
@@ -169,6 +220,6 @@ test.describe('no JS', () => {
     const parts = page.locator('details.fp-parts');
     await expect(parts).toHaveCount(1);
     await expect(parts.locator('dt')).toHaveCount(8);
-    await expect(parts).toContainText('Checks each draft against explicit criteria');
+    await expect(parts).toContainText('Judges each draft against the criteria');
   });
 });

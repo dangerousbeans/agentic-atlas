@@ -64,7 +64,7 @@ flow-player:not(.is-enhanced) .fp-caption { display: none; }
 .fp-steps li[aria-current="step"] { color: var(--text); }
 .fp-steps li[aria-current="step"]::marker { color: var(--accent); }
 flow-player.is-enhanced .fp-scenario-steps[data-inactive] { display: none; }
-.fp-steps h4 { font: 500 13px var(--font-ui); color: var(--text); margin: 12px 0 4px; }
+.fp-scenario-title { font: 500 13px var(--font-ui); color: var(--text); margin: 12px 0 4px; }
 
 /* --- explore mode: step navigation, tabs, parts list --- */
 .fp-steps li { list-style-position: outside; }
@@ -99,7 +99,7 @@ flow-player:not(.is-enhanced) .fp-steps li button { cursor: default; }
 .edge-label.is-hover { fill: var(--text); }
 flow-player.has-focus .edge:not(.is-rel), flow-player.has-focus .edge-label:not(.is-rel) { opacity: 0.22; }
 
-.fp-tip { position: fixed; z-index: 50; left: 0; top: 0; max-width: min(320px, calc(100vw - 16px)); padding: 12px 14px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--line)); background: color-mix(in oklab, var(--bg-1) 94%, transparent); backdrop-filter: blur(8px); box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.3), 0 0 24px -6px var(--accent); pointer-events: none; opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity 0.12s, transform 0.12s, visibility 0.12s; }
+.fp-tip { position: fixed; z-index: 50; left: 0; top: 0; max-width: min(320px, calc(100vw - 16px)); padding: 12px 14px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--line)); background: color-mix(in oklab, var(--bg-1) 94%, transparent); backdrop-filter: blur(8px); box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.3), 0 0 24px -6px var(--accent); pointer-events: auto; opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity 0.12s, transform 0.12s, visibility 0.12s; }
 .fp-tip.is-on { opacity: 1; visibility: visible; transform: none; }
 .fp-tip-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .fp-tip-t { font: 400 20px/1.1 var(--font-display); color: var(--text); }
@@ -108,3 +108,5 @@ flow-player.has-focus .edge:not(.is-rel), flow-player.has-focus .edge-label:not(
 .fp-tip-d { margin: 6px 0 0; font: 400 13.5px/1.45 var(--font-ui); color: var(--text-2); }
 .fp-tip-x { margin: 8px 0 0; padding: 6px 10px; border-left: 2px solid var(--accent); border-radius: 0 6px 6px 0; background: var(--bg-2); font: 400 12px/1.5 var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { .fp-tip { transition: none; transform: none; } }
+/* With tabs present the active tab names the panel, so the in-panel title is redundant. */
+flow-player.is-enhanced .fp-scenario-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

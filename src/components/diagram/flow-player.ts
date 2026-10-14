@@ -29,9 +29,12 @@ class FlowPlayer extends HTMLElement {
   private tip?: HTMLElement;
   private tipParts: HTMLElement[] = [];
   private tipFor: Element | null = null;
+  private hideTimer = 0;
   private lit: Element[] = [];
   private onDoc = (e: Event) => this.onNodeRef(e as CustomEvent<{ node: string | null }>);
   private onVis = () => this.ensureLoop();
+  private onWin = () => this.showTip(null);
+  private onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') this.showTip(null); };
   private inited = false;
   private observers: (ResizeObserver | IntersectionObserver)[] = [];
 
@@ -70,7 +73,11 @@ class FlowPlayer extends HTMLElement {
 
   private attachGlobal() {
     document.addEventListener('visibilitychange', this.onVis);
-    if (!this.compact) document.addEventListener('noderef', this.onDoc);
+    if (!this.compact) {
+      document.addEventListener('noderef', this.onDoc);
+      addEventListener('scroll', this.onWin, { passive: true });
+      addEventListener('resize', this.onWin);
+    }
   }
 
   disconnectedCallback() {
@@ -80,6 +87,11 @@ class FlowPlayer extends HTMLElement {
     for (const v of this.views) v.active = false;
     document.removeEventListener('visibilitychange', this.onVis);
     document.removeEventListener('noderef', this.onDoc);
+    removeEventListener('scroll', this.onWin);
+    removeEventListener('resize', this.onWin);
+    this.hover = this.focused = this.jumpHold = false;
+    if (this.tip) this.showTip(null);
+    this.sync();
   }
 
   private push(m: Map<string, Element[]>, k: string, el: Element) { const a = m.get(k); if (a) a.push(el); else m.set(k, [el]); }
@@ -115,16 +127,17 @@ class FlowPlayer extends HTMLElement {
     head.append(this.tipParts[0], this.tipParts[1]);
     tip.append(head, this.tipParts[2], this.tipParts[3]);
     this.append(tip);
-    on(this, 'pointerover', e => this.showTip(hit(e), e));
+    on(tip, 'pointerenter', () => { clearTimeout(this.hideTimer); this.hover = true; this.sync(); });
+    on(tip, 'pointerleave', () => { this.hover = false; this.sync(); this.hideSoon(); });
+    on(this, 'pointerover', e => { const el = hit(e); if (el) this.showTip(el, e); });
     on(this, 'pointermove', e => { if (this.tipFor?.hasAttribute('data-hit')) this.place(e.clientX, e.clientY, e.clientX, e.clientY); });
     on(this, 'pointerout', e => {
       if (e.pointerType === 'touch') return;
       const to = (e.relatedTarget as Element | null)?.closest?.('[data-tip-t]') ?? null;
-      if (to !== hit(e)) this.showTip(to);
+      if (to !== hit(e)) { if (to) this.showTip(to); else this.hideSoon(); }
     });
     on(this, 'pointerdown', e => { if (e.pointerType === 'touch' && !hit(e)) this.showTip(null); });
-    on(this, 'keydown', e => { if (e.key === 'Escape') this.showTip(null); });
-    on(window, 'scroll', () => this.showTip(null));
+    on(stage, 'scroll', this.onWin);
 
     on(this, 'click', e => {
       const b = (e.target as Element).closest<HTMLElement>('button[data-step-index]');
@@ -150,9 +163,17 @@ class FlowPlayer extends HTMLElement {
     });
   }
 
+  /** Give the pointer a moment to travel from the anchor onto the tooltip (WCAG 1.4.13 hoverable). */
+  private hideSoon() {
+    clearTimeout(this.hideTimer);
+    this.hideTimer = window.setTimeout(() => this.showTip(null), 150);
+  }
+
   private showTip(el: Element | null, e?: PointerEvent) {
+    clearTimeout(this.hideTimer);
     if (el === this.tipFor) return;
     this.tipFor = el;
+    if (el) document.addEventListener('keydown', this.onEsc); else document.removeEventListener('keydown', this.onEsc);
     const tip = this.tip!;
     for (const x of this.lit) x.classList.remove('is-hover');
     this.lit = [];
@@ -177,11 +198,11 @@ class FlowPlayer extends HTMLElement {
   /** Centre the tooltip above the anchor box (below if there is no room) and clamp it inside the viewport. */
   private place(l: number, t: number, r: number, b: number) {
     const tip = this.tip!, w = tip.offsetWidth, h = tip.offsetHeight, M = 8;
-    const x = Math.min(Math.max((l + r) / 2 - w / 2, M), Math.max(M, innerWidth - w - M));
+    const x = Math.min(Math.max((l + r) / 2 - w / 2, M), Math.max(M, document.documentElement.clientWidth - w - M));
     let y = t - h - 12;
     if (y < M) y = b + 12;
     tip.style.left = `${x}px`;
-    tip.style.top = `${Math.min(Math.max(y, M), Math.max(M, innerHeight - h - M))}px`;
+    tip.style.top = `${Math.min(Math.max(y, M), Math.max(M, document.documentElement.clientHeight - h - M))}px`;
   }
 
   private ensureLoop() {

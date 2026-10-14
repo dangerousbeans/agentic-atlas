@@ -65,3 +65,26 @@ test.describe('no JS', () => {
     await expect(page.locator('[data-code-block="generator"]')).toBeVisible();
   });
 });
+
+test('badge tooltips: hover shows, Escape dismisses', async ({ page }) => {
+  await page.goto(url);
+  const badge = page.locator('.badge').first();
+  const shown = () => badge.evaluate(el => getComputedStyle(el, '::after').display);
+  await badge.hover();
+  expect(await shown()).toBe('block');
+  await page.keyboard.press('Escape');
+  expect(await shown()).toBe('none');
+  await page.mouse.move(0, 0);
+  await badge.hover();
+  expect(await shown()).toBe('block');
+});
+
+test.describe('360px phone', () => {
+  test.use({ viewport: { width: 360, height: 740 } });
+  test('no horizontal overflow, even with a badge tooltip open', async ({ page }) => {
+    await page.goto(url);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+    await page.locator('.badge').last().hover();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+  });
+});

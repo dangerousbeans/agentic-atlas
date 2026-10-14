@@ -24,15 +24,15 @@ const labels = nodeMap(spec);
     <>
       {timelines.length > 1 && (
         <div class="fp-tabs" role="tablist" aria-label="Scenario" hidden>
-          {spec.scenarios.map((s, i) => <button type="button" role="tab" id={`${uid}-tab-${s.id}`} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1} data-scenario-tab={i}>{s.label}</button>)}
+          {spec.scenarios.map((s, i) => <button type="button" role="tab" id={`${uid}-tab-${s.id}`} aria-controls={`${uid}-panel-${s.id}`} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1} data-scenario-tab={i}>{s.label}</button>)}
         </div>
       )}
       <p class="fp-caption" aria-live="polite"></p>
       <details class="fp-steps" open>
         <summary>All steps</summary>
         {timelines.map((tl, si) => (
-          <div class="fp-scenario-steps" data-scenario={tl.id} data-alt={si > 0 ? '' : undefined}>
-            {timelines.length > 1 && <h4>{tl.label}</h4>}
+          <div class="fp-scenario-steps" data-scenario={tl.id} data-alt={si > 0 ? '' : undefined} id={`${uid}-panel-${tl.id}`} role={timelines.length > 1 ? 'tabpanel' : undefined} aria-labelledby={timelines.length > 1 ? `${uid}-tab-${tl.id}` : undefined}>
+            {timelines.length > 1 && <p class="fp-scenario-title">{tl.label}</p>}
             <ol class="fp-captions" data-scenario={tl.id}>
               {tl.steps.map(st => <li><button type="button" data-step-index={st.index}>{st.caption}{st.iteration && <span class="iter"> (round {st.iteration.n} of {st.iteration.of})</span>}</button></li>)}
             </ol>
