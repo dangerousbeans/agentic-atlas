@@ -255,10 +255,10 @@ variants:
     diagram:
       nodes:
         - { id: user, kind: io, label: User, pos: { x: 0, y: 0 }, description: "The customer, who sends a follow-up message after billing has already helped them." }
-        - { id: triage, kind: agent, label: Triage, pos: { x: 200, y: -100 }, description: "Front-desk agent. Only sees a conversation when no agent is active yet, or when a specialist hands it back." }
+        - { id: triage, kind: agent, label: Triage, pos: { x: 200, y: -60 }, description: "Front-desk agent. Only sees a conversation when no agent is active yet, or when a specialist hands it back." }
         - { id: billing, kind: agent, label: Billing, pos: { x: 440, y: 0 }, description: "Specialist for charges, invoices and plans. Once active, it gets the user's follow-up messages directly." }
         - { id: tech, kind: agent, label: Tech support, pos: { x: 440, y: -200 }, description: "Specialist for errors, bugs and how-to questions; not needed in this conversation." }
-        - { id: active, kind: memory, label: Active agent, pos: { x: 200, y: 110 }, description: "A small store per conversation holding the name of the agent that last held it, such as billing." }
+        - { id: active, kind: memory, label: Active agent, pos: { x: 200, y: 70 }, description: "A small store per conversation holding the name of the agent that last held it, such as billing." }
       edges:
         - { id: in, from: user, to: triage, description: "With no active agent stored, the first message goes to triage.", example: "I was charged twice for my March invoice." }
         - { id: to-billing, from: triage, to: billing, label: handoff, description: "Triage passes the conversation to billing.", example: "transfer_to_billing: \"User says they were charged twice on the March invoice.\"" }
