@@ -28,8 +28,9 @@ const sizing = compact ? undefined : `--max-w:${Math.round(layout.width * MAX_SC
       <path class="arrow" d="M0,1 L9,5 L0,9 z" />
     </marker>
     <radialGradient id={`${pid}-halo`}><stop offset="0" class="halo-stop-a" /><stop offset="1" class="halo-stop-b" /></radialGradient>
-    {/* the comet glow, pre-rendered: flow-player fills each token dot's glow circle with it instead of a live drop-shadow */}
-    <radialGradient id={`${pid}-tglow`} class="token-glow"><stop offset="0" class="tglow-a" /><stop offset="0.3" class="tglow-b" /><stop offset="0.6" class="tglow-c" /><stop offset="1" class="tglow-d" /></radialGradient>
+    {/* the comet dots, pre-rendered (core, then glow): flow-player fills each token circle with one, instead of a live drop-shadow */}
+    <radialGradient id={`${pid}-thead`} class="token-glow token-glow--head"><stop offset="0" class="tg-core" /><stop offset="0.35" class="tg-core" /><stop offset="0.39" class="tg-a" /><stop offset="0.6" class="tg-b" /><stop offset="0.8" class="tg-c" /><stop offset="1" class="tg-d" /></radialGradient>
+    <radialGradient id={`${pid}-ttrail`} class="token-glow token-glow--trail"><stop offset="0" class="tg-core" /><stop offset="0.31" class="tg-core" /><stop offset="0.36" class="tg-a" /><stop offset="0.58" class="tg-b" /><stop offset="0.8" class="tg-c" /><stop offset="1" class="tg-d" /></radialGradient>
   </defs>
   <g class="groups">
     {Object.entries(layout.groups).map(([id, g]) => (

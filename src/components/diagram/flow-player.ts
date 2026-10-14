@@ -6,7 +6,7 @@ import { pickLayout } from '../../lib/diagram/fit';
 interface Payload { spec: DiagramSpec; timelines: Timeline[] }
 interface Rect { x: number; y: number; w: number; h: number }
 interface Track { len: number; pts: Float32Array }
-interface View { svg: SVGSVGElement; layer: SVGGElement; paths: Map<string, SVGPathElement>; tracks: Map<string, Track>; pool: SVGGElement[]; active: boolean; glow?: string; obstacles?: Rect[] }
+interface View { svg: SVGSVGElement; layer: SVGGElement; paths: Map<string, SVGPathElement>; tracks: Map<string, Track>; pool: SVGGElement[]; active: boolean; glow: (string | undefined)[]; obstacles?: Rect[] }
 const NS = 'http://www.w3.org/2000/svg';
 const HOLD_MS = 1600;
 const EPS = 0.001;
@@ -36,12 +36,6 @@ function sampleTrack(path: SVGPathElement): Track {
 function pointAt({ len, pts }: Track, d: number): { x: number; y: number } {
   const n = pts.length / 2 - 1, f = Math.min(n, Math.max(0, (d / (len || 1)) * n)), i = Math.min(n - 1, Math.floor(f)), t = f - i;
   return { x: pts[2 * i] + (pts[2 * i + 2] - pts[2 * i]) * t, y: pts[2 * i + 1] + (pts[2 * i + 3] - pts[2 * i + 1]) * t };
-}
-/** Move a token dot by its circles' centres, not a transform: a changed SVG transform is a paint-property change that
- *  makes Blink re-layerize the whole page every frame, while a moved circle is only a repaint of its own rect. */
-function place(dot: Element, x: number, y: number) {
-  const sx = String(x), sy = String(y);
-  for (const c of dot.children) { c.setAttribute('cx', sx); c.setAttribute('cy', sy); }
 }
 const ease = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
 
@@ -91,7 +85,7 @@ class FlowPlayer extends HTMLElement {
     this.querySelectorAll<SVGSVGElement>('svg.diagram-svg').forEach(svg => {
       const paths = new Map<string, SVGPathElement>();
       svg.querySelectorAll<SVGPathElement>('path.edge').forEach(p => paths.set(p.dataset.edge!, p));
-      this.views.push({ svg, layer: svg.querySelector('g.tokens')!, paths, tracks: new Map(), pool: [], active: false, glow: svg.querySelector('radialGradient.token-glow')?.id });
+      this.views.push({ svg, layer: svg.querySelector('g.tokens')!, paths, tracks: new Map(), pool: [], active: false, glow: [svg.querySelector('radialGradient.token-glow--head')?.id, svg.querySelector('radialGradient.token-glow--trail')?.id] });
     });
     document.fonts?.ready.then(() => { for (const v of this.views) v.obstacles = undefined; this.render(); });
     this.classList.add('is-enhanced');
@@ -332,10 +326,10 @@ class FlowPlayer extends HTMLElement {
       g.setAttribute('data-kind', tok.kind);
       const parts = g.children;
       const head = pointAt(track, ease(tok.progress) * len);
-      place(parts[3], head.x, head.y);
+      parts[3].setAttribute('transform', `translate(${head.x},${head.y})`);
       TRAIL.forEach((lag, k) => {
         const pt = pointAt(track, ease(Math.max(0, tok.progress - lag)) * len);
-        place(parts[k], pt.x, pt.y);
+        parts[k].setAttribute('transform', `translate(${pt.x},${pt.y})`);
       });
       const label = parts[4] as SVGTextElement;
       const text = tok.label ?? '';
@@ -359,7 +353,7 @@ class FlowPlayer extends HTMLElement {
         const box = { x: left, y: cy - h / 2, w, h };
         if (v.obstacles.some(o => hit(o, box))) continue;
         label.setAttribute('text-anchor', anchor);
-        label.setAttribute('x', String(anchor === 'middle' ? cx : anchor === 'start' ? cx - 4 : cx + 4)); label.setAttribute('y', String(cy + 3.5));
+        label.setAttribute('transform', `translate(${anchor === 'middle' ? cx : anchor === 'start' ? cx - 4 : cx + 4},${cy + 3.5})`);
         placed = true;
         break;
       }
@@ -367,22 +361,19 @@ class FlowPlayer extends HTMLElement {
     });
   }
 
-  /** A comet: three trail dots and a head, each a solid core over a pre-rendered radial-gradient glow (no live filter:
-   *  a moving drop-shadow would re-run its blur on every frame), plus a label. */
+  /** A comet: three trail dots and a head, plus a label. Each dot is one circle filled with a pre-rendered radial
+   *  gradient (solid core, then the red glow fading out) instead of a live drop-shadow, which a moving dot would
+   *  re-blur on every frame. */
   private makeToken(v: View): SVGGElement {
     const g = document.createElementNS(NS, 'g');
     g.setAttribute('class', 'token');
-    const glowFill = v.glow ? `url(#${v.glow})` : 'none';
-    const dot = (cls: string) => {
-      const d = document.createElementNS(NS, 'g'); d.setAttribute('class', cls);
-      for (const part of ['glow', 'core']) {
-        const c = document.createElementNS(NS, 'circle'); c.setAttribute('class', part);
-        if (part === 'glow') c.setAttribute('fill', glowFill);
-        d.appendChild(c);
-      }
-      g.appendChild(d);
+    const [headFill, trailFill] = v.glow.map(id => (id ? `url(#${id})` : ''));
+    const dot = (cls: string, fill: string) => {
+      const c = document.createElementNS(NS, 'circle'); c.setAttribute('class', cls);
+      if (fill) c.setAttribute('fill', fill);
+      g.appendChild(c);
     };
-    dot('trail'); dot('trail'); dot('trail'); dot('head');
+    dot('trail', trailFill); dot('trail', trailFill); dot('trail', trailFill); dot('head', headFill);
     const text = document.createElementNS(NS, 'text'); text.setAttribute('text-anchor', 'middle'); g.appendChild(text);
     v.layer.appendChild(g);
     return g;

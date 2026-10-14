@@ -11,9 +11,12 @@
  *   so focus is never stranded off-screen or hidden under a control (WCAG 2.4.11). Pointer focus never flies.
  * - Search dims non-matches and frames the matches; Enter flies to and focuses the first.
  * - Playback: below MIN_PLAY zoom every tile player gets `data-suspended`; off-screen tiles are
- *   paused by flow-player's own IntersectionObserver (the viewport clips its overflow).
+ *   paused by flow-player's own IntersectionObserver (the viewport clips its overflow). Above it, only the
+ *   MAX_LIVE tiles nearest the viewport centre animate (R11: each live diagram costs paint, raster and main-thread
+ *   time every frame); the rest hold their current frame.
  */
 const MIN_PLAY = 0.6;
+const MAX_LIVE = 6;
 const FAR = 0.3; // below this, island labels centre over their clusters
 const MAX_Z = 2;
 const FOCUS_Z = 1;
@@ -37,13 +40,14 @@ function init(root: HTMLElement) {
   const tiles = [...root.querySelectorAll<HTMLAnchorElement>('a.atlas-tile')];
   const islands = [...root.querySelectorAll<HTMLElement>('.atlas-island')];
   const players = [...plane.querySelectorAll<HTMLElement>('flow-player')];
+  const playerOf = new Map(tiles.map(t => [t, t.querySelector<HTMLElement>('flow-player')!]));
   const [, , W, H] = mm.getAttribute('viewBox')!.split(' ').map(Number);
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const cx = (t: HTMLElement) => +t.dataset.cx!;
   const cy = (t: HTMLElement) => +t.dataset.cy!;
 
   let vw = 0, vh = 0, z = 1, x = 0, y = 0, homeZ = 1, minZ = 0.1;
-  let anim = 0, touched = false, suspended: boolean | null = null;
+  let anim = 0, touched = false;
   let roving = tiles[0];
 
   root.setAttribute('data-enhanced', '');
@@ -62,10 +66,19 @@ function init(root: HTMLElement) {
     vp.style.backgroundSize = `${120 * z}px ${120 * z}px`;
     vp.style.backgroundPosition = `${x - z}px ${y - z}px`;
     root.toggleAttribute('data-far', z < FAR);
-    const s = z < MIN_PLAY;
-    if (s !== suspended) { suspended = s; players.forEach(p => p.toggleAttribute('data-suspended', s)); }
+    liveTiles();
     mmView.setAttribute('x', String(-x / z)); mmView.setAttribute('y', String(-y / z));
     mmView.setAttribute('width', String(vw / z)); mmView.setAttribute('height', String(vh / z));
+  }
+  /** Suspend every player below MIN_PLAY; above it, all but the MAX_LIVE tiles nearest the viewport centre. */
+  function liveTiles() {
+    const live = new Set<HTMLElement>();
+    if (z >= MIN_PLAY) {
+      const px = (vw / 2 - x) / z, py = (vh / 2 - y) / z;
+      const d = (t: HTMLElement) => (cx(t) - px) ** 2 + (cy(t) - py) ** 2;
+      for (const t of [...tiles].sort((a, b) => d(a) - d(b)).slice(0, MAX_LIVE)) live.add(playerOf.get(t)!);
+    }
+    for (const p of players) { const s = !live.has(p); if (p.hasAttribute('data-suspended') !== s) p.toggleAttribute('data-suspended', s); }
   }
   /** Transform that puts plane point (px, py) at the viewport centre at zoom nz. */
   const at = (px: number, py: number, nz: number): [number, number, number] => { nz = clampZ(nz); return [nz, vw / 2 - px * nz, vh / 2 - py * nz]; };
