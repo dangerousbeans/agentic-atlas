@@ -1,0 +1,41 @@
+## Problem
+
+Many LLM calls repeat work. A support bot grounded in a 100-page product manual sends the same 80,000 tokens of manual, system prompt and tool definitions with every question, and the model processes them from scratch each time, so most of the bill and most of the wait go on text that never changes. Meanwhile, hundreds of customers ask the same few questions in slightly different words, and each gets a freshly generated answer that is nearly identical to the last.
+
+## How it works
+
+Caching avoids recomputing what has already been computed. It comes in two forms: reusing part of the work inside a call, or skipping the call entirely.
+
+The default tab shows **prefix caching**, which most model providers now offer. The prompt is split in two. The <NodeRef id="prefix">stable prefix</NodeRef> (tools, system prompt and manual) is identical on every call and goes first. The <NodeRef id="user">question</NodeRef>, which changes every time, goes last.
+
+On the first call the <NodeRef id="llm">model</NodeRef> processes the whole prompt and the provider writes the processed prefix to a <NodeRef id="cache">prefix cache</NodeRef>, at a small premium (1.25× the input price, in one provider's pricing). When a second customer asks something a minute later, the provider recognizes the identical prefix and reads it from the cache at about a tenth of the normal input price. Only the new question is processed, so the <NodeRef id="out">answer</NodeRef> also starts sooner. Anthropic reports cost reductions of up to 90% and latency reductions of up to 85% for long prompts.
+
+The rule that makes it work is strict: the cache matches on exact prefixes. One changed byte early in the prompt, such as a timestamp in the system prompt, invalidates everything after it.
+
+## Variants
+
+- **Exact response cache:** hash the whole request and return the stored answer if the identical request was answered before. No model call at all, but only exact repeats hit.
+- **Semantic cache:** embed the question and return a stored answer if an earlier question was close enough in meaning. It catches rewordings, at the risk of serving an answer to a question that only looked similar.
+
+## When to use
+
+- A large, unchanging prefix (system prompt, tool definitions, documents, few-shot examples) repeats across many calls.
+- Calls arrive often enough to keep the cache warm within its lifetime.
+- Many users ask near-identical questions whose answers do not depend on who is asking (response caches).
+
+## When to avoid
+
+- The prefix changes on every call. Fix that first: move anything variable to the end.
+- Answers must be fresh, personal or deliberately varied. A response cache would serve stale or someone else's answers.
+- Traffic is so sparse that the cache expires between calls; you would pay the write premium without ever reading.
+
+## Trade-offs
+
+Prefix caching is close to free: the answer is the same either way, and the only cost is the write premium on misses and the discipline of keeping the prefix stable. Response caches save more, a whole call per hit, but trade correctness for it. An exact cache is safe but rarely hits on free-text input; a semantic cache hits often but will sometimes return the answer to a different question. The similarity threshold sets that balance.
+
+## Failure modes
+
+- **Silent cache busting:** a timestamp, a random id or a reordered tool list in the prefix makes every call a miss. Watch the cache-read share and alert when it drops.
+- **Wrong semantic hit:** "How do I cancel my order?" matches "How do I cancel my subscription?" and gets the wrong answer. Tune the threshold on labelled pairs and sample hits for review.
+- **Leaking across users:** a cached answer containing one customer's details is served to another. Never response-cache personal content.
+- **Stale answers:** the manual changes but the cache still serves old answers. Put the document version in the cache key and purge on release.

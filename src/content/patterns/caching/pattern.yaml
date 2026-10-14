@@ -1,0 +1,388 @@
+slug: caching
+name: Caching & Reuse
+family: efficiency-cost
+aliases: [Prompt caching, Prefix caching, KV-cache reuse, Semantic cache, Response cache]
+summary: Avoid recomputing. Reuse the processed prefix of a stable prompt, or return a stored answer when a request matches an earlier one.
+badges: { autonomy: low, cost: low, latency: low }
+sources:
+  - title: "Anthropic docs: Prompt caching"
+    url: https://platform.claude.com/docs/en/docs/build-with-claude/prompt-caching
+  - title: "Prompt caching with Claude (Anthropic)"
+    url: https://claude.com/blog/prompt-caching
+  - title: "Prompt Cache: Modular Attention Reuse for Low-Latency Inference (Gim et al., 2023)"
+    url: https://arxiv.org/abs/2311.04934
+  - title: "SGLang: Efficient Execution of Structured Language Model Programs (Zheng et al., 2023)"
+    url: https://arxiv.org/abs/2312.07104
+  - title: "GPTCache: semantic cache for LLMs (Zilliz)"
+    url: https://github.com/zilliztech/GPTCache
+related:
+  composesWith: [model-cascade, augmented-llm, agentic-rag]
+  confusedWith:
+    - slug: hierarchical-memory
+      difference: "Memory changes what the model knows by storing and retrieving facts. A cache stores computation or finished answers; the model would see the same content either way, only slower and at a higher price."
+origin:
+  by: In Gim et al.
+  org: Yale University, Google
+  year: 2023
+  url: https://arxiv.org/abs/2311.04934
+  kind: introduced
+  uncertain: true
+  note: "No single inventor. Prompt Cache (MLSys 2024) is the earliest verified paper on reusing attention states across prompts; Anthropic popularized API-level prompt caching in 2024, and Zilliz's GPTCache popularized semantic response caches in 2023."
+defaultVariantName: Prefix cache
+build:
+  goal: "Cut the cost and latency of repeated calls by putting everything that stays the same at the front of the prompt and marking it cacheable, so later calls reuse the processed prefix and pay only for the new part."
+  steps:
+    - "Split the prompt into a stable prefix (tool definitions, the {{prompt:system}}, reference documents) and a variable suffix (the user's turn and anything that changes per call)."
+    - "Order the request so the stable parts come first and the variable parts last; move timestamps, user names and request ids out of the prefix."
+    - "Mark the end of the prefix with your provider's cache breakpoint, or rely on its automatic prefix caching, and choose a cache lifetime that covers the gap between calls."
+    - "Send requests as usual. Read the usage fields on each response to see how many input tokens were written to the cache and how many were read from it."
+    - "Keep the prefix byte-for-byte identical between calls: same tool order, same whitespace, same document version."
+  stop: "There is no loop: each call either hits the cache or rebuilds it. If the cache-read share drops below a set level (say 80% of eligible calls), alert, because something has started changing the prefix."
+  requirements:
+    - "Build the prefix in one function that is deterministic given the configuration, so two calls cannot serialize it differently."
+    - "Keep anything per-user or per-request out of the prefix, and test that two users' requests share the same prefix bytes."
+    - "Log cache-write and cache-read token counts per call, and chart the hit rate."
+    - "Make sure the prefix is above the provider's minimum cacheable length; below it, caching silently does nothing."
+    - "Add a test with a stub client that records requests; send two questions and assert the two requests' prefixes are byte-identical and differ only after the cache breakpoint."
+prompts:
+  - id: system
+    title: Cache-friendly system prompt
+    lang: markdown
+    source: |
+      You are the support assistant for {{product}}. Answer only from the manual below.
+      Quote the section number for every instruction you give.
+      If the manual does not cover the question, say so and suggest contacting support.
+
+      <manual version="{{manual_version}}">
+      {{manual_text}}
+      </manual>
+
+      (Everything above this line is identical for every user and is cached.
+      The customer's question follows in the next message.)
+diagram:
+  nodes:
+    - id: prefix
+      kind: memory
+      label: Stable prefix
+      sublabel: tools, system, manual
+      description: "The part of the prompt that is identical on every call: tool definitions, the system prompt, and a 100-page product manual (about 80,000 tokens)."
+    - id: user
+      kind: io
+      label: Question
+      description: "The part that changes: one customer's question, a few dozen tokens placed after the prefix."
+    - id: llm
+      kind: llm
+      label: Model
+      description: "Processes the prompt. On a cache hit it skips the prefix and only processes the new question, so it starts answering sooner."
+    - id: cache
+      kind: memory
+      label: Prefix cache
+      sublabel: provider side, ~5 min
+      description: "The provider's store of already-processed prefixes. Writing costs a little extra once; reading costs a fraction of normal input price."
+    - id: out
+      kind: io
+      label: Answer
+      description: "The model's answer. It is the same whether or not the prefix came from the cache; only cost and speed differ."
+  edges:
+    - id: send-prefix
+      from: prefix
+      to: llm
+      label: prefix
+      description: "Every request starts with the same prefix, up to the cache breakpoint."
+      example: "[tools: lookup_order, open_ticket] [system: You are the support assistant for Routerly...] [manual v12: 80,214 tokens] <cache breakpoint>"
+    - id: ask
+      from: user
+      to: llm
+      description: "The question is appended after the breakpoint and always processed in full."
+      example: "How do I set up a guest network?"
+    - id: write
+      from: llm
+      to: cache
+      style: dashed
+      label: write 1.25×
+      description: "On a miss, the processed prefix is written to the cache, at a small premium on those input tokens."
+      example: "usage: cache_creation_input_tokens=80,214, cache_read_input_tokens=0, input_tokens=14"
+    - id: read
+      from: cache
+      to: llm
+      label: read 0.1×
+      description: "On a hit, the stored prefix is reused at about a tenth of the normal input price on standard models, and the answer starts sooner."
+      example: "usage: cache_creation_input_tokens=0, cache_read_input_tokens=80,214, input_tokens=17"
+    - id: answer
+      from: llm
+      to: out
+      description: "The answer is returned the same way on a hit or a miss."
+      example: "Open the app, go to Wi-Fi > Guest network (manual section 4.3), switch it on and set a password."
+  scenarios:
+    - id: cold-then-warm
+      label: Cold, then warm
+      steps:
+        - id: cold
+          caption: "The first question of the morning: the prefix is not cached, so the model processes all 80,000 tokens."
+          duration: 2600
+          events:
+            - { type: send, edge: send-prefix, token: { kind: prompt, label: 80k tokens }, at: [0, 0.4] }
+            - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0.2, 0.5] }
+            - { type: activate, node: llm, status: thinking, at: [0.5, 1] }
+        - id: write
+          caption: The processed prefix is written to the cache at a 25% premium, and the answer goes out.
+          duration: 2400
+          events:
+            - { type: send, edge: write, token: { kind: tokens, label: prefix }, at: [0, 0.4] }
+            - { type: write, node: cache, at: [0.35, 0.5] }
+            - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.5, 0.9] }
+            - { type: activate, node: out, status: done, at: [0.85, 1] }
+        - id: warm
+          caption: A second customer asks a minute later. The prefix is read from the cache at a tenth of the price; only the new question is processed.
+          duration: 3000
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.3] }
+            - { type: read, node: cache, at: [0.25, 0.4] }
+            - { type: send, edge: read, token: { kind: tokens, label: cached }, at: [0.3, 0.55] }
+            - { type: activate, node: llm, status: thinking, at: [0.55, 0.7] }
+            - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.7, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
+variants:
+  - id: exact-cache
+    name: Exact response cache
+    summary: "Hash the whole request; if the same request was answered before, return the stored answer without calling the model."
+    origin:
+      by: Zilliz (GPTCache)
+      org: Zilliz
+      year: 2023
+      url: https://github.com/zilliztech/GPTCache
+      kind: popularized
+      uncertain: true
+      note: "Memoization long predates LLMs. GPTCache packaged exact-match and semantic caches for LLM calls; the year is when its GitHub repository was created (March 2023)."
+    build:
+      goal: "Return a stored answer instantly when a request is byte-for-byte identical to one already answered, and call the model only on a miss."
+      steps:
+        - "Normalize the request (model, system prompt from the {{prompt:system}}, messages, temperature) into a canonical form and hash it."
+        - "Look the hash up in a key-value store. On a hit that has not expired, return the stored answer."
+        - "On a miss, call the model, return its answer, and store it under the hash with an expiry time."
+        - "Bypass the cache for requests that must be fresh or random, such as those with temperature above 0 or tools that read live data."
+      stop: "Each request is either a hit (no model call) or a miss (one call, then a write). If the store is unreachable, call the model and skip the write."
+      requirements:
+        - "Include everything that changes the answer in the key: model id, prompt version, parameters and documents."
+        - "Set an expiry (default 24 hours) and a way to purge all entries for a prompt version."
+        - "Log hits and misses with the key, and report the hit rate."
+        - "Add a test with a stub model and an in-memory store: send the same request twice and assert one model call, and two identical answers."
+    diagram:
+      nodes:
+        - id: user
+          kind: io
+          label: Request
+          description: "A full model request: model, prompt version, parameters and messages."
+        - id: lookup
+          kind: router
+          label: Hash lookup
+          model: false
+          description: "Plain code: normalizes the request and hashes it, so identical requests always produce the same key."
+        - id: store
+          kind: memory
+          label: Answer store
+          sublabel: key-value, 24 h expiry
+          description: "A key-value store mapping request hashes to finished answers, each with an expiry time."
+        - id: llm
+          kind: llm
+          label: Model
+          description: "Called only on a miss, when no identical request has been answered recently."
+        - id: out
+          kind: io
+          label: Answer
+          description: "The answer, either from the store in milliseconds or freshly generated."
+      edges:
+        - id: in
+          from: user
+          to: lookup
+          description: "The request is normalized and hashed before anything else happens."
+          example: "sha256(model=small-v3, prompt=faq-v7, temperature=0, 'What are your opening hours?') = 9f3c..."
+        - id: get
+          from: lookup
+          to: store
+          description: "The lookup asks the store for an answer under that exact hash."
+          example: "GET answer:9f3c..."
+        - id: hit
+          from: store
+          to: out
+          label: hit
+          description: "On a hit, the stored answer is returned and the model is never called."
+          example: "found (stored 08:12, expires in 19 h): 'We are open 9:00 to 17:30, Monday to Friday.' (3 ms)"
+        - id: miss
+          from: store
+          to: llm
+          label: miss
+          description: "On a miss, the request goes to the model as usual."
+          example: "No entry for 4a71...; calling the model."
+        - id: save
+          from: llm
+          to: store
+          style: loop
+          label: put
+          description: "The fresh answer is stored under the request's hash for the next identical request."
+          example: "SET answer:4a71... 'Returns are free within 30 days...' EX 86400"
+        - id: answer
+          from: llm
+          to: out
+          description: "The freshly generated answer is returned to the caller."
+          example: "Returns are free within 30 days; print the label from your order page."
+      scenarios:
+        - id: miss-then-hit
+          label: Miss, then hit
+          steps:
+            - id: miss
+              caption: A new question has no stored answer, so the model is called and its answer is saved.
+              duration: 3200
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: request }, at: [0, 0.15] }
+                - { type: send, edge: get, token: { kind: tool-call, label: hash }, at: [0.15, 0.3] }
+                - { type: read, node: store, at: [0.3, 0.35] }
+                - { type: branch, node: store, taken: miss, notTaken: [hit], at: [0.35, 0.4] }
+                - { type: send, edge: miss, token: { kind: prompt, label: request }, at: [0.4, 0.55] }
+                - { type: activate, node: llm, status: thinking, at: [0.55, 0.75] }
+                - { type: send, edge: save, token: { kind: result, label: put }, at: [0.75, 0.9] }
+                - { type: write, node: store, at: [0.85, 0.95] }
+                - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.75, 1] }
+            - id: hit
+              caption: The identical request arrives again; the stored answer comes back in milliseconds, with no model call.
+              duration: 2400
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: request }, at: [0, 0.25] }
+                - { type: send, edge: get, token: { kind: tool-call, label: hash }, at: [0.25, 0.45] }
+                - { type: read, node: store, at: [0.45, 0.55] }
+                - { type: branch, node: store, taken: hit, notTaken: [miss], at: [0.55, 0.65] }
+                - { type: send, edge: hit, token: { kind: result, label: cached }, at: [0.65, 0.95] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
+  - id: semantic-cache
+    name: Semantic cache
+    summary: "Embed the question and return a stored answer when an earlier question was close enough in meaning, even if worded differently."
+    origin:
+      by: Zilliz (GPTCache)
+      org: Zilliz
+      year: 2023
+      url: https://github.com/zilliztech/GPTCache
+      kind: popularized
+      uncertain: true
+      note: "GPTCache describes itself as a 'semantic cache for LLMs': an embedding generator, a vector store and a similarity evaluator. The year is when its GitHub repository was created (March 2023)."
+    build:
+      goal: "Answer near-duplicate questions from a store of earlier answers, matched by embedding similarity, and call the model only when no stored question is close enough."
+      steps:
+        - "Embed the incoming question with an embedding model."
+        - "Search a vector store of earlier questions for the nearest neighbour, and get its similarity score."
+        - "If the similarity is above a threshold (start around 0.92 and tune it), return the stored answer."
+        - "Otherwise call the model with the {{prompt:system}} and the question, return its answer, and store the question's embedding with the answer."
+        - "Scope the cache: keep separate stores, or a filter, per prompt version, language and anything else that changes the right answer."
+      stop: "Each request is either a hit (no model call) or a miss (one call, then a write). Entries expire after a set time so answers do not go stale."
+      requirements:
+        - "Make the similarity threshold configurable, and tune it on labelled pairs of questions that should and should not share an answer."
+        - "Never serve cached answers across users for anything personal; exclude questions that mention account details."
+        - "Log every hit with both questions and the score, and sample hits for review."
+        - "Add a test with a stub embedder returning fixed vectors: a question at similarity 0.95 to a stored one must return the stored answer with zero model calls; one at 0.80 must call the model once."
+    diagram:
+      nodes:
+        - id: user
+          kind: io
+          label: Question
+          description: "A customer question, possibly a rewording of one asked before."
+        - id: embed
+          kind: tool
+          label: Embedder
+          description: "Turns the question into a vector so that questions with the same meaning land close together."
+        - id: cache
+          kind: memory
+          label: Vector cache
+          description: "Earlier questions as vectors, each stored with the answer the model gave."
+        - id: sim
+          kind: evaluator
+          label: Similarity
+          sublabel: cosine ≥ 0.92
+          model: false
+          description: "Plain code: compares the new question with its nearest stored neighbour and decides hit or miss by a threshold."
+        - id: llm
+          kind: llm
+          label: Model
+          description: "Called only on a miss; its answer is stored for future near-duplicates."
+        - id: out
+          kind: io
+          label: Answer
+          description: "Either a stored answer to a near-identical question, or a fresh one."
+      edges:
+        - id: in
+          from: user
+          to: embed
+          description: "The question is embedded."
+          example: "how can i turn on a wifi network for visitors"
+        - id: search
+          from: embed
+          to: cache
+          description: "The vector is used to find the most similar earlier question."
+          example: "nearest(k=1, vector=[0.12, -0.48, ...])"
+        - id: nearest
+          from: cache
+          to: sim
+          description: "The nearest stored question and its similarity score go to the threshold check."
+          example: "'How do I set up a guest network?' similarity 0.95"
+        - id: hit
+          from: sim
+          to: out
+          label: hit
+          description: "Above the threshold, the stored answer is returned without calling the model."
+          example: "Open the app, go to Wi-Fi > Guest network (manual section 4.3), switch it on and set a password."
+        - id: miss
+          from: sim
+          to: llm
+          label: miss
+          description: "Below the threshold, the question goes to the model."
+          example: "Nearest is 'How do I change my Wi-Fi password?' at 0.81 < 0.92; calling the model."
+        - id: save
+          from: llm
+          to: cache
+          style: loop
+          description: "The new question's vector and the model's answer are added to the cache."
+          example: "insert(vector=[...], question='Can I limit guest bandwidth?', answer='Yes: Wi-Fi > Guest network > Limits...')"
+        - id: answer
+          from: llm
+          to: out
+          description: "The fresh answer is returned."
+          example: "Yes: go to Wi-Fi > Guest network > Limits and set a maximum speed per device."
+      scenarios:
+        - id: semantic-hit
+          label: Reworded question hits
+          steps:
+            - id: embed
+              caption: "A customer asks 'how can i turn on a wifi network for visitors'; it is embedded and the nearest earlier question is found."
+              duration: 2600
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.3] }
+                - { type: send, edge: search, token: { kind: tokens, label: vector }, at: [0.3, 0.6] }
+                - { type: read, node: cache, at: [0.55, 0.7] }
+                - { type: send, edge: nearest, token: { kind: result, label: "0.95" }, at: [0.7, 1] }
+            - id: hit
+              caption: "It matches 'How do I set up a guest network?' at 0.95, so the stored answer is returned with no model call."
+              duration: 2200
+              events:
+                - { type: branch, node: sim, taken: hit, notTaken: [miss], at: [0, 0.2] }
+                - { type: send, edge: hit, token: { kind: result, label: cached }, at: [0.2, 0.85] }
+                - { type: activate, node: out, status: done, at: [0.8, 1] }
+        - id: semantic-miss
+          label: New question misses
+          steps:
+            - id: embed
+              caption: "'Can I limit guest bandwidth?' is embedded; its nearest stored question is only 0.81 similar."
+              duration: 2600
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.3] }
+                - { type: send, edge: search, token: { kind: tokens, label: vector }, at: [0.3, 0.6] }
+                - { type: read, node: cache, at: [0.55, 0.7] }
+                - { type: send, edge: nearest, token: { kind: result, label: "0.81" }, at: [0.7, 1] }
+            - id: miss
+              caption: Below the threshold, so the model answers, and the new question and answer are stored for next time.
+              duration: 3000
+              events:
+                - { type: branch, node: sim, taken: miss, notTaken: [hit], at: [0, 0.15] }
+                - { type: send, edge: miss, token: { kind: prompt, label: question }, at: [0.15, 0.4] }
+                - { type: activate, node: llm, status: thinking, at: [0.4, 0.6] }
+                - { type: send, edge: save, token: { kind: result, label: add }, at: [0.6, 0.85] }
+                - { type: write, node: cache, at: [0.8, 0.9] }
+                - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.6, 0.95] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
