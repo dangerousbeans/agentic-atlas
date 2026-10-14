@@ -2,6 +2,7 @@
 import type { DiagramSpec } from '../../lib/diagram/types';
 import { layoutDiagram } from '../../lib/diagram/layout';
 import { compileDiagram } from '../../lib/diagram/compile';
+import { KIND_LABEL, nodeDescription, edgeDescription, edgeTitle, nodeMap } from '../../lib/diagram/kinds';
 import DiagramSvg from './DiagramSvg.astro';
 import './diagram.css';
 interface Props { uid: string; spec: DiagramSpec; title: string; compact?: boolean }
@@ -9,37 +10,47 @@ const { uid, spec, title, compact = false } = Astro.props;
 const wide = await layoutDiagram(spec, spec.direction ?? 'RIGHT');
 const narrow = compact ? null : await layoutDiagram(spec, 'DOWN');
 const timelines = compileDiagram(spec);
-const payload = JSON.stringify({ spec, timelines }).replace(/</g, '\\u003c');
+// The player only needs structure, not the tooltip prose (that lives in the markup).
+const lean = { ...spec, nodes: spec.nodes.map(({ description, ...n }) => n), edges: spec.edges.map(({ description, example, ...e }) => e) };
+const payload = JSON.stringify({ spec: lean, timelines }).replace(/</g, '\\u003c');
+const labels = nodeMap(spec);
 ---
 <flow-player data-uid={uid} compact={compact ? '' : undefined} class:list={['diagram', { 'diagram--compact': compact }]}>
-  <div class="diagram-stage" tabindex={compact ? undefined : 0} role={compact ? undefined : 'group'} aria-label={compact ? undefined : `${title} diagram player. Space plays or pauses; arrow keys step.`}>
-    <DiagramSvg uid={uid} spec={spec} layout={wide} variant="wide" title={title} />
-    {narrow && <DiagramSvg uid={uid} spec={spec} layout={narrow} variant="narrow" title={title} />}
+  <div class="diagram-stage">
+    <DiagramSvg uid={uid} spec={spec} layout={wide} variant="wide" title={title} compact={compact} />
+    {narrow && <DiagramSvg uid={uid} spec={spec} layout={narrow} variant="narrow" title={title} compact={compact} />}
   </div>
   {!compact && (
-    <div class="fp-controls" hidden>
-      <button type="button" data-action="prev" aria-label="Previous step"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4v12M16 4L8 10l8 6z" /></svg></button>
-      <button type="button" data-action="play" aria-label="Play" aria-pressed="false"><svg class="i-play" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4l10 6-10 6z" /></svg><svg class="i-pause" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4h3v12H6zM11 4h3v12h-3z" /></svg></button>
-      <button type="button" data-action="next" aria-label="Next step"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M14 4v12M4 4l8 6-8 6z" /></svg></button>
-      <input type="range" data-scrub min="0" max="1000" step="1" value="0" aria-label="Timeline position" />
-      <span class="fp-counter" aria-hidden="true"></span>
-      <label class="fp-speed"><span class="sr-only">Playback speed</span><select data-speed><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
-      {spec.scenarios.length > 1 && (
-        <label class="fp-scenario"><span class="sr-only">Scenario</span><select data-scenario>{spec.scenarios.map((s, i) => <option value={i}>{s.label}</option>)}</select></label>
-      )}
-    </div>
-    <p class="fp-caption" aria-live="polite"></p>
-    <details class="fp-steps" open>
-      <summary>All steps</summary>
-      {timelines.map((tl, si) => (
-        <div class="fp-scenario-steps" data-scenario={tl.id} data-alt={si > 0 ? '' : undefined}>
-          {timelines.length > 1 && <h4>{tl.label}</h4>}
-          <ol class="fp-captions" data-scenario={tl.id}>
-            {tl.steps.map(st => <li data-step-index={st.index}>{st.caption}{st.iteration && <span class="iter"> (round {st.iteration.n} of {st.iteration.of})</span>}</li>)}
-          </ol>
+    <>
+      {timelines.length > 1 && (
+        <div class="fp-tabs" role="tablist" aria-label="Scenario" hidden>
+          {spec.scenarios.map((s, i) => <button type="button" role="tab" id={`${uid}-tab-${s.id}`} aria-controls={`${uid}-panel-${s.id}`} aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1} data-scenario-tab={i}>{s.label}</button>)}
         </div>
-      ))}
-    </details>
+      )}
+      <p class="fp-caption" aria-live="polite"></p>
+      <details class="fp-steps" open>
+        <summary>All steps</summary>
+        {timelines.map((tl, si) => (
+          <div class="fp-scenario-steps" data-scenario={tl.id} data-alt={si > 0 ? '' : undefined} id={`${uid}-panel-${tl.id}`} role={timelines.length > 1 ? 'tabpanel' : undefined} aria-labelledby={timelines.length > 1 ? `${uid}-tab-${tl.id}` : undefined}>
+            {timelines.length > 1 && <p class="fp-scenario-title">{tl.label}</p>}
+            <ol class="fp-captions" data-scenario={tl.id}>
+              {tl.steps.map(st => <li><button type="button" data-step-index={st.index}>{st.caption}{st.iteration && <span class="iter"> (round {st.iteration.n} of {st.iteration.of})</span>}</button></li>)}
+            </ol>
+          </div>
+        ))}
+      </details>
+      <details class="fp-parts">
+        <summary>Parts of this pattern</summary>
+        <dl>
+          {spec.nodes.map(n => (
+            <div class="part"><dt>{n.label} <span class="part-kind">{KIND_LABEL[n.kind]}</span></dt><dd>{nodeDescription(n)}</dd></div>
+          ))}
+          {spec.edges.map(e => (
+            <div class="part"><dt>{edgeTitle(e, labels)}{e.label && <span class="part-kind">{e.label}</span>}</dt><dd>{edgeDescription(e, labels)}{e.example && <q class="part-ex">{e.example}</q>}</dd></div>
+          ))}
+        </dl>
+      </details>
+    </>
   )}
   <script type="application/json" data-diagram set:html={payload} />
 </flow-player>
