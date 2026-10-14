@@ -58,7 +58,7 @@ diagram:
     - { id: agent, kind: agent, label: Agent }
     - { id: risk, kind: router, label: Risk check }
     - { id: human, kind: human, label: Reviewer }
-    - { id: tool, kind: tool, label: Refund API }
+    - { id: tool, kind: tool, label: Action API }
     - { id: out, kind: io, label: Done }
   edges:
     - { id: task, from: user, to: agent }
@@ -136,7 +136,7 @@ diagram:
       label: Low risk, no pause
       steps:
         - id: propose
-          caption: The agent proposes a harmless lookup.
+          caption: The agent proposes a harmless order-status lookup.
           duration: 2200
           codeRef: { block: gate, lines: "1-2" }
           events:

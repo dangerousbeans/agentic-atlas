@@ -8,7 +8,7 @@ Run several instances as debaters and make them read each other. The <NodeRef id
 
 Then come the rounds. In each round every debater sees what the others wrote, critiques it, and revises its own answer in light of it. A debater that finds an arithmetic slip in a peer's reasoning says so, and a debater whose own answer is exposed as wrong changes it. The diagram draws one cross edge per debater (A to B, B to C, C to A) to keep it readable, but in the original method each agent reads all the others. All of this happens in parallel, and two rounds are typically enough for answers to converge or for the disagreement to sharpen.
 
-Finally the <NodeRef id="judge">judge</NodeRef> reads the final answers with their arguments and issues one <NodeRef id="out">ruling</NodeRef>. In the research setup, simple majority or consensus can replace the judge.
+In the original method of Du et al. there is no judge: the agents converge over the rounds, and the final answer is a majority vote or the consensus. Later variants add an optional <NodeRef id="judge">judge</NodeRef>, as drawn here, which reads the final answers with their arguments and issues one <NodeRef id="out">ruling</NodeRef>. Use the judge when the answers will not converge on their own.
 
 ## When to use
 

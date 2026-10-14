@@ -65,6 +65,7 @@ diagram:
     - { id: to-jailbreak, from: user, to: jailbreak, style: dashed }
     - { id: rel-ok, from: relevance, to: agent, style: dashed, label: ok }
     - { id: jb-ok, from: jailbreak, to: agent, style: dashed, label: ok }
+    - { id: rel-trip, from: relevance, to: block, label: off-topic }
     - { id: jb-trip, from: jailbreak, to: block, label: tripwire }
     - { id: draft, from: agent, to: output-guard }
     - { id: pass, from: output-guard, to: out, label: pass }
@@ -134,3 +135,30 @@ diagram:
           events:
             - { type: activate, node: agent, status: error, at: [0, 0.4] }
             - { type: send, edge: jb-trip, token: { kind: result, label: blocked }, at: [0.4, 1] }
+    - id: off-topic
+      label: Off-topic request is blocked
+      steps:
+        - id: start
+          caption: A request unrelated to the product goes to the agent and the input guards at the same moment.
+          duration: 1800
+          codeRef: { block: guard, lines: "1-3" }
+          events:
+            - { type: send, edge: to-agent, token: { kind: prompt, label: write a poem } }
+            - { type: send, edge: to-relevance, token: { kind: prompt, label: write a poem } }
+            - { type: send, edge: to-jailbreak, token: { kind: prompt, label: write a poem } }
+            - { type: activate, node: agent, status: thinking, at: [0.6, 1] }
+        - id: trip
+          caption: The on-topic guard decides this is out of scope and trips, while the jailbreak guard finds nothing wrong.
+          duration: 2200
+          codeRef: { block: guard, lines: "3-4" }
+          events:
+            - { type: activate, node: jailbreak, status: done, at: [0, 0.4] }
+            - { type: activate, node: relevance, status: error, at: [0, 0.5] }
+            - { type: branch, node: relevance, taken: rel-trip, notTaken: [rel-ok], at: [0.5, 1] }
+        - id: halt
+          caption: The agent's run is cancelled and the user is told what the assistant can help with.
+          duration: 2200
+          codeRef: { block: guard, lines: "5-6" }
+          events:
+            - { type: activate, node: agent, status: error, at: [0, 0.4] }
+            - { type: send, edge: rel-trip, token: { kind: result, label: blocked }, at: [0.4, 1] }

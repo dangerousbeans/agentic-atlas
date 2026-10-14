@@ -91,7 +91,7 @@ diagram:
             - { type: activate, node: billing, status: thinking, at: [0, 0.5] }
             - { type: send, edge: billing-reply, token: { kind: result, label: reply }, at: [0.5, 1] }
         - id: second-handoff
-          caption: The user asks for the money back, so billing passes the baton on to refunds.
+          caption: The user's next message asks for the money back, so billing passes the baton on to refunds.
           duration: 2400
           codeRef: { block: baton, lines: "5-7" }
           events:

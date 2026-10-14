@@ -10,6 +10,8 @@ If the grader keeps some documents, they go straight to the <NodeRef id="generat
 
 The Self-RAG variant adds a second check after generation. An <NodeRef id="check">answer check</NodeRef> verifies that every claim is supported by the documents. Unsupported claims loop back to the generator as feedback, and a supported answer goes to the <NodeRef id="out">output</NodeRef>.
 
+This page shows a simplified composite of two papers. Real CRAG grades retrieval as correct, incorrect or ambiguous and refines documents by decomposing and recomposing them, and the answer check here is Self-RAG-style critique, which Self-RAG itself performs with trained reflection tokens rather than a separate prompt.
+
 ## When to use
 
 - Your index is incomplete or stale, so retrieval sometimes misses entirely.

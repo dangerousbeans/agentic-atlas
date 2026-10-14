@@ -101,7 +101,7 @@ diagram:
             - { type: activate, node: b, status: thinking, at: [0.4, 1] }
             - { type: activate, node: c, status: thinking, at: [0.4, 1] }
         - id: fan-in
-          caption: After the last round, all three final answers go to the judge.
+          caption: After the last round, all three final answers go to the optional judge.
           duration: 1800
           codeRef: { block: debate, lines: "7" }
           events:
