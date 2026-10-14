@@ -72,7 +72,7 @@ diagram:
         - id: fan-out
           caption: The same diff goes to three reviewers at once, each with a different concern.
           duration: 1400
-          codeRef: { block: sectioning, lines: "2-5" }
+          codeRef: { block: sectioning, lines: "2-6" }
           events:
             - { type: send, edge: s1, token: { kind: prompt, label: security } }
             - { type: send, edge: s2, token: { kind: prompt, label: perf } }
@@ -80,7 +80,7 @@ diagram:
         - id: work
           caption: The reviewers run side by side and finish at different times.
           duration: 3000
-          codeRef: { block: sectioning, lines: "2-5" }
+          codeRef: { block: sectioning, lines: "2-6" }
           events:
             - { type: activate, node: llm1, status: thinking, at: [0, 0.35] }
             - { type: activate, node: llm2, status: thinking, at: [0, 0.65] }
@@ -91,7 +91,7 @@ diagram:
         - id: merge
           caption: The merge step waits for the slowest reviewer, then combines all three reports.
           duration: 1800
-          codeRef: { block: sectioning, lines: "6" }
+          codeRef: { block: sectioning, lines: "7" }
           events:
             - { type: activate, node: aggregator, status: thinking, at: [0, 0.5] }
             - { type: send, edge: done, token: { kind: result, label: review }, at: [0.5, 1] }

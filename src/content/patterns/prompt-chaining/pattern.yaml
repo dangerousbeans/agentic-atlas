@@ -10,7 +10,7 @@ sources:
 related:
   composesWith: [routing, evaluator-optimizer]
   confusedWith:
-    - { slug: orchestrator-workers, difference: "A chain runs the same fixed steps in order every time; an orchestrator decides the steps at run time and runs workers in parallel." }
+    - { slug: orchestrator-workers, difference: "A chain runs the same fixed steps in order every time; an orchestrator decides the steps at run time." }
 code:
   - id: chain
     title: prompt_chaining.py
