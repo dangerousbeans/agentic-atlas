@@ -34,6 +34,28 @@ describe('layout of every real pattern diagram', () => {
         }
       });
 
+      it('edge labels on one baseline keep a clear gap, so two never read as one phrase', () => {
+        const boxes = spec.edges.filter(e => shownLabelIds(spec).has(e.id)).map(e => ({ id: e.id, b: labelBox(L.edges[e.id].label, e.label!) }));
+        for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i].b, b = boxes[j].b;
+          if (Math.abs(a.y - b.y) >= 8) continue;
+          const gap = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
+          expect(gap, `${boxes[i].id} / ${boxes[j].id}`).toBeGreaterThanOrEqual(60);
+        }
+      });
+
+      if (variant === 'narrow') it('on a phone-scrolling canvas, edge labels stay within the drawing width', () => {
+        const xs = Object.values(L.nodes).flatMap(b => [b.x, b.x + b.w]);
+        const lo = Math.min(...xs), hi = Math.max(...xs);
+        if ((hi - lo + 32) * 0.86 <= 330) return; // fits a 390px phone without scrolling
+        for (const e of spec.edges) {
+          if (!shownLabelIds(spec).has(e.id)) continue;
+          const b = labelBox(L.edges[e.id].label, e.label!);
+          expect(b.x, `${e.id} left`).toBeGreaterThanOrEqual(lo - 24);
+          expect(b.x + b.w, `${e.id} right`).toBeLessThanOrEqual(hi + 24);
+        }
+      });
+
       it('every edge starts and ends within 2px of its node glyph boundary', () => {
         for (const e of spec.edges) {
           const d = L.edges[e.id].d;

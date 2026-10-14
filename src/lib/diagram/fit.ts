@@ -8,6 +8,8 @@ export const MIN_LABEL_SCALE = 0.86;
 export const MAX_SCALE = 1.25;
 /** Empty margin around a wide layout's drawing, in SVG units (layout.ts). It may scroll out of view. */
 export const WIDE_PAD = 28;
+/** Content width of the diagram stage on a 390px phone. */
+export const PHONE_STAGE = 330;
 /**
  * Content widths of the pattern page's diagram stage at the 1280px max page width: beside the info column
  * (two-column instrument) and spanning the page (single column, no side padding). See pages/patterns/[slug].astro.

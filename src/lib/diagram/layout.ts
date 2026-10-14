@@ -2,7 +2,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import type { DiagramSpec, NodeSize, NodeKind } from './types';
 import { DEFAULT_SIZE } from './types';
 import { roundedPath, cubicPath, boxArc, polylineMid, offsetPath, type Pt, type Box } from './geometry';
-import { WIDE_PAD } from './fit';
+import { WIDE_PAD, MIN_LABEL_SCALE, PHONE_STAGE } from './fit';
 
 export const NODE_DIMS: Record<NodeSize, { w: number; h: number }> = { sm: { w: 96, h: 72 }, md: { w: 136, h: 72 }, lg: { w: 176, h: 72 } };
 /** Vertical centre of the node glyph inside its box (see NodeShape.astro). */
@@ -14,9 +14,11 @@ export const GLYPH_GAP = 3;
  *  leave or enter below the node label, since they may not cross it) on the bottom edge of the node box. */
 export const glyphReach = (kind: NodeKind) => GLYPH_R[kind] + GLYPH_GAP;
 export const glyphCentre = (b: Box): Pt => ({ x: b.x + b.w / 2, y: b.y + SHAPE_CY });
-/** Edges whose label is drawn: of several edges converging on one node with the same label, only the first. */
+/** Edges whose label is drawn: of several edges converging on one node with the same label, only the first.
+ *  A return edge always shows its own: it runs beside its forward edge, not into a shared bundle. */
 export function shownLabelIds(d: DiagramSpec): Set<string> {
-  return new Set(d.edges.filter((e, i) => e.label && !d.edges.slice(0, i).some(o => o.to === e.to && o.label === e.label)).map(e => e.id));
+  const returns = returnEdges(d);
+  return new Set(d.edges.filter((e, i) => e.label && (returns.has(e.id) || !d.edges.slice(0, i).some(o => o.to === e.to && o.label === e.label))).map(e => e.id));
 }
 export interface EdgeLabelPos { x: number; y: number; anchor: 'start' | 'middle' | 'end' }
 export interface EdgeGeom { d: string; mid: Pt; label: EdgeLabelPos }
@@ -25,6 +27,8 @@ export interface DiagramLayout { width: number; height: number; nodes: Record<st
 type Raw = { kind: 'poly'; pts: Pt[]; side: number } | { kind: 'arc'; s: Pt; c1: Pt; c2: Pt; e: Pt };
 const elk = new ELK();
 
+/** Least horizontal gap between two edge labels that share a baseline. */
+const LABEL_GAP = 60;
 /** Half the gap between a forward edge and its parallel return edge. */
 const LANE = 5;
 
@@ -119,7 +123,8 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   const spreadAt = (id: string, i: number, k: number): Pt => {
     const { w, h } = dims(id);
     // RIGHT: ports stay level with the glyph (above the label at y~52), so fan legs never cross the node label
-    if (direction === 'RIGHT') { const S = Math.min(14, 44 / (k - 1)); return { x: w, y: SHAPE_CY + (i - (k - 1) / 2) * S }; }
+    // (ports at least 2 lanes apart, so a return lane never runs on top of the neighbouring dispatch)
+    if (direction === 'RIGHT') { const S = Math.min(4 * LANE, 44 / (k - 1)); return { x: w, y: SHAPE_CY + (i - (k - 1) / 2) * S }; }
     const S = Math.min(22, (w - 20) / (k - 1));
     return { x: w / 2 + (i - (k - 1) / 2) * S, y: h + 6 };
   };
@@ -417,7 +422,15 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   // Labels are placed greedily in edge order; each takes its best candidate spot that clears the nodes and the
   // labels already placed.
   const taken: Box[] = Object.values(nodes).map(b => ({ ...b }));
+  const placed: Box[] = [];
   const hits = boxesOverlap;
+  // Phones scroll sideways when a narrow diagram is wider than the stage, and start scrolled to the middle: a label
+  // hung outside the drawing would widen it and sit off-screen, so prefer spots that stay within its width.
+  const spanX = [Math.min(...xs) - minX, Math.max(...xs) - minX];
+  const scrolls = variant === 'narrow' && (spanX[1] - spanX[0] + 2 * PAD) * MIN_LABEL_SCALE > PHONE_STAGE;
+  const within = (b: Box) => !scrolls || (b.x >= spanX[0] - (PAD - 8) && b.x + b.w <= spanX[1] + (PAD - 8));
+  // two labels on one baseline need a clear gap, or they read as a single phrase ("TRIPWIRE OFF-TOPIC")
+  const apart = (b: Box) => !placed.some(o => Math.abs(o.y - b.y) < 8 && b.x < o.x + o.w + LABEL_GAP && o.x < b.x + b.w + LABEL_GAP);
   for (const [k, r] of Object.entries(raw)) {
     if (r.kind === 'poly') {
       const pts = polys[k];
@@ -427,10 +440,12 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
       const text = shownLabel(k);
       let label = cands[0];
       if (text) {
-        const free = (c: EdgeLabelPos) => !taken.some(t => hits(t, labelBox(c, text)));
-        const clear = (c: EdgeLabelPos) => { const b = labelBox(c, text); return !others.some(o => o.some((q, i) => i > 0 && segHitsBox(o[i - 1], q, b))); };
-        label = cands.find(c => free(c) && clear(c)) ?? cands.find(free) ?? cands[0];
-        taken.push(labelBox(label, text));
+        const free = (c: EdgeLabelPos) => { const b = labelBox(c, text); return !taken.some(t => hits(t, b)) && apart(b); };
+        // (a spot beside a run never touches that run, so any hit on the edge's own line is a real crossing)
+        const clear = (c: EdgeLabelPos) => { const b = labelBox(c, text); return ![...others, pts].some(o => o.some((q, i) => i > 0 && segHitsBox(o[i - 1], q, b))); };
+        const inside = (c: EdgeLabelPos) => within(labelBox(c, text));
+        label = cands.find(c => free(c) && clear(c) && inside(c)) ?? cands.find(c => free(c) && clear(c)) ?? cands.find(free) ?? cands[0];
+        taken.push(labelBox(label, text)); placed.push(labelBox(label, text));
       }
       geo[k] = { pts, label, text };
     } else {
@@ -440,7 +455,7 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
         ? (mid.y > s.y ? { x: mid.x, y: mid.y + 17, anchor: 'middle' } : { x: mid.x, y: mid.y - 8, anchor: 'middle' })
         : (mid.x < s.x ? { x: mid.x - 8, y: mid.y + 5, anchor: 'end' } : { x: mid.x + 8, y: mid.y + 5, anchor: 'start' });
       const text = shownLabel(k);
-      if (text) taken.push(labelBox(label, text));
+      if (text) { taken.push(labelBox(label, text)); placed.push(labelBox(label, text)); }
       geo[k] = { arc: [s, c1, c2, e], mid, label, text };
     }
   }
@@ -569,7 +584,9 @@ function labelCandidates(input: Pt[], others: Pt[][], direction: 'RIGHT' | 'DOWN
     const horiz = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
     const base = len + (horiz === (direction === 'RIGHT') && len >= 40 ? 150 : 0) - (shared(a, b, others) ? 1000 : 0) + i * 0.01;
     if (isReturn) [a, b] = [b, a]; // back to this edge's own direction of travel
-    for (const [t, pen] of [[0.5, 0], [0.3, 25], [0.7, 25]] as const) {
+    // a run shared with other edges may carry several labels: start them at its ends, not all at the middle
+    const sharedRun = shared(a, b, others);
+    for (const [t, pen] of [[0.5, sharedRun && len >= 160 ? 50 : 0], [0.3, 25], [0.7, 25]] as const) {
       if (t !== 0.5 && len < 80) continue;
       const m = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
       const above: EdgeLabelPos = { x: m.x, y: m.y - 8, anchor: 'middle' }, below: EdgeLabelPos = { x: m.x, y: m.y + 17, anchor: 'middle' };
