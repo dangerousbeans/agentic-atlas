@@ -1,0 +1,41 @@
+## Problem
+
+Most agents wait for someone to type. That fits questions, but much useful work does not start with a question: a new email arrives, a ticket is filed, an alert fires, a scheduled report comes due. If a person has to notice each event and open a chat to hand it to an agent, the agent saves little time. Yet letting an agent loose on a live inbox with no way to check with anyone is worse: it will accept the wrong meeting or answer a question only its owner can.
+
+## How it works
+
+An ambient agent is woken by events, not messages. Here the <NodeRef id="events">email feed</NodeRef> delivers every new message to <NodeRef id="triage">triage</NodeRef>: a cheap model call that labels each one ignore, notify or act. Newsletters go straight to the <NodeRef id="archive">archive</NodeRef>; the agent never runs on them, which keeps costs in line with the events that matter.
+
+For events that need work, the <NodeRef id="agent">email agent</NodeRef> runs in the background with its <NodeRef id="tools">mail and calendar tools</NodeRef>. Routine items it finishes on its own: a customer asking where an order is gets a looked-up, sent reply. Nobody is waiting on it, so a run can take its time.
+
+It reaches a person only through the <NodeRef id="inbox">agent inbox</NodeRef>, with one of three kinds of card, as described by Harrison Chase:
+
+- **Notify:** something is important, but no action is needed.
+- **Question:** the agent is stuck on a fact only the person knows, such as which project code goes on an invoice.
+- **Review:** the agent wants to take a sensitive action, such as accepting a meeting, and shows the exact call for approval, editing or rejection.
+
+When it posts a question or review card, the run saves its state and pauses. The person handles cards when they choose, hours later if need be, and their answer resumes the run where it stopped. Which tools need review is set in code, not left to the model.
+
+## When to use
+
+- The work arrives as a stream of events: email, tickets, alerts, pull requests, scheduled jobs.
+- Most events are routine and only a few need a person's judgement.
+- People want the leverage of an assistant without starting each task themselves.
+
+## When to avoid
+
+- Every action is high-stakes, so the person would review every card anyway; a synchronous tool is simpler.
+- Events are rare. A button the user presses is cheaper to build and easier to trust.
+- You cannot persist runs across long pauses. Without durable state, a question left overnight is lost.
+
+## Trade-offs
+
+Ambient agents trade immediacy for leverage. The person does less, but they also see less, so trust depends on a clear activity log and well-chosen review gates: too many cards and the inbox becomes another chore; too few and the agent acts beyond what its owner would allow. Running on every event costs money even when nothing happens, which is why a cheap triage step sits in front. And because runs pause for people, the system needs durable storage and expiry rules for cards nobody answers.
+
+## Failure modes
+
+- **Card fatigue:** the agent asks about everything and the person stops reading. Tune triage and review gates from what people actually approve unchanged.
+- **Silent overreach:** the agent sends something its owner would have stopped. Keep sensitive tools behind review in code and log every autonomous action.
+- **Event storms:** a mail loop or alert flood starts thousands of runs. De-duplicate events and rate-limit per source.
+- **Stale answers:** a card answered days later resumes a run whose world has moved on. Re-check key facts on resume and expire old cards.
+- **Prompt injection:** events come from outsiders, so an email can contain instructions. Treat event content as data and keep risky tools gated.
