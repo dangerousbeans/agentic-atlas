@@ -12,6 +12,9 @@ import { patternStats } from '../../lib/pattern-stats';
 import { href } from '../../lib/url';
 import type { DiagramSpec } from '../../lib/diagram/types';
 
+/** `fill`: the map takes the remaining viewport height (the /atlas/ page) instead of the home section height. */
+interface Props { fill?: boolean }
+const { fill = false } = Astro.props;
 const cat = await getCatalog();
 const L = atlasLayout(cat.families.map(f => ({ slug: f.slug, name: f.name, rank: f.rank, patterns: f.order })));
 const tileOf = new Map(L.tiles.map(t => [t.slug, t]));
@@ -20,9 +23,10 @@ const tileLine = (spec: DiagramSpec) => {
   const s = patternStats(spec);
   return [`${s.nodes} nodes`, `${s.llmCalls} LLM`, s.loop && 'loop', s.parallel && 'parallel', s.branch && 'branch', s.humanInLoop && 'human'].filter(Boolean).slice(0, 3).join(' · ');
 };
+const Heading = fill ? 'h2' : 'h3';
 const px = (n: number) => `${n}px`;
 ---
-<div class="atlas-map" style={`--plane-w:${px(L.width)};--plane-h:${px(L.height)}`}>
+<div class:list={['atlas-map', { fill }]} style={`--plane-w:${px(L.width)};--plane-h:${px(L.height)}`}>
   <div class="atlas-ctl atlas-bar">
     <label class="sr-only" for="atlas-search">Find a pattern</label>
     <input id="atlas-search" class="atlas-search" type="search" placeholder="Find a pattern" autocomplete="off" spellcheck="false" />
@@ -40,7 +44,7 @@ const px = (n: number) => `${n}px`;
         const isl = islandOf.get(f.slug)!;
         return (
           <section class="atlas-island" data-family={f.slug} aria-labelledby={`isl-${f.slug}`} style={`--x:${px(isl.x)};--y:${px(isl.y)};--w:${px(isl.w)};--h:${px(isl.h)}`}>
-            <h3 class="atlas-island-label" id={`isl-${f.slug}`}><span class="mark" aria-hidden="true"></span>{f.name}<span class="isl-count">{String(f.order.length).padStart(2, '0')}</span></h3>
+            <Heading class="atlas-island-label" id={`isl-${f.slug}`}><span class="mark" aria-hidden="true"></span>{f.name}<span class="isl-count">{String(f.order.length).padStart(2, '0')}</span></Heading>
             <ul>
               {cat.patternsOf(f.slug).map(p => {
                 const t = tileOf.get(p.slug)!;
@@ -196,4 +200,6 @@ const px = (n: number) => `${n}px`;
     .atlas-island-label { font-size: 11px; letter-spacing: .08em; }
     .atlas-island-label .mark { margin-right: 7px; }
   }
+  /* Full-page atlas: the window minus whatever sits above the map; atlas-map.ts measures --atlas-top. */
+  .atlas-map.fill[data-enhanced] .atlas-viewport { height: max(420px, calc(100dvh - var(--atlas-top, 124px))); }
 </style>

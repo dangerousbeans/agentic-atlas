@@ -110,6 +110,14 @@ function init(root: HTMLElement) {
     return r.left >= v.left + S.l && r.right <= v.left + S.r && r.top >= v.top + S.t && r.bottom <= v.top + S.b;
   };
 
+  /** Fill mode: the map takes whatever the header and title row leave of the window (measured, not guessed). */
+  function placeFill() {
+    if (!root.classList.contains('fill')) return;
+    root.style.setProperty('--atlas-top', `${Math.round(vp.getBoundingClientRect().top + scrollY)}px`);
+  }
+  placeFill();
+  addEventListener('resize', placeFill);
+
   function measure() {
     vw = vp.clientWidth; vh = vp.clientHeight;
     homeZ = Math.min(vw / W, vh / H);

@@ -2,6 +2,7 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import NodeShape from '../components/diagram/NodeShape.astro';
 import '../components/diagram/diagram.css';
+import { author } from '../lib/author';
 import { NODE_KINDS } from '../lib/diagram/types';
 const desc: Record<string, string> = {
   io: 'Input or output: where a request enters or a result leaves.', llm: 'A single LLM call with a specific prompt.', agent: 'A full agent: an LLM in a loop with its own tools.',
@@ -28,6 +29,8 @@ const desc: Record<string, string> = {
     </ul>
     <h2>Methodology</h2>
     <p>Patterns are curated from Anthropic's <a href="https://www.anthropic.com/engineering/building-effective-agents">Building effective agents</a>, OpenAI's <a href="https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf">A practical guide to building agents</a>, and the original papers cited on each page. Diagrams play scripted traces that illustrate control flow; they are not live model runs. Pseudocode is framework-agnostic on purpose.</p>
+    <h2>Made by</h2>
+    <p>Built by {author.name}. <a href={author.github} rel="me">GitHub</a> · <a href={author.repo}>Source</a></p>
     <h2>Credits</h2>
     <p>Built with Astro, ELK, Expressive Code and Pagefind. Typeset in Archivo and JetBrains Mono.</p>
   </article>
