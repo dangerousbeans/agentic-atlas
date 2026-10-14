@@ -1,8 +1,8 @@
-import type { Scenario, DiagramSpec, DiagramEvent, CodeRef } from './types';
+import type { Scenario, DiagramSpec, DiagramEvent } from './types';
 
 export const DEFAULT_STEP_MS = 1200;
 export interface TimedEvent { event: DiagramEvent; start: number; end: number }
-export interface TimedStep { id: string; index: number; caption: string; start: number; end: number; codeRef?: CodeRef; iteration?: { n: number; of: number }; events: TimedEvent[] }
+export interface TimedStep { id: string; index: number; caption: string; start: number; end: number; iteration?: { n: number; of: number }; events: TimedEvent[] }
 export interface Timeline { id: string; label: string; duration: number; steps: TimedStep[]; events: TimedEvent[] }
 
 export function compileScenario(s: Scenario): Timeline {
@@ -18,7 +18,6 @@ export function compileScenario(s: Scenario): Timeline {
         return { event, start: start + a * dur, end: start + b * dur };
       });
       const ts: TimedStep = { id: n > 1 ? `${step.id}#${k}` : step.id, index: steps.length, caption: step.caption, start, end: start + dur, events };
-      if (step.codeRef) ts.codeRef = step.codeRef;
       if (n > 1) ts.iteration = { n: k, of: n };
       steps.push(ts);
       t = start + dur;

@@ -1,0 +1,115 @@
+---
+/**
+ * The side panel (expansion addendum §1): "Build it with your AI" (the composed brief, with a Copy button) and the
+ * prompt templates. Each variant gets its own brief; prompt sets are shared between variants that inherit them.
+ * Blocks carry data-for-variants and are shown or hidden by variant-tabs.ts. Without JS both tabs and every variant
+ * render stacked, with headings.
+ */
+import { Code } from 'astro-expressive-code/components';
+import { composeBuildPrompt } from '../../lib/build-prompt';
+import type { ResolvedVariant } from '../../lib/variants';
+import type { Pattern } from '../../lib/schema';
+interface Props { pattern: Pattern; variants: ResolvedVariant[] }
+const { pattern: p, variants } = Astro.props;
+const uid = p.slug;
+const multi = variants.length > 1;
+const promptGroups: { prompts: ResolvedVariant['prompts']; members: ResolvedVariant[] }[] = [];
+for (const v of variants) {
+  const g = promptGroups.find(x => x.prompts === v.prompts);
+  if (g) g.members.push(v); else promptGroups.push({ prompts: v.prompts, members: [v] });
+}
+const forIds = (vs: ResolvedVariant[]) => vs.map(v => v.id).join(' ');
+const isOn = (vs: ResolvedVariant[]) => (vs.some(v => v.isDefault) ? '' : undefined);
+---
+<section class="build-panel" data-build-panel aria-label="Build it">
+  <div class="tabs" role="tablist" aria-label="Build or prompts" hidden>
+    <button role="tab" type="button" aria-selected="true" aria-controls={`${uid}-build`} id={`${uid}-tab-build`}>Build it with your AI</button>
+    <button role="tab" type="button" aria-selected="false" aria-controls={`${uid}-prompts`} id={`${uid}-tab-prompts`} tabindex="-1">Prompts</button>
+  </div>
+  <div role="tabpanel" id={`${uid}-build`} aria-labelledby={`${uid}-tab-build`}>
+    <h3 class="panel-h">Build it with your AI</h3>
+    {variants.map(v => (
+      <div class="build-v" data-for-variants={v.id} data-on={isOn([v])}>
+        {multi && <p class="variant-label mono">{v.name}</p>}
+        <div class="build-head">
+          <p class="hint">Paste this into Claude Code, Cursor, ChatGPT or any AI coding assistant.</p>
+          <button type="button" class="btn btn-sm copy" data-copy hidden>Copy</button>
+        </div>
+        <pre class="build-md"><code>{composeBuildPrompt(p, v)}</code></pre>
+      </div>
+    ))}
+    <p class="sr-only" role="status" aria-live="polite" data-copy-status></p>
+  </div>
+  <div role="tabpanel" id={`${uid}-prompts`} aria-labelledby={`${uid}-tab-prompts`}>
+    <h3 class="panel-h">Prompt templates</h3>
+    {promptGroups.map(g => (
+      <div data-for-variants={forIds(g.members)} data-on={isOn(g.members)}>
+        {multi && <p class="variant-label mono">{g.members.map(v => v.name).join(' · ')}</p>}
+        {g.prompts.map(b => <div data-prompt-block={b.id}><Code code={b.source.replace(/\n$/, '')} lang={b.lang} title={b.title} wrap /></div>)}
+      </div>
+    ))}
+  </div>
+</section>
+<script>
+  for (const panel of document.querySelectorAll<HTMLElement>('[data-build-panel]')) {
+    const tabs = [...panel.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const panes = [...panel.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+    panel.querySelector('[role="tablist"]')?.removeAttribute('hidden');
+    panel.classList.add('is-enhanced');
+    const select = (i: number) => {
+      tabs.forEach((t, j) => { t.setAttribute('aria-selected', String(i === j)); t.tabIndex = i === j ? 0 : -1; });
+      panes.forEach((p, j) => (p.hidden = i !== j));
+    };
+    tabs.forEach((t, i) => {
+      t.addEventListener('click', () => select(i));
+      t.addEventListener('keydown', e => {
+        const n = tabs.length;
+        const j = e.key === 'ArrowRight' ? (i + 1) % n : e.key === 'ArrowLeft' ? (i + n - 1) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1;
+        if (j < 0) return;
+        e.preventDefault(); select(j); tabs[j].focus();
+      });
+    });
+    select(0);
+
+    const status = panel.querySelector<HTMLElement>('[data-copy-status]')!;
+    // Without clipboard access (an insecure origin, or permission denied), select the text for a manual copy.
+    const selectAll = (pre: HTMLElement) => {
+      const range = document.createRange(); range.selectNodeContents(pre);
+      const sel = getSelection(); sel?.removeAllRanges(); sel?.addRange(range);
+    };
+    for (const btn of panel.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
+      btn.hidden = false;
+      let timer = 0;
+      btn.addEventListener('click', async () => {
+        const pre = btn.closest('.build-v')!.querySelector<HTMLElement>('pre')!;
+        let ok = false;
+        try { await navigator.clipboard.writeText(pre.textContent ?? ''); ok = true; } catch { selectAll(pre); }
+        btn.textContent = ok ? 'Copied' : 'Selected';
+        // Clear first so repeating the same message is announced again.
+        status.textContent = '';
+        requestAnimationFrame(() => (status.textContent = ok ? 'Build prompt copied to the clipboard' : 'Could not copy; the text is selected, so press Ctrl+C or Cmd+C'));
+        clearTimeout(timer);
+        timer = window.setTimeout(() => (btn.textContent = 'Copy'), 2000);
+      });
+    }
+  }
+</script>
+<style>
+  .tabs[hidden] { display: none; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+  .tabs button { background: none; border: 0; color: var(--text-2); font: 500 14px var(--font-ui); padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--family-accent); }
+  .build-panel.is-enhanced .panel-h { display: none; }
+  .panel-h { font-size: 1.2rem; }
+  .variant-label { margin: 18px 0 8px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); }
+  .build-panel.is-enhanced .variant-label { display: none; }
+  .build-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 4px 0 10px; }
+  .hint { margin: 0; font: 400 13px/1.45 var(--font-ui); color: var(--text-3); }
+  .copy { flex: none; min-width: 84px; }
+  .copy[hidden] { display: none; }
+  .build-md {
+    margin: 0 0 16px; padding: 14px 16px; background: #1A1615; border: 1px solid var(--line);
+    font: 400 13px/1.6 var(--font-mono); color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  [data-prompt-block] { margin-bottom: 16px; }
+</style>

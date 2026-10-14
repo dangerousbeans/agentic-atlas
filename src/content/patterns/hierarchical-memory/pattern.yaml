@@ -12,27 +12,6 @@ sources:
 related:
   composesWith: [agentic-rag]
   confusedWith: []
-code:
-  - id: turn
-    title: hierarchical_memory.py
-    lang: python
-    source: |
-      def agent_turn(msg, mem):
-          mem.queue.append(msg)
-          while True:
-              if tokens(mem.queue) > LIMIT:
-                  old = mem.queue.evict_oldest()
-                  mem.recall.store(old)  # raw messages stay searchable
-                  mem.queue.summary = llm(SUMMARY_PROMPT, previous=mem.queue.summary, evicted=old)
-              call = llm(SYSTEM_PROMPT, core=mem.core, recent=mem.queue)
-              if call.tool == "recall_search":
-                  mem.queue.append(mem.recall.search(call.query))
-              elif call.tool == "archival_search":
-                  mem.queue.append(mem.archival.search(call.query))
-              elif call.tool == "core_memory_append":
-                  mem.core.append(call.text)
-              else:
-                  return call.reply
 prompts:
   - id: system
     title: Memory-aware system prompt
@@ -88,13 +67,11 @@ diagram:
         - id: arrive
           caption: The user mentions a trip planned months ago and a new dietary preference.
           duration: 1400
-          codeRef: { block: turn, lines: "1-2" }
           events:
             - { type: send, edge: msg, token: { kind: prompt, label: message } }
         - id: page-in
           caption: The agent no longer sees the trip details, so it calls a tool that pages them in from archival memory.
           duration: 3000
-          codeRef: { block: turn, lines: "11-12" }
           events:
             - { type: activate, node: llm, status: calling, at: [0, 0.25] }
             - { type: send, edge: search, token: { kind: tool-call, label: trip dates }, at: [0.25, 0.5] }
@@ -103,7 +80,6 @@ diagram:
         - id: save
           caption: The agent writes the new preference into core memory so it stays in every future prompt.
           duration: 2600
-          codeRef: { block: turn, lines: "13-14" }
           events:
             - { type: activate, node: llm, status: calling, at: [0, 0.3] }
             - { type: send, edge: save, token: { kind: tool-call, label: vegetarian }, at: [0.3, 0.65] }
@@ -111,7 +87,6 @@ diagram:
         - id: answer
           caption: With the old fact and the new one in view, the agent replies.
           duration: 2000
-          codeRef: { block: turn, lines: "15-16" }
           events:
             - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
             - { type: send, edge: reply, token: { kind: result, label: reply }, at: [0.5, 1] }
@@ -121,13 +96,11 @@ diagram:
         - id: arrive
           caption: A long conversation pushes the context window past its token limit.
           duration: 1400
-          codeRef: { block: turn, lines: "1-2" }
           events:
             - { type: send, edge: msg, token: { kind: prompt, label: message } }
         - id: evict
           caption: The oldest messages are evicted and saved verbatim to recall memory, where a later search can find them.
           duration: 2600
-          codeRef: { block: turn, lines: "4-6" }
           events:
             - { type: activate, node: llm, status: thinking, at: [0, 0.3] }
             - { type: send, edge: evict, token: { kind: tokens, label: old turns }, at: [0.3, 0.7] }
@@ -135,7 +108,6 @@ diagram:
         - id: summarize
           caption: A summarizer folds the evicted messages into a running summary that stays in the prompt.
           duration: 2600
-          codeRef: { block: turn, lines: "7" }
           events:
             - { type: send, edge: summarize, token: { kind: tokens, label: old turns }, at: [0, 0.35] }
             - { type: activate, node: summarizer, status: thinking, at: [0.35, 0.7] }
@@ -143,7 +115,6 @@ diagram:
         - id: answer
           caption: Context space is free again and the agent replies.
           duration: 2000
-          codeRef: { block: turn, lines: "15-16" }
           events:
             - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
             - { type: send, edge: reply, token: { kind: result, label: reply }, at: [0.5, 1] }

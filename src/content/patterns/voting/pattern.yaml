@@ -14,19 +14,6 @@ related:
   confusedWith:
     - { slug: sectioning, difference: "Voting runs the same task several times and compares answers; sectioning gives each call a different part of the work." }
     - { slug: evaluator-optimizer, difference: "Voting picks among independent attempts; the evaluator-optimizer revises one attempt using feedback, in a loop." }
-code:
-  - id: voting
-    title: voting.py
-    lang: python
-    source: |
-      from collections import Counter
-
-      def classify_with_vote(snippet, n=3):
-          answers = parallel(llm(AUDIT_PROMPT, code=snippet, temperature=0.8)
-                             for _ in range(n))          # same task, n times
-          tally = Counter(a.verdict for a in answers)
-          verdict, votes = tally.most_common(1)[0]
-          return verdict if votes > n // 2 else "needs human review"
 prompts:
   - id: audit
     title: Vulnerability audit prompt
@@ -69,7 +56,6 @@ diagram:
         - id: fan-out
           caption: The same snippet goes to three voters, each sampled independently.
           duration: 1400
-          codeRef: { block: voting, lines: "4-5" }
           events:
             - { type: send, edge: v1, token: { kind: prompt, label: snippet } }
             - { type: send, edge: v2, token: { kind: prompt, label: snippet } }
@@ -77,7 +63,6 @@ diagram:
         - id: work
           caption: Each voter reasons on its own and arrives at an answer.
           duration: 2600
-          codeRef: { block: voting, lines: "4-5" }
           events:
             - { type: activate, node: llm1, status: thinking, at: [0, 0.5] }
             - { type: activate, node: llm2, status: thinking, at: [0, 0.75] }
@@ -88,12 +73,10 @@ diagram:
         - id: tally
           caption: The tally counts two votes for A and one for B, so A wins.
           duration: 1600
-          codeRef: { block: voting, lines: "6-7" }
           events:
             - { type: activate, node: aggregator, status: thinking }
         - id: verdict
           caption: The majority answer A is returned as the verdict.
           duration: 1400
-          codeRef: { block: voting, lines: "8" }
           events:
             - { type: send, edge: done, token: { kind: result, label: A } }

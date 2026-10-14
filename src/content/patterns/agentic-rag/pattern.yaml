@@ -10,22 +10,6 @@ sources:
 related:
   composesWith: [routing]
   confusedWith: []
-code:
-  - id: loop
-    title: agentic_rag.py
-    lang: python
-    source: |
-      SOURCES = {"vectordb": search_vectors, "web": search_web, "sql": run_query}
-
-      def agentic_rag(question, max_hops=4):
-          context = []
-          for hop in range(max_hops):
-              step = llm(AGENT_PROMPT, question=question, context=context)
-              if step.action == "answer":
-                  return step.answer
-              search = SOURCES[step.source]
-              context += search(step.query)
-          return llm(AGENT_PROMPT, question=question, context=context, must_answer=True)
 prompts:
   - id: agent
     title: Retrieval agent prompt
@@ -70,13 +54,11 @@ diagram:
         - id: start
           caption: A question arrives at the agent.
           duration: 1000
-          codeRef: { block: loop, lines: "3-4" }
           events:
             - { type: send, edge: ask, token: { kind: prompt, label: question } }
         - id: internal
           caption: The agent chooses internal documents and sends a rewritten query to the vector database.
           duration: 3000
-          codeRef: { block: loop, lines: "5-10" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
             - { type: send, edge: plan, token: { kind: tool-call, label: query }, at: [0.25, 0.45] }
@@ -87,7 +69,6 @@ diagram:
         - id: not-enough
           caption: The chunks are out of date, so the agent decides it needs more and tries the web.
           duration: 3200
-          codeRef: { block: loop, lines: "5-10" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
             - { type: send, edge: plan, token: { kind: tool-call, label: new query }, at: [0.25, 0.45] }
@@ -98,7 +79,6 @@ diagram:
         - id: answer
           caption: With enough context the agent stops searching and writes a cited answer.
           duration: 2400
-          codeRef: { block: loop, lines: "6-8" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.5] }
             - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.5, 1] }
@@ -108,13 +88,11 @@ diagram:
         - id: start
           caption: A simple question arrives at the agent.
           duration: 1000
-          codeRef: { block: loop, lines: "3-4" }
           events:
             - { type: send, edge: ask, token: { kind: prompt, label: question } }
         - id: answer
           caption: The agent already knows the answer, skips every source and replies on the first hop.
           duration: 2400
-          codeRef: { block: loop, lines: "6-8" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.5] }
             - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.5, 1] }

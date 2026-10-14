@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import { NODE_KINDS, LABEL_MAX, SUBLABEL_MAX, DEFAULT_SIZE, type DiagramSpec, type CodeBlock } from './diagram/types';
+import { PROMPT_REF_ALL } from './build-prompt';
+import { DEFAULT_VARIANT_ID } from './variants';
+import { NODE_KINDS, LABEL_MAX, SUBLABEL_MAX, DEFAULT_SIZE, type DiagramSpec } from './diagram/types';
 
 const id = z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'ids are lowercase kebab-case');
 const at = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)])
@@ -33,15 +35,43 @@ export const diagramSchema = z.object({
     steps: z.array(z.object({
       id, caption: z.string().min(3).max(200), duration: z.number().int().min(300).max(10000).optional(),
       events: z.array(eventSchema).min(1),
-      codeRef: z.object({ block: id, lines: z.string() }).optional(),
       repeat: z.number().int().min(2).max(5).optional(),
     })).min(1),
   })).min(1),
 });
 
-export const codeBlockSchema = z.object({ id, title: z.string().min(1), lang: z.enum(['python', 'markdown', 'text']), source: z.string().min(1) });
+export const promptSchema = z.object({ id, title: z.string().min(1), lang: z.enum(['python', 'markdown', 'text']), source: z.string().min(1) });
 
-export function diagramIssues(d: DiagramSpec, code: CodeBlock[]): string[] {
+/** The copy-paste "Build it with your AI" brief (expansion addendum §1). Steps may cite prompts as {{prompt:<id>}}. */
+export const buildSchema = z.object({
+  goal: z.string().min(10).max(300),
+  steps: z.array(z.string().min(10).max(400)).min(3).max(8),
+  stop: z.string().min(10).max(400),
+  requirements: z.array(z.string().min(10).max(300)).min(3).max(6),
+});
+
+/** Who introduced or popularized the pattern (addendum §3). `uncertain` needs a `note` saying why. */
+export const originSchema = z.object({
+  by: z.string().min(2).max(80),
+  org: z.string().min(2).max(120).optional(),
+  year: z.number().int().min(1950).max(2100),
+  url: z.url(),
+  kind: z.enum(['introduced', 'popularized']),
+  note: z.string().min(10).max(400).optional(),
+  uncertain: z.boolean().optional(),
+}).refine(o => !o.uncertain || !!o.note, { message: 'origin.note is required when origin.uncertain is true', path: ['note'] });
+
+/** An alternative topology shown as a tab beside the pattern's own (default) diagram (addendum §2). */
+export const variantSchema = z.object({
+  id, name: z.string().min(1).max(40),
+  summary: z.string().min(10).max(200),
+  diagram: diagramSchema,
+  build: buildSchema.optional(),
+  prompts: z.array(promptSchema).min(1).optional(),
+  origin: originSchema.optional(),
+});
+
+export function diagramIssues(d: DiagramSpec): string[] {
   const issues: string[] = [];
   const dup = (kind: string, ids: string[]) => {
     const seen = new Set<string>();
@@ -69,19 +99,11 @@ export function diagramIssues(d: DiagramSpec, code: CodeBlock[]): string[] {
     const g = (d.groups ?? []).find(x => x.children.includes(n.id));
     if (g) issues.push(`node "${n.id}" is pinned but inside group "${g.id}"; pins are only supported for ungrouped nodes`);
   }
-  const blocks = new Map(code.map(b => [b.id, b.source.replace(/\n$/, '').split('\n').length]));
   const needNode = (s: string, nodeId: string) => { if (!nodes.has(nodeId)) { issues.push(`scenario "${s}" references unknown node "${nodeId}"`); return false; } return true; };
   for (const sc of d.scenarios) {
     dup('step', sc.steps.map(s => s.id));
     const appeared = new Set<string>();
     for (const st of sc.steps) {
-      if (st.codeRef) {
-        const len = blocks.get(st.codeRef.block);
-        const m = /^(\d+)(?:-(\d+))?$/.exec(st.codeRef.lines);
-        if (len === undefined) issues.push(`step "${st.id}" references unknown code block "${st.codeRef.block}"`);
-        else if (!m) issues.push(`step "${st.id}" codeRef lines "${st.codeRef.lines}" must look like "3" or "3-7"`);
-        else { const a = +m[1], b = m[2] ? +m[2] : a; if (a < 1 || b < a || b > len) issues.push(`step "${st.id}" codeRef lines "${st.codeRef.lines}" out of range (block "${st.codeRef.block}" has ${len} lines)`); }
-      }
       for (const ev of st.events) {
         switch (ev.type) {
           case 'send': if (!edges.has(ev.edge)) issues.push(`step "${st.id}" sends on unknown edge "${ev.edge}"`); break;
@@ -118,11 +140,31 @@ export const patternSchema = z.object({
     composesWith: z.array(id).default([]),
     confusedWith: z.array(z.object({ slug: id, difference: z.string().min(10) })).default([]),
   }).default({ composesWith: [], confusedWith: [] }),
-  code: z.array(codeBlockSchema).min(1),
-  prompts: z.array(codeBlockSchema).min(1),
+  prompts: z.array(promptSchema).min(1),
   diagram: diagramSchema,
+  // Optional during the expansion migration; tests/unit/content.test.ts tracks which patterns still lack them.
+  build: buildSchema.optional(),
+  origin: originSchema.optional(),
+  defaultVariantName: z.string().min(1).max(40).optional(),
+  variants: z.array(variantSchema).min(1).max(3).optional(),
 }).superRefine((p, ctx) => {
-  for (const msg of diagramIssues(p.diagram as DiagramSpec, p.code as CodeBlock[])) ctx.addIssue({ code: 'custom', message: `[${p.slug}] ${msg}`, path: ['diagram'] });
+  const issue = (message: string, path: (string | number)[]) => ctx.addIssue({ code: 'custom', message: `[${p.slug}] ${message}`, path });
+  for (const msg of diagramIssues(p.diagram as DiagramSpec)) issue(msg, ['diagram']);
+  const promptIssues = (build: { steps: string[] } | undefined, prompts: { id: string }[], where: string, path: (string | number)[]) => {
+    if (!build) return;
+    const ids = new Set(prompts.map(x => x.id));
+    for (const st of build.steps) for (const [, ref] of st.matchAll(PROMPT_REF_ALL))
+      if (!ids.has(ref)) issue(`${where}build step references unknown prompt "${ref}"`, path);
+  };
+  promptIssues(p.build, p.prompts, '', ['build']);
+  const seen = new Set<string>();
+  (p.variants ?? []).forEach((v, i) => {
+    if (v.id === DEFAULT_VARIANT_ID) issue(`variant id "${v.id}" is reserved for the pattern's own diagram`, ['variants', i, 'id']);
+    if (seen.has(v.id)) issue(`duplicate variant id "${v.id}"`, ['variants', i, 'id']);
+    seen.add(v.id);
+    for (const msg of diagramIssues(v.diagram as DiagramSpec)) issue(`variant "${v.id}": ${msg}`, ['variants', i, 'diagram']);
+    promptIssues(v.build ?? p.build, v.prompts ?? p.prompts, `variant "${v.id}": `, ['variants', i, 'build']);
+  });
 });
 
 export const familySchema = z.object({
@@ -134,6 +176,10 @@ export const familySchema = z.object({
 
 export type Pattern = z.infer<typeof patternSchema>;
 export type Family = z.infer<typeof familySchema>;
+export type Build = z.infer<typeof buildSchema>;
+export type Origin = z.infer<typeof originSchema>;
+export type Variant = z.infer<typeof variantSchema>;
+export type Prompt = z.infer<typeof promptSchema>;
 
 export function validateCatalog(families: Family[], patterns: Pattern[]): string[] {
   const issues: string[] = [];

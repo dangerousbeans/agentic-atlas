@@ -14,21 +14,6 @@ related:
   confusedWith:
     - { slug: orchestrator-workers, difference: "Orchestrator-workers hands subtasks to plain LLM calls; a supervisor delegates to full agents that have their own tools and loops." }
     - { slug: handoffs, difference: "A supervisor keeps control and every result returns to it; with handoffs the conversation itself moves to another agent, with no manager." }
-code:
-  - id: manager
-    title: supervisor.py
-    lang: python
-    source: |
-      def supervisor(task, specialists, max_turns=8):
-          history = [task]
-          for turn in range(max_turns):
-              step = llm(SUPERVISOR_PROMPT, history=history, team=specialists.describe())
-              if step.action == "finish":
-                  return step.answer
-              worker = specialists[step.agent]
-              result = worker.run(step.instruction)  # a worker may itself be a supervisor
-              history.append((step.agent, result))
-          return llm(SUPERVISOR_PROMPT, history=history, must_finish=True)
 prompts:
   - id: supervisor
     title: Supervisor prompt
@@ -89,14 +74,12 @@ diagram:
         - id: arrive
           caption: A task arrives at the supervisor, who plans which specialist to call first.
           duration: 1400
-          codeRef: { block: manager, lines: "1-4" }
           events:
             - { type: send, edge: task, token: { kind: prompt, label: report + chart } }
             - { type: activate, node: supervisor, status: thinking, at: [0.5, 1] }
         - id: research
           caption: The supervisor briefs the researcher, a full agent with search tools, and the findings come back to it.
           duration: 3200
-          codeRef: { block: manager, lines: "7-9" }
           events:
             - { type: branch, node: supervisor, taken: d-research, notTaken: [d-code, d-write], at: [0, 0.15] }
             - { type: send, edge: d-research, token: { kind: prompt, label: brief }, at: [0.15, 0.35] }
@@ -105,7 +88,6 @@ diagram:
         - id: code
           caption: Next the supervisor sends the data to the coder, which runs code and returns a chart.
           duration: 3200
-          codeRef: { block: manager, lines: "7-9" }
           events:
             - { type: branch, node: supervisor, taken: d-code, notTaken: [d-research, d-write], at: [0, 0.15] }
             - { type: send, edge: d-code, token: { kind: prompt, label: brief }, at: [0.15, 0.35] }
@@ -114,7 +96,6 @@ diagram:
         - id: write
           caption: The writer receives both results through the supervisor and drafts the report.
           duration: 3200
-          codeRef: { block: manager, lines: "7-9" }
           events:
             - { type: branch, node: supervisor, taken: d-write, notTaken: [d-research, d-code], at: [0, 0.15] }
             - { type: send, edge: d-write, token: { kind: prompt, label: brief }, at: [0.15, 0.35] }
@@ -123,7 +104,6 @@ diagram:
         - id: finish
           caption: The supervisor judges the task complete and returns the deliverable.
           duration: 2200
-          codeRef: { block: manager, lines: "5-6" }
           events:
             - { type: activate, node: supervisor, status: thinking, at: [0, 0.4] }
             - { type: send, edge: finish, token: { kind: result, label: report }, at: [0.4, 1] }
@@ -133,14 +113,12 @@ diagram:
         - id: arrive
           caption: A coding task arrives at the top-level supervisor.
           duration: 1400
-          codeRef: { block: manager, lines: "1-4" }
           events:
             - { type: send, edge: task, token: { kind: prompt, label: plot script } }
             - { type: activate, node: supervisor, status: thinking, at: [0.5, 1] }
         - id: delegate
           caption: The supervisor hands the whole job to the coder, who leads a small team of its own.
           duration: 2400
-          codeRef: { block: manager, lines: "7-8" }
           events:
             - { type: branch, node: supervisor, taken: d-code, notTaken: [d-research, d-write], at: [0, 0.25] }
             - { type: send, edge: d-code, token: { kind: prompt, label: brief }, at: [0.25, 0.75] }
@@ -148,7 +126,6 @@ diagram:
         - id: sub-team
           caption: Inside the team, the coder delegates testing to the tester and waits for the verdict.
           duration: 3400
-          codeRef: { block: manager, lines: "8" }
           events:
             - { type: send, edge: sub-brief, token: { kind: prompt, label: run tests }, at: [0, 0.3] }
             - { type: activate, node: tester, status: calling, at: [0.3, 0.7] }
@@ -156,7 +133,6 @@ diagram:
         - id: report
           caption: The coder reports one summarized result up to the supervisor, which never sees the inner steps.
           duration: 2400
-          codeRef: { block: manager, lines: "9" }
           events:
             - { type: send, edge: r-code, token: { kind: result, label: chart + tests }, at: [0, 0.6] }
             - { type: send, edge: finish, token: { kind: result, label: report }, at: [0.6, 1] }

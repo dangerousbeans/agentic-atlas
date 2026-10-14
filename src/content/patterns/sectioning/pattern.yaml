@@ -12,18 +12,6 @@ related:
   confusedWith:
     - { slug: orchestrator-workers, difference: "Sectioning splits the work into fixed parts chosen in advance; an orchestrator decides the parts at run time from the input." }
     - { slug: voting, difference: "Sectioning gives each call a different part of the work; voting gives every call the same work and compares the answers." }
-code:
-  - id: sectioning
-    title: sectioning.py
-    lang: python
-    source: |
-      def review_pull_request(diff):
-          reviews = parallel(                      # fan-out: independent calls
-              llm(SECURITY_PROMPT, diff=diff),
-              llm(PERFORMANCE_PROMPT, diff=diff),
-              llm(TESTS_PROMPT, diff=diff),
-          )
-          return merge(reviews)                    # fan-in: plain code or an LLM
 prompts:
   - id: security
     title: Security reviewer prompt
@@ -68,11 +56,10 @@ diagram:
     - id: pr-review
       label: '"Review this pull request"'
       steps:
-        - { id: arrive, caption: A pull request arrives with one diff., duration: 1000, codeRef: { block: sectioning, lines: "1" }, events: [{ type: send, edge: in, token: { kind: prompt, label: diff } }] }
+        - { id: arrive, caption: A pull request arrives with one diff., duration: 1000, events: [{ type: send, edge: in, token: { kind: prompt, label: diff } }] }
         - id: fan-out
           caption: The same diff goes to three reviewers at once, each with a different concern.
           duration: 1400
-          codeRef: { block: sectioning, lines: "2-6" }
           events:
             - { type: send, edge: s1, token: { kind: prompt, label: security } }
             - { type: send, edge: s2, token: { kind: prompt, label: perf } }
@@ -80,7 +67,6 @@ diagram:
         - id: work
           caption: The reviewers run side by side and finish at different times.
           duration: 3000
-          codeRef: { block: sectioning, lines: "2-6" }
           events:
             - { type: activate, node: llm1, status: thinking, at: [0, 0.35] }
             - { type: activate, node: llm2, status: thinking, at: [0, 0.65] }
@@ -91,7 +77,6 @@ diagram:
         - id: merge
           caption: The merge step waits for the slowest reviewer, then combines all three reports.
           duration: 1800
-          codeRef: { block: sectioning, lines: "7" }
           events:
             - { type: activate, node: aggregator, status: thinking, at: [0, 0.5] }
             - { type: send, edge: done, token: { kind: result, label: review }, at: [0.5, 1] }

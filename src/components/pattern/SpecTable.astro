@@ -1,9 +1,11 @@
 ---
 import type { PatternStats } from '../../lib/pattern-stats';
-interface Props { stats: PatternStats; badges: { autonomy: string; cost: string; latency: string } }
-const { stats: s, badges: b } = Astro.props;
+/** One table per variant (`id`), shown and hidden by variant-tabs.ts; `name` labels it when there are several. */
+interface Props { tables: { id: string; name: string; isDefault: boolean; stats: PatternStats }[]; badges: { autonomy: string; cost: string; latency: string } }
+const { tables, badges: b } = Astro.props;
+const multi = tables.length > 1;
 const yn = (v: boolean) => (v ? 'yes' : 'no');
-const rows: [label: string, value: string, tip: string][] = [
+const rowsOf = (s: PatternStats): [label: string, value: string, tip: string][] => [
   ['Nodes', String(s.nodes), 'Boxes in the diagram: models, tools, stores, people and plain code.'],
   ['LLM calls', String(s.llmCalls), 'Model invocations in the first scenario: each time a model or agent node starts thinking, plus each branch it decides.'],
   ['Tool calls', String(s.toolCalls), 'Messages sent to a tool node in the first scenario.'],
@@ -20,13 +22,18 @@ const rows: [label: string, value: string, tip: string][] = [
 ---
 <section class="spec-section" aria-labelledby="spec-h">
   <h2 id="spec-h" class="spec-h"><span class="mark" aria-hidden="true"></span>Measured over one run</h2>
-  <dl class="spec">
-    {rows.map(([k, v, tip]) => (
-      <div class="spec-row" tabindex="0" data-tip={tip}>
-        <dt>{k}</dt><dd><span class="v">{v}</span><span class="sr-only">. {tip}</span></dd>
-      </div>
-    ))}
-  </dl>
+  {tables.map(t => (
+    <div class="spec-v" data-for-variants={t.id} data-on={t.isDefault ? '' : undefined}>
+      {multi && <p class="variant-label mono">{t.name}</p>}
+      <dl class="spec">
+        {rowsOf(t.stats).map(([k, v, tip]) => (
+          <div class="spec-row" tabindex="0" data-tip={tip}>
+            <dt>{k}</dt><dd><span class="v">{v}</span><span class="sr-only">. {tip}</span></dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  ))}
   <p class="spec-note">Counted from the first scenario's timeline when the site is built.</p>
 </section>
 <style>
@@ -44,5 +51,7 @@ const rows: [label: string, value: string, tip: string][] = [
   .spec-row::before { display: none; content: ''; position: absolute; left: 0; top: 100%; width: min(300px, 100%); height: 8px; }
   .spec-row:not([data-dismissed]):hover::after, .spec-row:not([data-dismissed]):hover::before,
   .spec-row:not([data-dismissed]):focus-visible::after { display: block; }
+  .variant-label { margin: 14px 0 6px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); }
+  :global([data-variants-enhanced]) .variant-label { display: none; }
   .spec-note { margin: 10px 0 0; font: 400 12px/1.4 var(--font-mono); color: var(--text-3); }
 </style>

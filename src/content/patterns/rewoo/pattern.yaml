@@ -14,18 +14,6 @@ related:
   confusedWith:
     - { slug: react, difference: "ReAct calls the model again after every observation to choose the next action; ReWOO writes the whole plan once, runs it with no model calls in between, and never revisits the planner." }
     - { slug: plan-and-execute, difference: "Plan-and-Execute has a replanner that revises the plan after each step; ReWOO's plan is final and the tools run blind." }
-code:
-  - id: rewoo
-    title: rewoo.py
-    lang: python
-    source: |
-      def rewoo(question, tools):
-          plan = llm(PLANNER_PROMPT, question=question)    # every call, with #E placeholders
-          evidence = {}
-          for step in plan.steps:                          # no LLM call in this loop
-              args = substitute(step.args, evidence)       # fill in #E1, #E2 ...
-              evidence[step.var] = tools[step.tool](args)
-          return llm(SOLVER_PROMPT, question=question, plan=plan, evidence=evidence)
 prompts:
   - id: planner
     title: Planner prompt
@@ -136,20 +124,17 @@ diagram:
         - id: ask
           caption: The question reaches the planner, which will be called exactly once.
           duration: 1000
-          codeRef: { block: rewoo, lines: "1" }
           events:
             - { type: send, edge: ask, token: { kind: prompt, label: "density?" } }
         - id: plan
           caption: The planner writes every tool call at once, using placeholders for results it has not seen yet.
           duration: 2800
-          codeRef: { block: rewoo, lines: "2" }
           events:
             - { type: activate, node: planner, status: thinking, at: [0, 0.5] }
             - { type: send, edge: plan, token: { kind: tokens, label: "#E1 #E2 #E3" }, at: [0.5, 1] }
         - id: search
           caption: "Search runs the first two calls, population as #E1 and area as #E2, and logs each to the evidence store."
           duration: 3000
-          codeRef: { block: rewoo, lines: "4-6" }
           events:
             - { type: activate, node: search, status: calling, at: [0, 0.5] }
             - { type: send, edge: log-search, token: { kind: result, label: "#E1 #E2" }, at: [0.5, 0.8] }
@@ -157,7 +142,6 @@ diagram:
         - id: calculate
           caption: "The calculator runs the third call with #E1 and #E2 substituted in, with no model call in between."
           duration: 3000
-          codeRef: { block: rewoo, lines: "5-6" }
           events:
             - { type: send, edge: hand-off, token: { kind: result, label: "#E1, #E2" }, at: [0, 0.3] }
             - { type: activate, node: calculator, status: calling, at: [0.3, 0.6] }
@@ -166,7 +150,6 @@ diagram:
         - id: solve
           caption: The solver reads the plan and all the evidence once and writes the answer, and the planner is never revisited.
           duration: 2800
-          codeRef: { block: rewoo, lines: "7" }
           events:
             - { type: read, node: evidence, at: [0, 0.2] }
             - { type: send, edge: gather, token: { kind: tokens, label: evidence }, at: [0.2, 0.5] }

@@ -12,28 +12,6 @@ sources:
 related:
   composesWith: [agentic-rag, evaluator-optimizer]
   confusedWith: []
-code:
-  - id: crag
-    title: corrective_rag.py
-    lang: python
-    source: |
-      def corrective_rag(question, max_checks=2):
-          docs = retriever(question)
-          verdicts = [llm(GRADER_PROMPT, question=question, doc=d) for d in docs]
-          grades = [v.relevant for v in verdicts]
-          if not any(grades):
-              query = llm(REWRITER_PROMPT, question=question, rejected_reasons=[v.reason for v in verdicts])
-              docs = web_search(query)
-          else:
-              docs = [d for d, ok in zip(docs, grades) if ok]
-          feedback = None
-          for _ in range(max_checks):
-              answer = llm(GENERATOR_PROMPT, question=question, docs=docs, feedback=feedback)
-              check = llm(CHECK_PROMPT, answer=answer, docs=docs)
-              if check.supported:
-                  return answer
-              feedback = check.unsupported_claims
-          return answer
 prompts:
   - id: grader
     title: Document grader prompt
@@ -96,7 +74,6 @@ diagram:
         - id: retrieve
           caption: The question hits the internal index and the top documents come back.
           duration: 2000
-          codeRef: { block: crag, lines: "1-2" }
           events:
             - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.5] }
             - { type: read, node: retriever, at: [0.5, 0.75] }
@@ -104,14 +81,12 @@ diagram:
         - id: grade
           caption: The grader reads each document and rejects them all as off-topic.
           duration: 2200
-          codeRef: { block: crag, lines: "3-5" }
           events:
             - { type: activate, node: grader, status: error, at: [0, 0.6] }
             - { type: branch, node: grader, taken: reject, notTaken: [keep], at: [0.6, 1] }
         - id: rewrite
           caption: The rewriter turns the question into a sharper web query and the search runs.
           duration: 2800
-          codeRef: { block: crag, lines: "6-7" }
           events:
             - { type: send, edge: reject, token: { kind: feedback, label: rejected }, at: [0, 0.25] }
             - { type: activate, node: rewriter, status: thinking, at: [0.25, 0.5] }
@@ -120,7 +95,6 @@ diagram:
         - id: generate
           caption: The generator writes the answer from the fresh web results.
           duration: 2400
-          codeRef: { block: crag, lines: "11-12" }
           events:
             - { type: send, edge: fetch, token: { kind: result, label: web docs }, at: [0, 0.4] }
             - { type: activate, node: generator, status: thinking, at: [0.4, 0.7] }
@@ -128,7 +102,6 @@ diagram:
         - id: verify
           caption: The answer check finds every claim supported and the answer is returned.
           duration: 2000
-          codeRef: { block: crag, lines: "13-15" }
           events:
             - { type: branch, node: check, taken: accept, notTaken: [regen], at: [0, 0.5] }
             - { type: send, edge: accept, token: { kind: result, label: answer }, at: [0.5, 1] }
@@ -138,7 +111,6 @@ diagram:
         - id: retrieve
           caption: The question hits the internal index and the top documents come back.
           duration: 2000
-          codeRef: { block: crag, lines: "1-2" }
           events:
             - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.5] }
             - { type: read, node: retriever, at: [0.5, 0.75] }
@@ -146,7 +118,6 @@ diagram:
         - id: grade
           caption: The grader keeps the relevant documents and sends them straight to the generator.
           duration: 2200
-          codeRef: { block: crag, lines: "3-5" }
           events:
             - { type: activate, node: grader, status: thinking, at: [0, 0.5] }
             - { type: branch, node: grader, taken: keep, notTaken: [reject], at: [0.5, 0.75] }
@@ -154,7 +125,6 @@ diagram:
         - id: first-draft
           caption: The first draft contains a claim no document supports, so the check sends it back.
           duration: 3200
-          codeRef: { block: crag, lines: "11-16" }
           events:
             - { type: activate, node: generator, status: thinking, at: [0, 0.25] }
             - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.25, 0.5] }
@@ -163,7 +133,6 @@ diagram:
         - id: second-draft
           caption: The generator drops the unsupported claim, the check passes and the answer ships.
           duration: 2800
-          codeRef: { block: crag, lines: "11-15" }
           events:
             - { type: activate, node: generator, status: thinking, at: [0, 0.3] }
             - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.3, 0.55] }

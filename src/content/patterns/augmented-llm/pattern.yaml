@@ -13,20 +13,6 @@ related:
   composesWith: [react, routing, orchestrator-workers]
   confusedWith:
     - { slug: react, difference: "An augmented LLM answers one request, using whatever tools it needs along the way; ReAct is the open-ended loop of many such steps that runs until the model decides the goal is met." }
-code:
-  - id: augmented
-    title: augmented_llm.py
-    lang: python
-    source: |
-      def augmented_llm(user_msg, tools, memory):
-          messages = [SYSTEM_PROMPT, memory.recall(user_msg), user_msg]
-          while True:
-              reply = llm(messages, tools=tools)      # search, calculator, save_note
-              if not reply.tool_calls:
-                  return reply.text                   # no tool needed: this is the answer
-              for call in reply.tool_calls:
-                  result = tools[call.name](**call.args)   # save_note writes to memory
-                  messages += [call, result]          # feed the result back
 prompts:
   - id: system
     title: System prompt with tools
@@ -122,13 +108,11 @@ diagram:
         - id: ask
           caption: The customer's question reaches the model along with its system prompt and tool list.
           duration: 1000
-          codeRef: { block: augmented, lines: "1-2" }
           events:
             - { type: send, edge: ask, token: { kind: prompt, label: "refund?" } }
         - id: retrieve
           caption: The model decides it needs the refund policy and calls the retrieval tool.
           duration: 2600
-          codeRef: { block: augmented, lines: "4-9" }
           events:
             - { type: activate, node: llm, status: thinking, at: [0, 0.25] }
             - { type: send, edge: search, token: { kind: tool-call, label: refund policy }, at: [0.25, 0.5] }
@@ -137,7 +121,6 @@ diagram:
         - id: compute
           caption: With the policy in context, it calls the calculator for the exact prorated amount.
           duration: 2600
-          codeRef: { block: augmented, lines: "4-9" }
           events:
             - { type: activate, node: llm, status: thinking, at: [0, 0.25] }
             - { type: send, edge: calc, token: { kind: tool-call, label: 240*29/30 }, at: [0.25, 0.5] }
@@ -146,14 +129,12 @@ diagram:
         - id: remember
           caption: The model calls its save_note tool to store the customer's plan in memory before it answers.
           duration: 1400
-          codeRef: { block: augmented, lines: "7-9" }
           events:
             - { type: send, edge: remember, token: { kind: tokens, label: plan = $240 }, at: [0, 0.6] }
             - { type: write, node: memory, at: [0.6, 1] }
         - id: answer
           caption: No more tool calls are needed, so the model writes the final answer.
           duration: 1800
-          codeRef: { block: augmented, lines: "5-6" }
           events:
             - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
             - { type: send, edge: answer, token: { kind: result, label: $232 refund }, at: [0.5, 1] }
@@ -163,13 +144,11 @@ diagram:
         - id: ask
           caption: A message that needs no outside information reaches the model.
           duration: 1000
-          codeRef: { block: augmented, lines: "1-2" }
           events:
             - { type: send, edge: ask, token: { kind: prompt, label: thanks } }
         - id: answer
           caption: The model sees nothing to look up and replies directly, since tools are optional.
           duration: 1800
-          codeRef: { block: augmented, lines: "4-6" }
           events:
             - { type: activate, node: llm, status: thinking, at: [0, 0.5] }
             - { type: send, edge: answer, token: { kind: result, label: reply }, at: [0.5, 1] }

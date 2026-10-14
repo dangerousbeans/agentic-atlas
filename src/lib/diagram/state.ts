@@ -1,10 +1,10 @@
-import type { DiagramSpec, TokenKind, ActivateStatus, CodeRef } from './types';
+import type { DiagramSpec, TokenKind, ActivateStatus } from './types';
 import type { Timeline } from './compile';
 
 export type NodeState = 'idle' | 'active' | 'thinking' | 'calling' | 'waiting' | 'done' | 'error' | 'dim' | 'hidden';
 export type EdgeState = 'idle' | 'active' | 'traversed' | 'dim';
 export interface TokenState { edge: string; kind: TokenKind; label?: string; progress: number }
-export interface FrameState { t: number; stepIndex: number; nodes: Record<string, NodeState>; edges: Record<string, EdgeState>; tokens: TokenState[]; codeRef?: CodeRef }
+export interface FrameState { t: number; stepIndex: number; nodes: Record<string, NodeState>; edges: Record<string, EdgeState>; tokens: TokenState[] }
 
 const SETTLED: Record<ActivateStatus, NodeState> = { thinking: 'done', calling: 'done', waiting: 'done', done: 'done', error: 'error' };
 const EPS = 1;
@@ -62,10 +62,7 @@ export function frameAt(d: DiagramSpec, tl: Timeline, tIn: number): FrameState {
 
   let stepIndex = 0;
   for (const s of tl.steps) { if (s.start <= t) stepIndex = s.index; else break; }
-  const f: FrameState = { t, stepIndex, nodes, edges, tokens };
-  const ref = tl.steps[stepIndex]?.codeRef;
-  if (ref) f.codeRef = ref;
-  return f;
+  return { t, stepIndex, nodes, edges, tokens };
 }
 
 export function nextStepEnd(tl: Timeline, t: number): number {

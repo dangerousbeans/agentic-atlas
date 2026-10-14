@@ -11,15 +11,6 @@ related:
   composesWith: [evaluator-optimizer]
   confusedWith:
     - { slug: routing, difference: "Routing picks one fixed path; the orchestrator invents the subtasks at run time and uses several workers." }
-code:
-  - id: orchestrator
-    title: orchestrator_workers.py
-    lang: python
-    source: |
-      def orchestrator_workers(task):
-          subtasks = llm(PLANNER_PROMPT, task=task).subtasks  # decided at run time
-          results = parallel(llm(WORKER_PROMPT, subtask=s) for s in subtasks)
-          return llm(SYNTHESIS_PROMPT, task=task, results=results)
 prompts:
   - id: planner
     title: Orchestrator planning prompt
@@ -74,11 +65,10 @@ diagram:
     - id: three-files
       label: '"Rename the API across the repo"'
       steps:
-        - { id: arrive, caption: The task reaches the orchestrator., duration: 1000, codeRef: { block: orchestrator, lines: "1" }, events: [{ type: send, edge: task, token: { kind: prompt, label: task } }] }
+        - { id: arrive, caption: The task reaches the orchestrator., duration: 1000, events: [{ type: send, edge: task, token: { kind: prompt, label: task } }] }
         - id: plan
           caption: The orchestrator decides at run time that three files need changes, and spins up a worker for each.
           duration: 2000
-          codeRef: { block: orchestrator, lines: "2" }
           events:
             - { type: activate, node: orchestrator, status: thinking, at: [0, 0.5] }
             - { type: appear, node: w1, at: [0.5, 0.65] }
@@ -87,7 +77,6 @@ diagram:
         - id: dispatch
           caption: Each worker gets its own subtask in parallel.
           duration: 1400
-          codeRef: { block: orchestrator, lines: "3" }
           events:
             - { type: send, edge: d1, token: { kind: prompt, label: a.ts } }
             - { type: send, edge: d2, token: { kind: prompt, label: b.ts } }
@@ -95,7 +84,6 @@ diagram:
         - id: work
           caption: Workers finish at different times and report back.
           duration: 2400
-          codeRef: { block: orchestrator, lines: "3" }
           events:
             - { type: activate, node: w1, status: thinking, at: [0, 0.4] }
             - { type: activate, node: w2, status: thinking, at: [0, 0.6] }
@@ -106,7 +94,6 @@ diagram:
         - id: synthesize
           caption: The orchestrator combines the results into one answer.
           duration: 1800
-          codeRef: { block: orchestrator, lines: "4" }
           events:
             - { type: activate, node: orchestrator, status: thinking, at: [0, 0.5] }
             - { type: send, edge: done, token: { kind: result, label: diff }, at: [0.5, 1] }

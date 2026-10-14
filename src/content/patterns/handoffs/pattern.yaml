@@ -14,19 +14,6 @@ related:
   confusedWith:
     - { slug: routing, difference: "Routing classifies once and dispatches to a handler that answers; with handoffs control keeps moving, and the receiving agent can hand off again mid-conversation." }
     - { slug: supervisor, difference: "A supervisor stays in charge and gets every result back; with handoffs the baton is passed on and the previous agent steps out." }
-code:
-  - id: baton
-    title: handoffs.py
-    lang: python
-    source: |
-      def run(agent, messages):
-          while True:
-              reply = llm(agent.instructions, messages, tools=agent.tools + agent.handoffs)
-              messages.append(reply)
-              if reply.handoff:
-                  agent = reply.handoff.target  # the baton moves
-                  continue
-              return reply, agent  # this agent answers the user directly
 prompts:
   - id: triage
     title: Triage agent instructions
@@ -72,42 +59,36 @@ diagram:
         - id: arrive
           caption: The user's message lands with the triage agent, which holds the conversation first.
           duration: 1400
-          codeRef: { block: baton, lines: "1-3" }
           events:
             - { type: send, edge: in, token: { kind: prompt, label: charged twice } }
             - { type: activate, node: triage, status: thinking, at: [0.5, 1] }
         - id: first-handoff
           caption: Triage hands the whole conversation to billing; the tech route dims and triage steps out.
           duration: 2400
-          codeRef: { block: baton, lines: "5-7" }
           events:
             - { type: branch, node: triage, taken: to-billing, notTaken: [to-tech], at: [0, 0.4] }
             - { type: send, edge: to-billing, token: { kind: prompt, label: baton }, at: [0.4, 1] }
         - id: billing-talks
           caption: Billing now owns the conversation and answers the user directly, with no manager in between.
           duration: 2400
-          codeRef: { block: baton, lines: "3-4" }
           events:
             - { type: activate, node: billing, status: thinking, at: [0, 0.5] }
             - { type: send, edge: billing-reply, token: { kind: result, label: reply }, at: [0.5, 1] }
         - id: second-handoff
           caption: The user's next message asks for the money back, so billing passes the baton on to refunds.
           duration: 2400
-          codeRef: { block: baton, lines: "5-7" }
           events:
             - { type: activate, node: billing, status: thinking, at: [0, 0.3] }
             - { type: send, edge: to-refunds, token: { kind: prompt, label: baton }, at: [0.3, 1] }
         - id: refunds-talks
           caption: Refunds issues the refund and replies to the user itself.
           duration: 2400
-          codeRef: { block: baton, lines: "3-4" }
           events:
             - { type: activate, node: refunds, status: thinking, at: [0, 0.5] }
             - { type: send, edge: refunds-reply, token: { kind: result, label: refunded }, at: [0.5, 1] }
         - id: done
           caption: The refunds agent answers without handing off, so the run ends with it holding the conversation.
           duration: 1600
-          codeRef: { block: baton, lines: "8" }
           events:
             - { type: activate, node: refunds, status: done }
     - id: tech
@@ -116,21 +97,18 @@ diagram:
         - id: arrive
           caption: The user's message lands with the triage agent.
           duration: 1400
-          codeRef: { block: baton, lines: "1-3" }
           events:
             - { type: send, edge: in, token: { kind: prompt, label: crash } }
             - { type: activate, node: triage, status: thinking, at: [0.5, 1] }
         - id: handoff
           caption: Triage hands the conversation to tech support; the billing route dims.
           duration: 2400
-          codeRef: { block: baton, lines: "5-7" }
           events:
             - { type: branch, node: triage, taken: to-tech, notTaken: [to-billing], at: [0, 0.4] }
             - { type: send, edge: to-tech, token: { kind: prompt, label: baton }, at: [0.4, 1] }
         - id: tech-talks
           caption: Tech support walks the user through a fix directly.
           duration: 2400
-          codeRef: { block: baton, lines: "3-4" }
           events:
             - { type: activate, node: tech, status: thinking, at: [0, 0.5] }
             - { type: send, edge: tech-reply, token: { kind: result, label: reply }, at: [0.5, 1] }

@@ -1,14 +1,32 @@
 ---
 import { href } from '../../lib/url';
-import type { Pattern, Family } from '../../lib/schema';
-interface Props { pattern: Pattern; family: Family }
-const { pattern: p, family: f } = Astro.props;
+import { originLine } from '../../lib/origin';
+import type { Pattern, Family, Origin } from '../../lib/schema';
+/** `origins`: one entry per distinct origin, with the variants it applies to (shown and hidden by variant-tabs.ts). */
+interface Props { pattern: Pattern; family: Family; origins: { origin: Origin; ids: string[]; names: string[]; isDefault: boolean }[] }
+const { pattern: p, family: f, origins } = Astro.props;
+const multi = origins.length > 1;
 ---
 <header class="pattern-header">
   <a class="eyebrow fam" href={href(`/families/${f.slug}/`)} data-pagefind-filter="family">{f.name}</a>
   <h1 class="display" data-pagefind-meta="title">{p.name}</h1>
   {p.aliases.length > 0 && <p class="aliases">Also known as {p.aliases.join(' · ')}</p>}
   <p class="summary">{p.summary}</p>
+  {origins.map(({ origin, ids, names, isDefault }) => {
+    const o = originLine(origin);
+    return (
+      <div class="origin" data-for-variants={ids.join(' ')} data-on={isDefault ? '' : undefined}>
+        <p class="origin-line">
+          {multi && <span class="origin-for">{names.join(', ')}: </span>}
+          <span class="origin-lead">{o.lead}</span>{' '}
+          {o.by
+            ? <a href={o.url} rel="noopener">{o.by} ({o.year}){o.org && <> · {o.org}</>}<span aria-hidden="true"> ↗</span></a>
+            : <a href={o.url} rel="noopener">source<span aria-hidden="true"> ↗</span></a>}
+        </p>
+        {o.note && <p class="origin-note">{o.note}</p>}
+      </div>
+    );
+  })}
 </header>
 <style>
   .fam { text-decoration: none; width: fit-content; }
@@ -16,4 +34,12 @@ const { pattern: p, family: f } = Astro.props;
   h1 { font-size: clamp(1.7rem, 2.6vw, 2.4rem); margin: 0.3em 0 0.25em; overflow-wrap: break-word; }
   .aliases { color: var(--text-3); font: 400 12px/1.5 var(--font-mono); letter-spacing: .02em; margin: 0 0 14px; }
   .summary { font: 400 clamp(1.05rem, 1.6vw, 1.2rem)/1.55 var(--font-ui); color: var(--text-2); max-width: 36rem; margin: 0; }
+  .origin { margin: 14px 0 0; max-width: 36rem; }
+  .origin-line { margin: 0; font: 400 12.5px/1.5 var(--font-mono); letter-spacing: .02em; color: var(--text-3); }
+  .origin-lead { color: var(--text-2); }
+  .origin-line a { color: var(--text-2); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+  .origin-line a:hover { color: var(--text); text-decoration-color: var(--accent); }
+  .origin-for { color: var(--text-2); }
+  :global([data-variants-enhanced]) .origin-for { display: none; }
+  .origin-note { margin: 4px 0 0; font: 400 13px/1.5 var(--font-ui); color: var(--text-3); }
 </style>

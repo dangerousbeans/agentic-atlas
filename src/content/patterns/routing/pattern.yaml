@@ -10,17 +10,6 @@ sources:
 related:
   composesWith: [evaluator-optimizer, orchestrator-workers]
   confusedWith: []
-code:
-  - id: router
-    title: routing.py
-    lang: python
-    source: |
-      HANDLERS = {"billing": BILLING, "tech": TECH, "general": GENERAL}
-
-      def route(request):
-          label = llm(CLASSIFIER_PROMPT, request=request).label
-          handler = HANDLERS.get(label, HANDLERS["general"])
-          return llm(handler.prompt, request=request, tools=handler.tools)
 prompts:
   - id: classifier
     title: Classifier prompt
@@ -67,36 +56,32 @@ diagram:
     - id: tech
       label: '"The app crashes on login"'
       steps:
-        - { id: arrive, caption: A customer message arrives at the classifier., duration: 1000, codeRef: { block: router, lines: "3" }, events: [{ type: send, edge: in, token: { kind: prompt, label: crash? } }] }
+        - { id: arrive, caption: A customer message arrives at the classifier., duration: 1000, events: [{ type: send, edge: in, token: { kind: prompt, label: crash? } }] }
         - id: classify
           caption: The classifier labels it a technical issue; the other routes go dark.
           duration: 1400
-          codeRef: { block: router, lines: "4-5" }
           events:
             - { type: branch, node: router, taken: to-tech, notTaken: [to-billing, to-general], at: [0, 0.5] }
             - { type: send, edge: to-tech, token: { kind: prompt }, at: [0.5, 1] }
         - id: handle
           caption: The tech-support prompt, with its own tools and instructions, writes the reply.
           duration: 1800
-          codeRef: { block: router, lines: "6" }
           events:
             - { type: activate, node: tech, status: thinking, at: [0, 0.5] }
             - { type: send, edge: tech-out, token: { kind: result, label: reply }, at: [0.5, 1] }
     - id: billing
       label: '"I was charged twice"'
       steps:
-        - { id: arrive, caption: A customer message arrives at the classifier., duration: 1000, codeRef: { block: router, lines: "3" }, events: [{ type: send, edge: in, token: { kind: prompt, label: refund? } }] }
+        - { id: arrive, caption: A customer message arrives at the classifier., duration: 1000, events: [{ type: send, edge: in, token: { kind: prompt, label: refund? } }] }
         - id: classify
           caption: The classifier labels it a billing question.
           duration: 1400
-          codeRef: { block: router, lines: "4-5" }
           events:
             - { type: branch, node: router, taken: to-billing, notTaken: [to-tech, to-general], at: [0, 0.5] }
             - { type: send, edge: to-billing, token: { kind: prompt }, at: [0.5, 1] }
         - id: handle
           caption: The billing specialist answers using account context.
           duration: 1800
-          codeRef: { block: router, lines: "6" }
           events:
             - { type: activate, node: billing, status: thinking, at: [0, 0.5] }
             - { type: send, edge: billing-out, token: { kind: result, label: reply }, at: [0.5, 1] }

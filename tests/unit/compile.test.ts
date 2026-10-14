@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { compileScenario, DEFAULT_STEP_MS } from '../../src/lib/diagram/compile';
-import type { Scenario } from '../../src/lib/diagram/types';
 
 const send = (edge: string, at?: [number, number]) => ({ type: 'send' as const, edge, token: { kind: 'prompt' as const }, ...(at ? { at } : {}) });
 
@@ -31,9 +30,5 @@ describe('compileScenario', () => {
   it('sorts events by start and keeps declaration order on ties', () => {
     const tl = compileScenario({ id: 's', label: 'S', steps: [{ id: 'a', caption: 'A', duration: 1000, events: [send('late', [0.5, 1]), send('first', [0, 0.5]), send('tie', [0, 0.2])] }] });
     expect(tl.events.map(e => (e.event as { edge: string }).edge)).toEqual(['first', 'tie', 'late']);
-  });
-  it('carries codeRef onto steps', () => {
-    const s: Scenario = { id: 's', label: 'S', steps: [{ id: 'a', caption: 'A', codeRef: { block: 'b', lines: '2' }, events: [send('e')] }] };
-    expect(compileScenario(s).steps[0].codeRef).toEqual({ block: 'b', lines: '2' });
   });
 });

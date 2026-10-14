@@ -11,17 +11,6 @@ related:
   composesWith: [routing, evaluator-optimizer]
   confusedWith:
     - { slug: orchestrator-workers, difference: "A chain runs the same fixed steps in order every time; an orchestrator decides the steps at run time." }
-code:
-  - id: chain
-    title: prompt_chaining.py
-    lang: python
-    source: |
-      def write_post(brief):
-          outline = llm(OUTLINE_PROMPT, brief=brief)
-          if not outline_is_valid(outline):      # programmatic gate
-              return {"error": "outline failed checks", "outline": outline}
-          draft = llm(DRAFT_PROMPT, outline=outline)
-          return llm(POLISH_PROMPT, draft=draft)
 prompts:
   - id: outline
     title: Step 1, outline prompt
@@ -63,18 +52,16 @@ diagram:
     - id: passes
       label: '"Write a post on index tuning"'
       steps:
-        - { id: arrive, caption: A brief for a blog post enters the first prompt., duration: 1000, codeRef: { block: chain, lines: "2" }, events: [{ type: send, edge: in, token: { kind: prompt, label: brief } }] }
+        - { id: arrive, caption: A brief for a blog post enters the first prompt., duration: 1000, events: [{ type: send, edge: in, token: { kind: prompt, label: brief } }] }
         - id: outline
           caption: The first call turns the brief into an outline, which goes to a code check.
           duration: 1600
-          codeRef: { block: chain, lines: "2" }
           events:
             - { type: activate, node: llm1, status: thinking, at: [0, 0.6] }
             - { type: send, edge: to-gate, token: { kind: result, label: outline }, at: [0.6, 1] }
         - id: gate
           caption: Plain code confirms the outline has the required sections, so the chain continues.
           duration: 1400
-          codeRef: { block: chain, lines: "3" }
           events:
             - { type: activate, node: gate, status: thinking, at: [0, 0.4] }
             - { type: branch, node: gate, taken: pass, notTaken: [fail], at: [0.4, 0.6] }
@@ -82,32 +69,28 @@ diagram:
         - id: draft
           caption: The second call writes the draft from the outline alone.
           duration: 1800
-          codeRef: { block: chain, lines: "5" }
           events:
             - { type: activate, node: llm2, status: thinking, at: [0, 0.65] }
             - { type: send, edge: to-polish, token: { kind: result, label: draft }, at: [0.65, 1] }
         - id: polish
           caption: The third call polishes the draft and the finished post comes out.
           duration: 1800
-          codeRef: { block: chain, lines: "6" }
           events:
             - { type: activate, node: llm3, status: thinking, at: [0, 0.6] }
             - { type: send, edge: done, token: { kind: result, label: post }, at: [0.6, 1] }
     - id: gate-fails
       label: '"Outline is missing sections"'
       steps:
-        - { id: arrive, caption: A vague brief enters the first prompt., duration: 1000, codeRef: { block: chain, lines: "2" }, events: [{ type: send, edge: in, token: { kind: prompt, label: brief } }] }
+        - { id: arrive, caption: A vague brief enters the first prompt., duration: 1000, events: [{ type: send, edge: in, token: { kind: prompt, label: brief } }] }
         - id: outline
           caption: The first call returns an outline with only two sections.
           duration: 1600
-          codeRef: { block: chain, lines: "2" }
           events:
             - { type: activate, node: llm1, status: thinking, at: [0, 0.6] }
             - { type: send, edge: to-gate, token: { kind: result, label: outline }, at: [0.6, 1] }
         - id: gate
           caption: The code check fails, so the chain exits early instead of drafting from a bad outline.
           duration: 1600
-          codeRef: { block: chain, lines: "3-4" }
           events:
             - { type: activate, node: gate, status: error, at: [0, 0.4] }
             - { type: branch, node: gate, taken: fail, notTaken: [pass], at: [0.4, 0.6] }

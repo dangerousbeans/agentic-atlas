@@ -149,8 +149,10 @@ class FlowPlayer extends HTMLElement {
       const ro = new ResizeObserver(sync);
       ro.observe(stage); this.observers.push(ro);
     }
+    // A full player is "visible" when its diagram stage is (not its step list and parts below), so a diagram that is
+    // on screen plays even when the page puts tabs or a summary above it.
     const io = new IntersectionObserver(([e]) => { this.visible = e.isIntersecting; this.sync(); }, { threshold: 0.3 });
-    io.observe(this); this.observers.push(io);
+    io.observe((!this.compact && stage) || this); this.observers.push(io);
   }
 
   private attachGlobal() {
@@ -398,13 +400,11 @@ class FlowPlayer extends HTMLElement {
     const step = this.tl.steps[f.stepIndex];
     const cap = this.querySelector('.fp-caption');
     if (cap) cap.textContent = step.caption + (step.iteration ? ` (round ${step.iteration.n} of ${step.iteration.of})` : '');
-    const ref = f.codeRef;
-    this.setAttribute('data-code-ref', ref ? `${ref.block}:${ref.lines}` : '');
     this.querySelectorAll<HTMLElement>(`ol.fp-captions[data-scenario="${this.tl.id}"] button`).forEach(b => {
       const li = b.parentElement!;
       if (b.dataset.stepIndex === String(f.stepIndex)) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
     });
-    this.dispatchEvent(new CustomEvent('flowstep', { bubbles: true, detail: { uid: this.dataset.uid, stepIndex: f.stepIndex, codeRef: f.codeRef } }));
+    this.dispatchEvent(new CustomEvent('flowstep', { bubbles: true, detail: { uid: this.dataset.uid, stepIndex: f.stepIndex } }));
   }
 
   private syncScenarioLists() {

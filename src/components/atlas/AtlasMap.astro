@@ -10,7 +10,9 @@ import { getCatalog } from '../../lib/catalog';
 import { atlasLayout } from '../../lib/atlas-layout';
 import { patternStats } from '../../lib/pattern-stats';
 import { href } from '../../lib/url';
+import { originShort } from '../../lib/origin';
 import type { DiagramSpec } from '../../lib/diagram/types';
+import type { Pattern } from '../../lib/schema';
 
 /** `fill`: the map takes the remaining viewport height (the /atlas/ page) instead of the home section height. */
 interface Props { fill?: boolean }
@@ -26,10 +28,14 @@ const islandName = (name: string) => {
   if (b === undefined) return name;
   return Math.max(a.length, b.length + 2) <= Math.max(a.length + 2, b.length) ? `${a} &\u00a0${b}` : `${a}\u00a0& ${b}`;
 };
-const tileLine = (spec: DiagramSpec) => {
-  const s = patternStats(spec);
-  return [`${s.nodes} nodes`, `${s.llmCalls} LLM`, s.loop && 'loop', s.parallel && 'parallel', s.branch && 'branch', s.humanInLoop && 'human'].filter(Boolean).slice(0, 3).join(' · ');
+// Tiles show the default variant; "+N variants" takes the third slot when a pattern has any (addendum §2).
+const tileLine = (p: Pattern) => {
+  const s = patternStats(p.diagram as DiagramSpec);
+  const n = p.variants?.length ?? 0;
+  const facts = [`${s.nodes} nodes`, `${s.llmCalls} LLM`, s.loop && 'loop', s.parallel && 'parallel', s.branch && 'branch', s.humanInLoop && 'human'].filter(Boolean);
+  return [...facts.slice(0, n ? 2 : 3), n && `+${n} variant${n === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
 };
+const tileTitle = (p: Pattern) => (p.origin ? `${p.name} · ${p.origin.uncertain ? 'no single inventor' : `${p.origin.kind} by ${originShort(p.origin)}`}` : undefined);
 const Heading = fill ? 'h2' : 'h3';
 const px = (n: number) => `${n}px`;
 ---
@@ -57,10 +63,10 @@ const px = (n: number) => `${n}px`;
                 const t = tileOf.get(p.slug)!;
                 return (
                   <li style={`--rx:${px(t.rx)};--ry:${px(t.ry)}`}>
-                    <a class="atlas-tile" href={href(`/patterns/${p.slug}/`)} draggable="false" data-slug={p.slug} data-cx={t.x + t.w / 2} data-cy={t.y + t.h / 2} data-q={[p.name, ...p.aliases, f.name].join(' | ').toLowerCase()}>
+                    <a class="atlas-tile" href={href(`/patterns/${p.slug}/`)} title={tileTitle(p)} draggable="false" data-slug={p.slug} data-cx={t.x + t.w / 2} data-cy={t.y + t.h / 2} data-q={[p.name, ...p.aliases, f.name].join(' | ').toLowerCase()}>
                       <span class="tile-dia" aria-hidden="true"><Diagram uid={`map-${p.slug}`} spec={p.diagram as DiagramSpec} title={p.name} compact /></span>
                       <span class="tile-name">{p.name}</span>
-                      <span class="tile-stats">{tileLine(p.diagram as DiagramSpec)}</span>
+                      <span class="tile-stats">{tileLine(p)}</span>
                     </a>
                   </li>
                 );

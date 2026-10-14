@@ -84,10 +84,6 @@ describe('frameAt', () => {
     expect(frameAt(spec, tl, 4000).nodes.out).toBe('done');
     expect(frameAt(spec, tl, 3600).nodes.out).toBe('idle');
   });
-  it('reports codeRef of current step', () => {
-    const s2: DiagramSpec = { ...spec, scenarios: [{ id: 'x', label: 'X', steps: [{ id: 'a', caption: 'A', codeRef: { block: 'b', lines: '1' }, events: [{ type: 'send', edge: 'task', token: { kind: 'prompt' } }] }] }] };
-    expect(frameAt(s2, compileScenario(s2.scenarios[0]), 10).codeRef).toEqual({ block: 'b', lines: '1' });
-  });
 });
 
 describe('step navigation', () => {

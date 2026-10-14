@@ -12,20 +12,6 @@ sources:
 related:
   composesWith: [guardrails, supervisor]
   confusedWith: []
-code:
-  - id: gate
-    title: human_in_the_loop.py
-    lang: python
-    source: |
-      def run_with_approval(task, agent, tools):
-          action = agent.next_action(task)
-          if risk(action) == "high":
-              decision = interrupt({"action": action})  # pause here; state is saved
-              if decision.kind == "reject":
-                  return agent.replan(task, reason=decision.reason)
-              if decision.kind == "edit":
-                  action = decision.edited_action
-          return tools.execute(action)
 prompts:
   - id: approval
     title: Approval request message
@@ -75,7 +61,6 @@ diagram:
         - id: propose
           caption: The agent decides to refund a customer $480 and proposes the call.
           duration: 2200
-          codeRef: { block: gate, lines: "1-2" }
           events:
             - { type: send, edge: task, token: { kind: prompt, label: refund $480 }, at: [0, 0.4] }
             - { type: activate, node: agent, status: thinking, at: [0.4, 0.7] }
@@ -83,20 +68,17 @@ diagram:
         - id: gate
           caption: The risk check marks a large refund as high risk and routes it to a person.
           duration: 2000
-          codeRef: { block: gate, lines: "3" }
           events:
             - { type: branch, node: risk, taken: high, notTaken: [low], at: [0, 0.4] }
             - { type: send, edge: high, token: { kind: tool-call, label: refund }, at: [0.4, 1] }
         - id: wait
           caption: The run pauses. The reviewer sees the action, its reason and its effect, and nothing executes meanwhile.
           duration: 3200
-          codeRef: { block: gate, lines: "4" }
           events:
             - { type: activate, node: human, status: waiting }
         - id: approved
           caption: The reviewer approves, so the run resumes and the refund is issued.
           duration: 2600
-          codeRef: { block: gate, lines: "9" }
           events:
             - { type: send, edge: approve, token: { kind: result, label: approved }, at: [0, 0.4] }
             - { type: activate, node: tool, status: calling, at: [0.4, 0.7] }
@@ -107,7 +89,6 @@ diagram:
         - id: propose
           caption: The agent proposes deleting a customer's account data.
           duration: 2200
-          codeRef: { block: gate, lines: "1-2" }
           events:
             - { type: send, edge: task, token: { kind: prompt, label: clean up }, at: [0, 0.4] }
             - { type: activate, node: agent, status: thinking, at: [0.4, 0.7] }
@@ -115,20 +96,17 @@ diagram:
         - id: gate
           caption: The risk check flags an irreversible delete and routes it to a person.
           duration: 2000
-          codeRef: { block: gate, lines: "3" }
           events:
             - { type: branch, node: risk, taken: high, notTaken: [low], at: [0, 0.4] }
             - { type: send, edge: high, token: { kind: tool-call, label: delete }, at: [0.4, 1] }
         - id: wait
           caption: The run pauses while the reviewer reads the request.
           duration: 3200
-          codeRef: { block: gate, lines: "4" }
           events:
             - { type: activate, node: human, status: waiting }
         - id: rejected
           caption: The reviewer rejects it with a reason, and the agent must replan instead of acting.
           duration: 2600
-          codeRef: { block: gate, lines: "5-6" }
           events:
             - { type: send, edge: reject, token: { kind: feedback, label: not allowed }, at: [0, 0.6] }
             - { type: activate, node: agent, status: thinking, at: [0.6, 1] }
@@ -138,7 +116,6 @@ diagram:
         - id: propose
           caption: The agent proposes a harmless order-status lookup.
           duration: 2200
-          codeRef: { block: gate, lines: "1-2" }
           events:
             - { type: send, edge: task, token: { kind: prompt, label: check order }, at: [0, 0.4] }
             - { type: activate, node: agent, status: thinking, at: [0.4, 0.7] }
@@ -146,14 +123,12 @@ diagram:
         - id: skip
           caption: The risk check rates it low and sends it straight to the tool, so the reviewer is never bothered.
           duration: 2200
-          codeRef: { block: gate, lines: "9" }
           events:
             - { type: branch, node: risk, taken: low, notTaken: [high], at: [0, 0.4] }
             - { type: send, edge: low, token: { kind: tool-call, label: lookup }, at: [0.4, 1] }
         - id: run
           caption: The tool runs and the result is returned.
           duration: 1800
-          codeRef: { block: gate, lines: "9" }
           events:
             - { type: activate, node: tool, status: calling, at: [0, 0.5] }
             - { type: send, edge: result, token: { kind: result, label: status }, at: [0.5, 1] }

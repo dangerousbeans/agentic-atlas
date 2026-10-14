@@ -18,8 +18,7 @@ export type DiagramEvent =
   | { type: 'appear'; node: string; at?: At }
   | { type: 'read'; node: string; at?: At }
   | { type: 'write'; node: string; at?: At };
-export interface CodeRef { block: string; lines: string }
-export interface Step { id: string; caption: string; duration?: number; events: DiagramEvent[]; codeRef?: CodeRef; repeat?: number }
+export interface Step { id: string; caption: string; duration?: number; events: DiagramEvent[]; repeat?: number }
 export interface Scenario { id: string; label: string; steps: Step[] }
 export interface DiagramSpec { direction?: 'RIGHT' | 'DOWN'; groups?: DiagramGroup[]; nodes: DiagramNode[]; edges: DiagramEdge[]; scenarios: Scenario[] }
-export interface CodeBlock { id: string; title: string; lang: 'python' | 'markdown' | 'text'; source: string }
+export interface PromptBlock { id: string; title: string; lang: 'python' | 'markdown' | 'text'; source: string }

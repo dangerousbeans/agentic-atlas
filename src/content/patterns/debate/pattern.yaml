@@ -11,18 +11,6 @@ related:
   composesWith: [evaluator-optimizer]
   confusedWith:
     - { slug: evaluator-optimizer, difference: "Evaluator-optimizer has one generator revising against one critic; in a debate several peers answer the same question and update by reading each other." }
-code:
-  - id: debate
-    title: debate.py
-    lang: python
-    source: |
-      def debate(question, agents, judge=None, rounds=2):
-          answers = parallel(a.answer(question) for a in agents)
-          for _ in range(rounds):
-              answers = parallel(
-                  a.revise(question, own=answers[i], others=others(answers, i))  # others(): every answer but agent i's
-                  for i, a in enumerate(agents))
-          return judge.decide(question, answers) if judge else majority(answers)
 prompts:
   - id: revise
     title: Debater revision prompt
@@ -75,7 +63,6 @@ diagram:
         - id: fan-out
           caption: The same question goes to all three debaters at once.
           duration: 1400
-          codeRef: { block: debate, lines: "1-2" }
           events:
             - { type: send, edge: q-a, token: { kind: prompt, label: question } }
             - { type: send, edge: q-b, token: { kind: prompt, label: question } }
@@ -83,7 +70,6 @@ diagram:
         - id: independent
           caption: Each debater reasons alone, so the first answers disagree.
           duration: 2000
-          codeRef: { block: debate, lines: "2" }
           events:
             - { type: activate, node: a, status: thinking, at: [0, 0.8] }
             - { type: activate, node: b, status: thinking, at: [0, 0.9] }
@@ -92,7 +78,6 @@ diagram:
           caption: Every debater reads a peer's answer in parallel, then revises its own.
           duration: 3600
           repeat: 2
-          codeRef: { block: debate, lines: "3-6" }
           events:
             - { type: send, edge: x-ab, token: { kind: result, label: answer }, at: [0, 0.4] }
             - { type: send, edge: x-bc, token: { kind: result, label: answer }, at: [0, 0.4] }
@@ -103,7 +88,6 @@ diagram:
         - id: fan-in
           caption: After the last round, all three final answers go to the optional judge.
           duration: 1800
-          codeRef: { block: debate, lines: "7" }
           events:
             - { type: send, edge: j-a, token: { kind: result, label: final } }
             - { type: send, edge: j-b, token: { kind: result, label: final } }
@@ -111,7 +95,6 @@ diagram:
         - id: ruling
           caption: The judge weighs the arguments and issues one ruling.
           duration: 2200
-          codeRef: { block: debate, lines: "7" }
           events:
             - { type: activate, node: judge, status: thinking, at: [0, 0.5] }
             - { type: send, edge: ruling, token: { kind: result, label: ruling }, at: [0.5, 1] }

@@ -2,12 +2,16 @@
 import Diagram from '../diagram/Diagram.astro';
 import { href } from '../../lib/url';
 import { patternStats, statsLine } from '../../lib/pattern-stats';
+import { originShort } from '../../lib/origin';
 import type { DiagramSpec } from '../../lib/diagram/types';
 import type { Family, Pattern } from '../../lib/schema';
 interface Props { pattern: Pattern; family: Family }
 const { pattern: p, family: f } = Astro.props;
 const spec = p.diagram as DiagramSpec;
 const stats = statsLine(patternStats(spec));
+// The default variant is the one drawn; the rest are counted, beside a short credit (addendum §2, §3).
+const nv = p.variants?.length ?? 0;
+const meta = [nv && `+${nv} variant${nv === 1 ? '' : 's'}`, p.origin && originShort(p.origin)].filter(Boolean).join(' · ');
 ---
 <a class="pattern-card" href={href(`/patterns/${p.slug}/`)} aria-labelledby={`pc-${f.slug}-${p.slug}-h`} aria-describedby={`pc-${f.slug}-${p.slug}-d`}>
   <div class="visual" aria-hidden="true">
@@ -16,6 +20,7 @@ const stats = statsLine(patternStats(spec));
   <div class="body">
     <h3 id={`pc-${f.slug}-${p.slug}-h`}>{p.name}</h3>
     <p class="stats">{f.name} · {stats}</p>
+    {meta && <p class="meta">{meta}</p>}
     <p class="summary" id={`pc-${f.slug}-${p.slug}-d`}>{p.summary}</p>
   </div>
 </a>
@@ -37,5 +42,6 @@ const stats = statsLine(patternStats(spec));
   .body { padding: 16px 18px 20px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   h3 { margin: 0; font: 700 17px/1.25 var(--font-ui); letter-spacing: -.005em; }
   .stats { margin: 0; font: 500 11.5px/1.5 var(--font-mono); color: var(--text-2); letter-spacing: .02em; }
+  .meta { margin: -4px 0 0; font: 400 11px/1.5 var(--font-mono); color: var(--text-3); letter-spacing: .02em; }
   .summary { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text-2); }
 </style>

@@ -8,10 +8,11 @@ import { author } from '../lib/author';
 import archivoLatin from '@fontsource-variable/archivo/files/archivo-latin-wdth-normal.woff2?url';
 import monoLatin from '@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?url';
 /** `accent` is accepted for compatibility but ignored: the accent is always var(--accent). */
-interface Props { title: string; description: string; accent?: string; pagefind?: boolean }
-const { title, description, pagefind = false } = Astro.props;
+/** `ld`: an extra JSON-LD object for this page (pattern pages add a TechArticle with its `citation`). */
+interface Props { title: string; description: string; accent?: string; pagefind?: boolean; ld?: Record<string, unknown> }
+const { title, description, pagefind = false, ld: pageLd } = Astro.props;
 const fullTitle = title === 'Agentic Atlas' ? title : `${title} · Agentic Atlas`;
-const SITE_DESCRIPTION = 'A visual field guide to agentic AI patterns, each with a live diagram, pseudocode and prompt templates.';
+const SITE_DESCRIPTION = 'A visual field guide to agentic AI patterns, each with a live diagram, a build prompt for your AI coding assistant, and prompt templates.';
 const ld = JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebSite', name: 'Agentic Atlas', description: SITE_DESCRIPTION, ...(Astro.site && { url: new URL(href('/'), Astro.site).toString() }), author: { '@type': 'Person', name: author.name, url: author.github, sameAs: [author.github] } }).replace(/</g, '\\u003c');
 const og = Astro.site ? new URL(href('/og.png'), Astro.site).toString() : href('/og.png');
 // Canonical URL: site + base + this page's path (Astro.url.pathname may or may not carry the base, so strip it first).
@@ -36,6 +37,7 @@ const canonical = Astro.site && !/^\/404\/?$/.test(pagePath) ? new URL(href(page
     <meta name="author" content={author.name} />
     <link rel="me" href={author.github} />
     <script type="application/ld+json" set:html={ld} />
+    {pageLd && <script type="application/ld+json" set:html={JSON.stringify({ ...pageLd, ...(canonical && { url: canonical }) }).replace(/</g, '\\u003c')} />}
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preload" href={archivoLatin} as="font" type="font/woff2" crossorigin />
     <link rel="preload" href={monoLatin} as="font" type="font/woff2" crossorigin />

@@ -11,21 +11,6 @@ related:
   composesWith: [react]
   confusedWith:
     - { slug: evaluator-optimizer, difference: "Evaluator-Optimizer critiques and revises one draft inside a single run; Reflexion distills each failed trial into a lesson saved in memory, so a fresh attempt starts smarter." }
-code:
-  - id: reflexion
-    title: reflexion.py
-    lang: python
-    source: |
-      def reflexion(task, tests, max_trials=3):
-          lessons = []                          # episodic memory
-          for trial in range(max_trials):
-              attempt = llm(ACTOR_PROMPT, task=task, lessons=lessons)
-              result = run_tests(tests, attempt)
-              if result.passed:
-                  return attempt
-              lesson = llm(REFLECT_PROMPT, task=task, attempt=attempt, trace=result.trace)
-              lessons.append(lesson)            # persists into the next trial
-          return attempt
 prompts:
   - id: actor
     title: Actor prompt
@@ -128,13 +113,11 @@ diagram:
         - id: start
           caption: The task arrives at the actor and the lessons list is empty.
           duration: 1000
-          codeRef: { block: reflexion, lines: "1-2" }
           events:
             - { type: send, edge: start, token: { kind: prompt, label: task } }
         - id: trial-1
           caption: The first attempt runs against the tests, and they fail.
           duration: 3000
-          codeRef: { block: reflexion, lines: "4-5" }
           events:
             - { type: activate, node: actor, status: thinking, at: [0, 0.3] }
             - { type: send, edge: attempt, token: { kind: result, label: code v1 }, at: [0.3, 0.6] }
@@ -143,28 +126,24 @@ diagram:
         - id: reflect
           caption: The failing test output goes to the reflector, which works out what went wrong.
           duration: 2400
-          codeRef: { block: reflexion, lines: "8" }
           events:
             - { type: send, edge: fail, token: { kind: feedback, label: stack trace }, at: [0, 0.5] }
             - { type: activate, node: reflector, status: thinking, at: [0.5, 1] }
         - id: write-lesson
           caption: The reflector writes a plain-language lesson and saves it to memory.
           duration: 2000
-          codeRef: { block: reflexion, lines: "9" }
           events:
             - { type: send, edge: lesson, token: { kind: tokens, label: off-by-one }, at: [0, 0.6] }
             - { type: write, node: memory, at: [0.6, 1] }
         - id: recall
           caption: Trial 2 begins by recalling the lesson into the actor's prompt.
           duration: 2000
-          codeRef: { block: reflexion, lines: "3-4" }
           events:
             - { type: read, node: memory, at: [0, 0.4] }
             - { type: send, edge: recall, token: { kind: tokens, label: off-by-one }, at: [0.4, 1] }
         - id: trial-2
           caption: With the lesson in context, the new attempt passes every test.
           duration: 3000
-          codeRef: { block: reflexion, lines: "4-7" }
           events:
             - { type: activate, node: actor, status: thinking, at: [0, 0.3] }
             - { type: send, edge: attempt, token: { kind: result, label: code v2 }, at: [0.3, 0.6] }

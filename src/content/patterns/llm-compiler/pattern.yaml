@@ -13,24 +13,6 @@ related:
   composesWith: [react]
   confusedWith:
     - { slug: rewoo, difference: "ReWOO runs its planned calls in sequence; LLMCompiler plans a dependency graph, fires independent calls in parallel, and lets a joiner trigger a replan." }
-code:
-  - id: compiler
-    title: llm_compiler.py
-    lang: python
-    source: |
-      def llm_compiler(question, tools, max_replans=2):
-          context = []
-          for _ in range(max_replans + 1):
-              dag = llm(PLANNER_PROMPT, question=question, context=context)  # tasks + deps
-              results = {}
-              while dag.pending():
-                  ready = dag.ready(results)       # tasks whose dependencies are resolved
-                  results |= parallel(tools[t.tool](**t.resolve(results)) for t in ready)
-              verdict = llm(JOINER_PROMPT, question=question, results=results)
-              if verdict.answer:
-                  return verdict.answer
-              context.append((dag, results, verdict.reason))   # replan with what we learned
-          return best_effort(context)
 prompts:
   - id: planner
     title: Planner prompt
@@ -170,20 +152,17 @@ diagram:
         - id: ask
           caption: The question reaches the planner.
           duration: 1000
-          codeRef: { block: compiler, lines: "1-2" }
           events:
             - { type: send, edge: ask, token: { kind: prompt, label: Lisbon trip } }
         - id: plan
           caption: The planner emits a task graph in which flights and weather are independent but the hotel needs the arrival date from flights.
           duration: 2800
-          codeRef: { block: compiler, lines: "3-4" }
           events:
             - { type: activate, node: planner, status: thinking, at: [0, 0.5] }
             - { type: send, edge: dag, token: { kind: tokens, label: 3 tasks }, at: [0.5, 1] }
         - id: fan-out
           caption: The scheduler fires every task whose dependencies are met, so flights and weather start at the same moment while the hotel task waits.
           duration: 2200
-          codeRef: { block: compiler, lines: "6-8" }
           events:
             - { type: activate, node: scheduler, status: thinking, at: [0, 0.3] }
             - { type: send, edge: run1, token: { kind: tool-call, label: flights }, at: [0.3, 0.7] }
@@ -192,7 +171,6 @@ diagram:
         - id: parallel-run
           caption: Weather returns first and flights a moment later, because the two ran concurrently.
           duration: 2600
-          codeRef: { block: compiler, lines: "8" }
           events:
             - { type: activate, node: t1, status: calling, at: [0, 0.6] }
             - { type: activate, node: t2, status: calling, at: [0, 0.4] }
@@ -202,7 +180,6 @@ diagram:
         - id: release-t3
           caption: The flight result unblocks the hotel task, whose argument is filled in from task 1.
           duration: 2600
-          codeRef: { block: compiler, lines: "7-8" }
           events:
             - { type: activate, node: t3, status: waiting, at: [0, 0.35] }
             - { type: send, edge: dep, token: { kind: result, label: Fri }, at: [0, 0.35] }
@@ -211,7 +188,6 @@ diagram:
         - id: join
           caption: The joiner sees all three results are present and answers instead of sending the planner back.
           duration: 2600
-          codeRef: { block: compiler, lines: "9-11" }
           events:
             - { type: branch, node: joiner, taken: finish, notTaken: [replan], at: [0, 0.4] }
             - { type: send, edge: finish, token: { kind: result, label: itinerary }, at: [0.4, 1] }
@@ -221,13 +197,11 @@ diagram:
         - id: ask
           caption: The question reaches the planner.
           duration: 1000
-          codeRef: { block: compiler, lines: "1-2" }
           events:
             - { type: send, edge: ask, token: { kind: prompt, label: Lisbon trip } }
         - id: plan-and-run
           caption: The scheduler runs the first graph, but the flights tool returns an error.
           duration: 3200
-          codeRef: { block: compiler, lines: "3-8" }
           events:
             - { type: send, edge: dag, token: { kind: tokens, label: 3 tasks }, at: [0, 0.2] }
             - { type: send, edge: run1, token: { kind: tool-call, label: flights }, at: [0.2, 0.45] }
@@ -237,7 +211,6 @@ diagram:
         - id: join
           caption: The joiner sees the gap and sends a replan request back to the planner.
           duration: 2400
-          codeRef: { block: compiler, lines: "9-12" }
           events:
             - { type: branch, node: joiner, taken: replan, notTaken: [finish], at: [0, 0.4] }
             - { type: send, edge: replan, token: { kind: feedback, label: flights failed }, at: [0.4, 1] }
