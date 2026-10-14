@@ -34,7 +34,7 @@ build:
   stop: "Stop at the first successful response. If every deployment fails or is cooling down, raise one error that lists each deployment and its last error, so the caller can show a graceful message."
   requirements:
     - "Make retries per deployment (default 2), base backoff (default 1 s) and cooldown length (default 60 s) parameters."
-    - "Classify errors in one function with a table of status codes, so retryable, fail-over and fatal errors are tested in one place; content refusals are fatal and logged."
+    - "Classify errors in one function with a table of status codes, so retryable, fail-over and fatal errors are tested in one place; content refusals, detected from the response's stop reason or refusal field, are fatal and logged."
     - "Cap the total time across all attempts (default 30 s): if Retry-After exceeds the remaining budget, fail over instead of waiting. Never retry a streamed response once tokens have reached the user."
     - "Keep cooldown state shared across requests in the process, so one outage does not cost every request its own retries. Log every attempt with its deployment, error class and wait."
     - "Add a test with stub models where the primary returns 429 three times; assert three primary calls, one fallback call, the fallback's text returned, and that a second request goes straight to the fallback."

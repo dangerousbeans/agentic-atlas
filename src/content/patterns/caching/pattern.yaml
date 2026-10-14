@@ -161,7 +161,7 @@ variants:
       steps:
         - "Normalize the request (model, system prompt from the {{prompt:system}}, messages, temperature) into a canonical form and hash it."
         - "Look the hash up in a key-value store. On a hit that has not expired, return the stored answer."
-        - "On a miss, call the model, return its answer, and store it under the hash with an expiry time."
+        - "On a miss, call the model and return its answer; store it under the hash with an expiry time only if it is a final text answer with no tool use."
         - "Bypass the cache for requests that must be fresh or random, such as those with temperature above 0 or tools that read live data."
       stop: "Each request is either a hit (no model call) or a miss (one call, then a write). If the store is unreachable, call the model and skip the write."
       requirements:
@@ -273,7 +273,7 @@ variants:
         - "Embed the incoming question with an embedding model."
         - "Search a vector store of earlier questions for the nearest neighbour, and get its similarity score."
         - "If the similarity is above a threshold (start around 0.92 and tune it), return the stored answer."
-        - "Otherwise call the model with the {{prompt:system}} and the question, return its answer, and store the question's embedding with the answer."
+        - "Otherwise call the model with the {{prompt:system}} and the question and return its answer; store the question's embedding with it only if it is a final text answer with no tool use."
         - "Scope the cache: keep separate stores, or a filter, per prompt version, language and anything else that changes the right answer."
         - "Bypass the cache entirely for requests that must be fresh, that are personal, or whose answer depends on tools or live data."
       stop: "Each request is either a hit (no model call) or a miss (one call, then a write). Entries expire after a set time so answers do not go stale."
