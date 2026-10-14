@@ -24,8 +24,9 @@ const desc: Record<string, string> = {
     <ul class="plain">
       <li><strong>Solid line:</strong> a fixed path that runs every time.</li>
       <li><strong>Dashed line:</strong> a return path or optional route.</li>
-      <li><strong>Dashed arc with an italic label:</strong> a loop back to an earlier step.</li>
-      <li><strong>Comet tokens:</strong> messages in flight. Cream is a prompt, cyan a tool call, the family color a result, coral feedback.</li>
+      <li><strong>Dashed arc with a red label:</strong> a loop back to an earlier step.</li>
+      <li><strong>Comet tokens:</strong> messages in flight, with a short label for what they carry. The edge they travel turns red while it is active.</li>
+      <li><strong>Hover or focus</strong> any node or edge for what it does; edges also show an example payload.</li>
     </ul>
     <h2>Methodology</h2>
     <p>Patterns are curated from Anthropic's <a href="https://www.anthropic.com/engineering/building-effective-agents">Building effective agents</a>, OpenAI's <a href="https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf">A practical guide to building agents</a>, and the original papers cited on each page. Diagrams play scripted traces that illustrate control flow; they are not live model runs. Pseudocode is framework-agnostic on purpose.</p>
@@ -33,6 +34,8 @@ const desc: Record<string, string> = {
     <p>Built by {author.name}. <a href={author.github} rel="me">GitHub</a> · <a href={author.repo}>Source</a></p>
     <h2>Credits</h2>
     <p>Built with Astro, ELK, Expressive Code and Pagefind. Typeset in Archivo and JetBrains Mono.</p>
+    <h2>Licence</h2>
+    <p>Code is <a href={`${author.repo}/blob/main/LICENSE`}>MIT</a>. The pattern write-ups, diagrams and prompts are <a href={`${author.repo}/blob/main/LICENSE-content`}>CC BY 4.0</a>: reuse them with attribution to “{author.name}, Agentic Atlas”.</p>
   </article>
 </BaseLayout>
 <style>

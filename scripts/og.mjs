@@ -6,7 +6,7 @@ const browser = await chromium.launch();
 // Render a 1600×840 CSS-pixel viewport at 0.75× so the whole hero, caption included, fits 1200×630.
 const page = await browser.newPage({ viewport: { width: 1600, height: 840 }, deviceScaleFactor: 0.75 });
 await page.goto(url);
-await page.waitForSelector('.hero-stage flow-player.is-enhanced', { timeout: 15000 });
+await page.waitForSelector('.hero-stage flow-player[data-playing="true"]', { timeout: 15000 });
 await page.addStyleTag({ content: '.site-header{display:none}' });
 // Let the hero diagram reach a mid-run frame with tokens in flight.
 await page.waitForTimeout(2500);
