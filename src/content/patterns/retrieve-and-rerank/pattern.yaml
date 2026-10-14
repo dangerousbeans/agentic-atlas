@@ -1,0 +1,157 @@
+slug: retrieve-and-rerank
+name: Retrieve-and-Rerank
+family: knowledge-memory
+aliases: [Contextual retrieval, Two-stage retrieval, Hybrid search, Cross-encoder reranking, LLM reranking]
+summary: Cast a wide net with cheap keyword and vector search over context-prefixed chunks, then let a reranker keep only the best few.
+badges: { autonomy: low, cost: medium, latency: medium }
+sources:
+  - title: Introducing Contextual Retrieval (Anthropic, 2024)
+    url: https://www.anthropic.com/news/contextual-retrieval
+  - title: "Is ChatGPT Good at Search? Investigating Large Language Models as Re-Ranking Agents (Sun et al., 2023)"
+    url: https://arxiv.org/abs/2304.09542
+related:
+  composesWith: [hyde, multi-query-rag, corrective-rag]
+  confusedWith:
+    - slug: corrective-rag
+      difference: "A reranker only reorders and truncates what retrieval found. Corrective RAG grades the results and, if they fail, rewrites the query and falls back to web search."
+origin:
+  by: Anthropic (research by Daniel Ford)
+  org: Anthropic
+  year: 2024
+  url: https://www.anthropic.com/news/contextual-retrieval
+  kind: popularized
+  uncertain: true
+  note: "Retrieving broadly and then reranking is long-standing information-retrieval practice with no single originator. Anthropic's 2024 post popularized the full pipeline with contextual chunk prefixes; using an LLM as the reranker was introduced by Weiwei Sun et al. (Shandong University, Baidu, Leiden University) in 2023."
+build:
+  goal: "Answer questions over a large corpus by indexing context-prefixed chunks in both a keyword index and a vector index, retrieving a wide candidate set from both, reranking it, and answering from the top few."
+  steps:
+    - "At index time, split each document into chunks. For each chunk, call the contextualizer model with the {{prompt:contextualize}}, passing the whole document and the chunk, and prepend the short context it returns."
+    - "Write every context-prefixed chunk to a BM25 keyword index and, embedded, to a vector index, under the same chunk ID."
+    - "At query time, search both indexes with the question in parallel, taking the top 150 candidates from each."
+    - "Fuse the two lists by chunk ID with Reciprocal Rank Fusion and keep the top 150 unique chunks."
+    - "Score each candidate against the question with a reranker (a cross-encoder model, or an LLM with the {{prompt:rerank}}) and keep the 20 highest-scoring chunks."
+    - "Call the generator model with the {{prompt:answer}}, passing the question and the 20 chunks, and return its answer."
+  stop: "Stop after one retrieval, one rerank and one generation. If the best reranker score is below the relevance floor, say the corpus has no answer instead of generating."
+  requirements:
+    - "Make the candidate count (default 150), the kept count (default 20) and the relevance floor configurable."
+    - "Cache the contextualizer calls, for example with prompt caching on the whole document, since every chunk of a document repeats it."
+    - "Index the context prefix together with the chunk text in both indexes, but show the generator the chunk with its prefix so it knows the source."
+    - "If the reranker fails or times out, fall back to the fused order instead of failing the request, and log that it did."
+    - "Add a test with fake BM25 and vector indexes and a stub reranker that scores one chunk highest although it ranks 140th after fusion; assert that chunk is first in the 20 passed to the generator, and exactly 20 are passed."
+prompts:
+  - id: contextualize
+    title: Chunk context prompt
+    lang: markdown
+    source: |
+      <document>
+      {{whole_document}}
+      </document>
+
+      Here is the chunk we want to situate within the whole document:
+      <chunk>
+      {{chunk}}
+      </chunk>
+
+      Give a short, succinct context to situate this chunk within the overall
+      document, for the purpose of improving search retrieval of the chunk.
+      Answer only with the succinct context and nothing else.
+  - id: rerank
+    title: LLM reranker prompt
+    lang: markdown
+    source: |
+      Rate how well the passage answers the question.
+
+      <question>{{question}}</question>
+      <passage>{{passage}}</passage>
+
+      Reply with a single integer from 0 to 10, where 10 means the passage
+      directly contains the answer and 0 means it is unrelated. Judge only
+      relevance to this question, not the passage's general quality.
+  - id: answer
+    title: Grounded answer prompt
+    lang: markdown
+    source: |
+      Answer the question using only the passages below, which are ranked
+      from most to least relevant.
+
+      <question>{{question}}</question>
+      <passages>{{passages}}</passages>
+
+      Cite the passage ID after each claim. If the passages do not answer the
+      question, say so.
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Question, description: "The user's question at query time, such as 'What was ACME Corp's revenue growth in Q2 2023?'." }
+    - { id: docs, kind: io, label: Documents, description: "The corpus, split into chunks at index time, such as ACME Corp's quarterly filings." }
+    - { id: contextualizer, kind: llm, label: Contextualizer, sublabel: index time, description: "Reads each chunk with its whole document and writes a one-line context to prefix it, such as which company and quarter it is about." }
+    - { id: bm25, kind: memory, label: BM25 index, sublabel: exact terms, description: "A keyword index over the prefixed chunks. It catches exact terms, names and codes that embeddings blur." }
+    - { id: vectors, kind: memory, label: Vector index, sublabel: meaning, description: "An embedding index over the same prefixed chunks. It catches paraphrases that share no keywords." }
+    - { id: fuse, kind: aggregator, label: Fuse, description: "Merges the two candidate lists by chunk ID into one list of about 150 unique chunks." }
+    - { id: reranker, kind: evaluator, label: Reranker, description: "Scores every candidate against the question, a slower but sharper relevance judgement, and keeps the top 20." }
+    - { id: generator, kind: llm, label: Generator, description: "Answers from the 20 reranked chunks only, citing each." }
+    - { id: out, kind: io, label: Answer, description: "The answer, citing the chunks it came from." }
+  edges:
+    - { id: chunk, from: docs, to: contextualizer, description: "Each chunk goes to the contextualizer together with its whole document.", example: "Chunk: 'The company's revenue grew by 3% over the previous quarter.' Document: ACME Corp 10-Q, Q2 2023" }
+    - { id: to-bm25, from: contextualizer, to: bm25, description: "The prefixed chunk is written to the keyword index.", example: "This chunk is from ACME Corp's Q2 2023 10-Q; the previous quarter's revenue was $314M. The company's revenue grew by 3%..." }
+    - { id: to-vectors, from: contextualizer, to: vectors, description: "The same prefixed chunk, embedded, is written to the vector index.", example: "chunk-0412 -> [0.044, -0.102, 0.317, ...] with the same context prefix" }
+    - { id: q-bm25, from: user, to: bm25, description: "The question is searched by keyword.", example: "ACME Corp revenue growth Q2 2023" }
+    - { id: q-vectors, from: user, to: vectors, description: "The same question is searched by embedding, in parallel.", example: "embed('What was ACME Corp's revenue growth in Q2 2023?')" }
+    - { id: c-bm25, from: bm25, to: fuse, label: "150", description: "Up to 150 keyword candidates, ranked by BM25 score.", example: "1. chunk-0412 (18.2)  2. chunk-0977 (15.1)  3. chunk-0413 (14.8) ..." }
+    - { id: c-vectors, from: vectors, to: fuse, label: "150", description: "Up to 150 vector candidates, ranked by similarity.", example: "1. chunk-0977 (0.81)  2. chunk-0412 (0.79)  3. chunk-1530 (0.77) ..." }
+    - { id: candidates, from: fuse, to: reranker, label: "150", description: "One fused list of unique candidates, still in cheap-retrieval order.", example: "150 chunks: chunk-0412, chunk-0977, chunk-0413, chunk-1530, ..." }
+    - { id: top, from: reranker, to: generator, label: top 20, description: "Only the 20 best-scored chunks reach the generator, best first.", example: "1. chunk-0412 (9/10) ACME Q2 2023: revenue grew 3%  2. chunk-0413 (8/10) ACME Q2 2023 revenue table ..." }
+    - { id: answer, from: generator, to: out, description: "The answer, with citations to the reranked chunks.", example: "ACME Corp's revenue grew 3% in Q2 2023 over the previous quarter [chunk-0412]." }
+  scenarios:
+    - id: query
+      label: Wide net, then narrow
+      steps:
+        - id: ask
+          caption: The question is searched by keyword and by meaning at the same time.
+          duration: 2400
+          events:
+            - { type: send, edge: q-bm25, token: { kind: prompt, label: question }, at: [0, 0.5] }
+            - { type: send, edge: q-vectors, token: { kind: prompt, label: question }, at: [0, 0.5] }
+            - { type: read, node: bm25, at: [0.5, 1] }
+            - { type: read, node: vectors, at: [0.5, 1] }
+        - id: fuse
+          caption: Each index returns up to 150 candidates; they are fused into one list.
+          duration: 2400
+          events:
+            - { type: send, edge: c-bm25, token: { kind: result, label: "150" }, at: [0, 0.45] }
+            - { type: send, edge: c-vectors, token: { kind: result, label: "150" }, at: [0, 0.45] }
+            - { type: activate, node: fuse, status: thinking, at: [0.45, 1] }
+        - id: rerank
+          caption: The reranker scores all 150 against the question and keeps 20. The chunk naming ACME and Q2 2023 rises to first.
+          duration: 3200
+          events:
+            - { type: send, edge: candidates, token: { kind: result, label: "150" }, at: [0, 0.3] }
+            - { type: activate, node: reranker, status: thinking, at: [0.3, 0.75] }
+            - { type: send, edge: top, token: { kind: result, label: top 20 }, at: [0.75, 1] }
+        - id: answer
+          caption: The generator answers from the 20 reranked chunks.
+          duration: 2400
+          events:
+            - { type: activate, node: generator, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.5, 0.9] }
+            - { type: activate, node: out, status: done, at: [0.85, 1] }
+    - id: index
+      label: Index with context
+      steps:
+        - id: chunk
+          caption: "A chunk says only 'revenue grew by 3%'. On its own, it does not say whose revenue, or when."
+          duration: 2000
+          events:
+            - { type: send, edge: chunk, token: { kind: prompt, label: chunk } }
+        - id: contextualize
+          caption: "The contextualizer reads the whole filing and prefixes the chunk: 'From ACME Corp's Q2 2023 10-Q...'"
+          duration: 2400
+          events:
+            - { type: activate, node: contextualizer, status: thinking }
+        - id: write
+          caption: The prefixed chunk is written to both indexes, so a search for ACME or Q2 2023 can now find it.
+          duration: 2600
+          events:
+            - { type: send, edge: to-bm25, token: { kind: result, label: prefixed }, at: [0, 0.6] }
+            - { type: send, edge: to-vectors, token: { kind: result, label: prefixed }, at: [0, 0.6] }
+            - { type: write, node: bm25, at: [0.6, 1] }
+            - { type: write, node: vectors, at: [0.6, 1] }

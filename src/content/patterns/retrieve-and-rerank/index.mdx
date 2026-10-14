@@ -1,0 +1,36 @@
+## Problem
+
+Cheap retrieval is either precise or broad, never both. A vector search for "What was ACME Corp's revenue growth in Q2 2023?" finds chunks about revenue growth in general, from any company and any quarter. A keyword search finds "ACME" and "Q2 2023" but misses a chunk that never names them. Worse, a chunk cut from a filing may say only "revenue grew by 3% over the previous quarter", which matches neither search well because it has lost its context. And if you raise the top-k to catch more, the generator drowns in near-misses.
+
+## How it works
+
+The pattern has two halves.
+
+At index time, a <NodeRef id="contextualizer">contextualizer</NodeRef> reads each chunk of the <NodeRef id="docs">documents</NodeRef> together with its whole document and writes a one-line prefix: "This chunk is from ACME Corp's Q2 2023 10-Q; the previous quarter's revenue was $314M." The prefixed chunk goes into a <NodeRef id="bm25">BM25 keyword index</NodeRef> and a <NodeRef id="vectors">vector index</NodeRef>. Now the orphaned "grew by 3%" chunk carries the company and the quarter, so both searches can find it. Anthropic calls this contextual retrieval.
+
+At query time, the <NodeRef id="user">question</NodeRef> is searched in both indexes at once, casting a wide net: about 150 candidates from each. The <NodeRef id="fuse">fuser</NodeRef> merges them into one list. Then the <NodeRef id="reranker">reranker</NodeRef> does the expensive part. It reads every candidate alongside the question, with a cross-encoder or an LLM, and keeps only the best 20. Fast retrieval maximizes recall, and the slow reranker restores precision. The <NodeRef id="generator">generator</NodeRef> answers from those 20, and the <NodeRef id="out">answer</NodeRef> cites them.
+
+In Anthropic's tests, contextual embeddings cut top-20 retrieval failures by 35%, adding contextual BM25 brought that to 49%, and adding reranking brought it to 67%.
+
+## When to use
+
+- The corpus is too large to put in the prompt. Anthropic suggests about 200,000 tokens as the threshold below which you can skip retrieval entirely.
+- Plain vector search misses exact terms such as product names, error codes or ticker symbols.
+- Precision in the top few results matters, because the generator trusts whatever it is given.
+
+## When to avoid
+
+- The corpus fits in the context window. Put it all in the prompt and use prompt caching instead.
+- The latency budget cannot absorb a reranker scoring 150 candidates.
+- The corpus changes constantly, and re-running the contextualizer over every new chunk is too expensive.
+
+## Trade-offs
+
+The contextualizer costs one model call per chunk, but only once, at index time, and prompt caching on the shared document makes it cheap. Keeping two indexes in sync costs operational effort. The reranker adds latency to every query, though a cross-encoder scoring 150 short chunks is usually far cheaper than a generation call. In return, you get the recall of broad search with the precision of a careful judge.
+
+## Failure modes
+
+- **Bad prefixes:** the contextualizer invents context the document does not support, and chunks get indexed under the wrong company or date. Keep prefixes short, and check a sample.
+- **Narrow net:** the first stage returns too few candidates, so the right chunk never reaches the reranker. Recall is set by the first stage; the reranker can only reorder what it is given.
+- **Index drift:** a chunk is updated in one index but not the other. Write to both under one chunk ID, in one job.
+- **Reranker as single point of failure:** when it times out, the request fails. Fall back to the fused order.
