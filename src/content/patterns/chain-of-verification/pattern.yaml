@@ -18,7 +18,7 @@ origin:
   year: 2023
   url: https://arxiv.org/abs/2309.11495
   kind: introduced
-  note: "The paper compares four ways to run the verification step: joint, two-step, factored and factor+revise. Both factored (shown first here) and two-step beat joint, and factor+revise raised the FActScore on biographies from 63.7 to 71.4."
+  note: "The paper compares four ways to run the verification step: joint, two-step, factored and factor+revise. Both factored (shown first here) and two-step beat joint, and factor+revise raised the FActScore on biographies from 63.7 (factored) to 71.4."
 defaultVariantName: Factored
 build:
   goal: "Reduce made-up facts in an answer by checking each of its claims with a separate question the model answers without seeing the answer, then rewriting the answer to agree with those checks."
@@ -33,6 +33,7 @@ build:
     - "Never include the draft in a verify call; build those prompts from the verification question alone, so a hallucination cannot be copied into its own check."
     - "Cap the verification questions (default 10) and run the verify calls concurrently with a configurable limit."
     - "Keep each verification question and answer paired, in plan order, when passing them to the revise prompt."
+    - "If a verify call fails, retry it once, then record its answer as 'unsure' so the claim is neither confirmed nor removed by it."
     - "Log the draft, the plan, every check and the revised answer, so a removed claim can be traced to the check that removed it."
     - "Add a test with a stub LLM: draft 'Hillary Clinton, Donald Trump, Theodore Roosevelt', checks answer Chicago, Queens, Manhattan; assert three verify calls, none containing the draft, and that the revise prompt contains 'Chicago'."
 prompts:
@@ -69,7 +70,9 @@ prompts:
     source: |
       Below is a question, a draft answer, and checks of the draft's claims that
       were answered independently. Rewrite the answer so it agrees with the checks.
-      Remove any claim a check contradicts, and add nothing the checks do not support.
+      Remove any claim a check contradicts, and add nothing new. A check answered
+      "unsure" neither confirms nor contradicts; keep that claim unless another
+      check contradicts it.
 
       <question>{{question}}</question>
       <draft>{{draft}}</draft>
@@ -91,9 +94,13 @@ diagram:
       description: "A question whose answer is a list of facts: 'Name some politicians who were born in New York City.'"
     - id: drafter
       kind: llm
-      label: Draft + plan
-      sublabel: two calls
-      description: "Writes a baseline answer the usual way, then reads it and writes one stand-alone question per claim."
+      label: Draft
+      description: "Writes a baseline answer the usual way. It may contain made-up or wrong facts."
+    - id: planner
+      kind: llm
+      label: Plan checks
+      sublabel: reads the draft
+      description: "Reads the draft and writes one stand-alone question per claim, such as 'Where was Hillary Clinton born?'"
     - id: v1
       kind: llm
       label: Check 1
@@ -123,18 +130,24 @@ diagram:
       to: drafter
       description: "The question goes to the model for a first, unchecked answer."
       example: "Name some politicians who were born in New York City."
-    - id: q1
+    - id: draft
       from: drafter
+      to: planner
+      label: draft
+      description: "The draft goes to the planner, which turns each of its claims into a question."
+      example: "Hillary Clinton, Donald Trump and Theodore Roosevelt were all born in New York City."
+    - id: q1
+      from: planner
       to: v1
-      description: "The first verification question goes out on its own. The draft itself stays behind."
+      description: "The first verification question goes out on its own; the draft stays with the planner."
       example: "Where was Hillary Clinton born?"
     - id: q2
-      from: drafter
+      from: planner
       to: v2
       description: "The second verification question goes out in parallel, again without the draft."
       example: "Where was Donald Trump born?"
     - id: q3
-      from: drafter
+      from: planner
       to: v3
       description: "The third verification question goes out in parallel with the others."
       example: "Where was Theodore Roosevelt born?"
@@ -157,7 +170,7 @@ diagram:
       from: drafter
       to: reviser
       style: dashed
-      label: draft
+      label: skips checks
       description: "The draft goes straight to the reviser, bypassing the checks, so it can be compared with their answers."
       example: "Hillary Clinton, Donald Trump and Theodore Roosevelt were all born in New York City."
     - id: final
@@ -172,15 +185,16 @@ diagram:
       steps:
         - id: draft
           caption: The model drafts an answer naming three politicians; one of them was not born in New York.
-          duration: 2000
-          events:
-            - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.4] }
-            - { type: activate, node: drafter, status: thinking, at: [0.4, 1] }
-        - id: plan
-          caption: A second call reads the draft and turns each claim into a stand-alone question about one person's birthplace.
           duration: 2400
           events:
-            - { type: activate, node: drafter, status: thinking, at: [0, 0.4] }
+            - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.35] }
+            - { type: activate, node: drafter, status: thinking, at: [0.35, 0.7] }
+            - { type: send, edge: draft, token: { kind: result, label: 3 names }, at: [0.7, 1] }
+        - id: plan
+          caption: "The planner turns each claim into a stand-alone question about one person's birthplace."
+          duration: 2400
+          events:
+            - { type: activate, node: planner, status: thinking, at: [0, 0.4] }
             - { type: send, edge: q1, token: { kind: prompt, label: Clinton? }, at: [0.4, 0.9] }
             - { type: send, edge: q2, token: { kind: prompt, label: Trump? }, at: [0.4, 0.9] }
             - { type: send, edge: q3, token: { kind: prompt, label: Roosevelt? }, at: [0.4, 0.9] }
@@ -207,15 +221,16 @@ diagram:
       steps:
         - id: draft
           caption: This time the draft names Donald Trump, Theodore Roosevelt and Alexandria Ocasio-Cortez.
-          duration: 2000
-          events:
-            - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.4] }
-            - { type: activate, node: drafter, status: thinking, at: [0.4, 1] }
-        - id: plan
-          caption: A second call writes one birthplace question per name.
           duration: 2400
           events:
-            - { type: activate, node: drafter, status: thinking, at: [0, 0.4] }
+            - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.35] }
+            - { type: activate, node: drafter, status: thinking, at: [0.35, 0.7] }
+            - { type: send, edge: draft, token: { kind: result, label: 3 names }, at: [0.7, 1] }
+        - id: plan
+          caption: "The planner writes one birthplace question per name."
+          duration: 2400
+          events:
+            - { type: activate, node: planner, status: thinking, at: [0, 0.4] }
             - { type: send, edge: q1, token: { kind: prompt, label: Trump? }, at: [0.4, 0.9] }
             - { type: send, edge: q2, token: { kind: prompt, label: Roosevelt? }, at: [0.4, 0.9] }
             - { type: send, edge: q3, token: { kind: prompt, label: Ocasio-Cortez? }, at: [0.4, 0.9] }
@@ -380,7 +395,7 @@ variants:
       stop: "Stop after the revise call; the pattern makes one pass. If the plan produces no questions, return the draft with a status saying nothing was checked."
       requirements:
         - "Never include the draft or the user's question in the verify-all call."
-        - "Number the verification questions and require numbered answers, so each answer can be matched to its question."
+        - "Number the verification questions from 1 and require answers with the same numbers, so each answer can be matched to its question."
         - "Cap the verification questions (default 10)."
         - "Add a test with a stub LLM: draft three names, plan three questions, answers 'Chicago', 'Queens', 'Manhattan'; assert four model calls and that the verify-all prompt does not contain the draft."
     prompts:
@@ -411,7 +426,7 @@ variants:
           say "unsure". Number your answers to match the questions.
 
           {{#each questions}}
-          {{@index}}. {{this}}
+          {{number}}. {{text}}
           {{/each}}
       - id: revise
         title: Revise prompt
@@ -434,9 +449,13 @@ variants:
           description: "A question whose answer is a list of facts: 'Name some politicians who were born in New York City.'"
         - id: drafter
           kind: llm
-          label: Draft + plan
-          sublabel: two calls
-          description: "Writes a baseline answer the usual way, then reads it and writes one stand-alone question per claim."
+          label: Draft
+          description: "Writes a baseline answer the usual way. It may contain made-up or wrong facts."
+        - id: planner
+          kind: llm
+          label: Plan checks
+          sublabel: reads the draft
+          description: "Reads the draft and writes one stand-alone question per claim."
         - id: answerer
           kind: llm
           label: Answer checks
@@ -456,8 +475,14 @@ variants:
           to: drafter
           description: "The question goes to the model for a first, unchecked answer."
           example: "Name some politicians who were born in New York City."
-        - id: questions
+        - id: draft
           from: drafter
+          to: planner
+          label: draft
+          description: "The draft goes to the planner, which turns each of its claims into a question."
+          example: "Hillary Clinton, Donald Trump and Theodore Roosevelt were all born in New York City."
+        - id: questions
+          from: planner
           to: answerer
           label: questions
           description: "Only the list of questions crosses over; the draft stays behind."
@@ -487,15 +512,16 @@ variants:
           steps:
             - id: draft
               caption: The model drafts three names; one of them was not born in New York.
-              duration: 2000
-              events:
-                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.4] }
-                - { type: activate, node: drafter, status: thinking, at: [0.4, 1] }
-            - id: plan
-              caption: A second call writes three birthplace questions, and only the questions are passed on.
               duration: 2400
               events:
-                - { type: activate, node: drafter, status: thinking, at: [0, 0.45] }
+                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.35] }
+                - { type: activate, node: drafter, status: thinking, at: [0.35, 0.7] }
+                - { type: send, edge: draft, token: { kind: result, label: 3 names }, at: [0.7, 1] }
+            - id: plan
+              caption: The planner writes three birthplace questions and passes on only the questions.
+              duration: 2400
+              events:
+                - { type: activate, node: planner, status: thinking, at: [0, 0.45] }
                 - { type: send, edge: questions, token: { kind: prompt, label: 3 questions }, at: [0.45, 0.95] }
             - id: answer
               caption: One call answers all three without the draft, and says Clinton was born in Chicago.
@@ -513,22 +539,22 @@ variants:
                 - { type: activate, node: answer, status: done, at: [0.85, 1] }
   - id: factor-revise
     name: Factor + revise
-    summary: "Factored checks, plus an explicit cross-check that compares each check's answer with the draft's claim before the rewrite."
+    summary: "Factored checks, plus an explicit cross-check that compares each check's answer with the claim it tests before the rewrite."
     build:
-      goal: "Check each claim of a draft with an independent question, then explicitly mark each claim as consistent or not before rewriting the draft from those verdicts."
+      goal: "Check each claim of a draft with an independent question, mark each claim consistent, inconsistent or partly consistent with its check, then rebuild the answer from the consistent parts."
       steps:
-        - "Call the model with the {{prompt:draft}} to write a baseline answer, then with the {{prompt:plan}} to get one verification question per line."
-        - "Answer every verification question in its own call with the {{prompt:verify}}, passing only that question, in parallel."
-        - "For each claim, call the model with the {{prompt:cross-check}}, passing the original claim and the check's question and answer, and parse CONSISTENT, INCONSISTENT or UNSURE."
-        - "Call the model with the {{prompt:revise}}, passing the question, the draft and every claim with its verdict and evidence."
-        - "Return the revised answer together with the per-claim verdicts."
-      stop: "Stop after the revise call; the pattern makes one pass. If the plan produces no questions, return the draft with a status saying nothing was checked."
+        - "Call the model with the {{prompt:draft}} to write a baseline answer."
+        - "Call the model with the {{prompt:plan}}, passing the question and the draft, and parse its reply into pairs: each claim, quoted from the draft, with the question that checks it."
+        - "Answer every question in its own call with the {{prompt:verify}}, passing only that question, in parallel."
+        - "For each pair, call the model with the {{prompt:cross-check}}, passing the claim and its check's question and answer. Parse CONSISTENT, INCONSISTENT, or PARTIALLY CONSISTENT with the consistent part."
+        - "Call the model with the {{prompt:revise}}, passing the question and every claim with its verdict, and return the answer it splices together from the consistent parts."
+      stop: "Stop after the revise call; the pattern makes one pass. If the plan produces no claim and question pairs, return the draft with a status saying nothing was checked."
       requirements:
         - "Never include the draft in a verify call; the cross-check is the only step that sees a claim next to its check."
         - "Give each cross-check exactly one claim, so verdicts cannot bleed between claims."
-        - "Treat a reply that is not exactly one of the three verdicts as UNSURE, and keep such claims only if the revise prompt says to."
-        - "Cap the verification questions (default 10), and run the verify and cross-check calls concurrently with a limit."
-        - "Add a test with a stub LLM where the Clinton cross-check returns INCONSISTENT and the others CONSISTENT; assert the revise prompt marks exactly one claim INCONSISTENT."
+        - "Treat a cross-check reply that does not start with one of the three verdicts as INCONSISTENT, and log it."
+        - "Cap the claims (default 10), and run the verify and cross-check calls concurrently with a limit."
+        - "Add a test with a stub LLM: claim 'Donald Trump was born in Queens in 1948' gets PARTIALLY CONSISTENT, consistent part 'Donald Trump was born in Queens'; assert the revise prompt contains exactly that part, not '1948'."
     prompts:
       - id: draft
         title: Draft prompt
@@ -538,30 +564,32 @@ variants:
 
           <question>{{question}}</question>
       - id: plan
-        title: Plan verification prompt
+        title: Plan claims and checks prompt
         lang: markdown
         source: |
-          Below is a question and a draft answer. Write questions that check each
-          factual claim in the draft. Each question must make sense on its own,
-          without the draft, and must be answerable with a short fact.
+          Below is a question and a draft answer. List each factual claim in the
+          draft, quoted or closely restated, and a question that checks it. Each
+          question must make sense on its own, without the draft, and must be
+          answerable with a short fact.
 
           <question>{{question}}</question>
           <draft>{{draft}}</draft>
 
-          Write one verification question per line, and nothing else.
+          Use this format, one pair per claim:
+          Claim: <the claim>
+          Question: <the verification question>
       - id: verify
         title: Verification prompt
         lang: markdown
         source: |
-          Answer the question with a short, factual answer. If you are not sure,
-          say "unsure".
+          Answer the question with a short, factual answer.
 
           <question>{{verification_question}}</question>
       - id: cross-check
         title: Cross-check prompt
         lang: markdown
         source: |
-          Does the evidence support the claim?
+          Is the claim consistent with the evidence?
 
           <claim>{{claim}}</claim>
           <evidence>
@@ -569,20 +597,23 @@ variants:
           A: {{verification_answer}}
           </evidence>
 
-          Reply with exactly one word: CONSISTENT, INCONSISTENT or UNSURE.
+          Reply with one of:
+          CONSISTENT
+          INCONSISTENT
+          PARTIALLY CONSISTENT: <the part of the claim the evidence supports>
       - id: revise
         title: Revise prompt
         lang: markdown
         source: |
-          Below is a question, a draft answer, and a verdict on each of its claims.
-          Rewrite the answer: keep CONSISTENT claims, remove INCONSISTENT ones,
-          and keep UNSURE claims only if you can hedge them clearly.
+          Below is a question and the verdict on each claim of a draft answer.
+          Write the final answer from the consistent material only: keep CONSISTENT
+          claims, keep only the supported part of PARTIALLY CONSISTENT claims, and
+          leave out INCONSISTENT claims. Add nothing new.
 
           <question>{{question}}</question>
-          <draft>{{draft}}</draft>
           <verdicts>{{claims_with_verdicts}}</verdicts>
 
-          Return only the revised answer.
+          Return only the final answer.
     diagram:
       nodes:
         - id: question
@@ -591,8 +622,13 @@ variants:
           description: "A question whose answer is a list of facts: 'Name some politicians who were born in New York City.'"
         - id: drafter
           kind: llm
-          label: Draft + plan
-          description: "Writes a baseline answer, then a stand-alone question for each of its claims (two calls)."
+          label: Draft
+          description: "Writes a baseline answer the usual way. It may contain made-up or wrong facts."
+        - id: planner
+          kind: llm
+          label: Plan checks
+          sublabel: claim + question pairs
+          description: "Reads the draft and lists each claim with a stand-alone question that checks it."
         - id: checks
           kind: llm
           label: Checks
@@ -602,78 +638,90 @@ variants:
           kind: evaluator
           label: Cross-check
           sublabel: claim vs evidence
-          description: "Puts each draft claim next to its check's answer and labels it CONSISTENT, INCONSISTENT or UNSURE."
+          description: "Puts each claim next to its check's answer: CONSISTENT, INCONSISTENT, or PARTIALLY CONSISTENT with the part that holds."
         - id: reviser
           kind: llm
           label: Revise
-          description: "Rewrites the draft from the verdicts: keeps consistent claims and removes inconsistent ones."
+          description: "Splices the final answer together from the consistent claims and the consistent parts of partial ones."
         - id: answer
           kind: io
           label: Answer
-          description: "The revised answer, with a verdict on record for every claim."
+          description: "The final answer, with a verdict on record for every claim it started from."
       edges:
         - id: ask
           from: question
           to: drafter
-          description: "The question goes to the model for a first answer and its verification questions."
+          description: "The question goes to the model for a first, unchecked answer."
           example: "Name some politicians who were born in New York City."
-        - id: questions
+        - id: draft
           from: drafter
+          to: planner
+          label: draft
+          description: "The draft goes to the planner, which splits it into claims and writes a question for each."
+          example: "Hillary Clinton, Donald Trump and Theodore Roosevelt were all born in New York City."
+        - id: questions
+          from: planner
           to: checks
           label: questions
-          description: "Only the verification questions go to the checks; the draft stays behind."
+          description: "Only the questions go to the checks; the claims and the draft stay behind."
           example: "Where was Hillary Clinton born? / Where was Donald Trump born? / Where was Theodore Roosevelt born?"
+        - id: claims
+          from: planner
+          to: crosscheck
+          style: dashed
+          label: claims
+          description: "Each claim goes to the cross-check, to be set against the answer to its own question."
+          example: "Claim: Hillary Clinton was born in New York City."
         - id: evidence
           from: checks
           to: crosscheck
           label: answers
-          description: "Each check's answer, given without knowing the draft, goes to the cross-check as evidence."
-          example: "Hillary Clinton was born in Chicago, Illinois."
-        - id: claims
-          from: drafter
-          to: crosscheck
-          style: dashed
-          label: claims
-          description: "The draft's claims go to the cross-check, one at a time, to be set against their evidence."
-          example: "Claim: Hillary Clinton was born in New York City."
+          description: "Each check's answer, given without knowing the claim, goes to the cross-check as evidence."
+          example: "Q: Where was Hillary Clinton born? A: Chicago, Illinois."
         - id: verdicts
           from: crosscheck
           to: reviser
           label: verdicts
-          description: "A verdict for each claim, with the evidence behind it, goes to the reviser."
+          description: "A verdict for each claim, with the supported part of any partly consistent claim, goes to the reviser."
           example: "Clinton: INCONSISTENT (born in Chicago). Trump: CONSISTENT. Roosevelt: CONSISTENT."
         - id: final
           from: reviser
           to: answer
           label: revised
-          description: "The rewritten answer, with every inconsistent claim removed."
+          description: "The answer rebuilt from consistent material only."
           example: "Donald Trump (born in Queens) and Theodore Roosevelt (born in Manhattan)."
       scenarios:
         - id: marks-inconsistent
           label: Marks a claim inconsistent
           steps:
             - id: draft
-              caption: The model drafts three names and writes a birthplace question for each.
+              caption: The model drafts an answer naming three politicians.
+              duration: 2200
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.35] }
+                - { type: activate, node: drafter, status: thinking, at: [0.35, 0.7] }
+                - { type: send, edge: draft, token: { kind: result, label: 3 names }, at: [0.7, 1] }
+            - id: plan
+              caption: The planner splits the draft into three claims and writes a birthplace question for each.
               duration: 2600
               events:
-                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.3] }
-                - { type: activate, node: drafter, status: thinking, at: [0.3, 0.65] }
-                - { type: send, edge: questions, token: { kind: prompt, label: 3 questions }, at: [0.65, 1] }
+                - { type: activate, node: planner, status: thinking, at: [0, 0.4] }
+                - { type: send, edge: questions, token: { kind: prompt, label: 3 questions }, at: [0.4, 0.9] }
+                - { type: send, edge: claims, token: { kind: result, label: 3 claims }, at: [0.4, 0.9] }
             - id: check
               caption: Each question is answered alone; the Clinton check says Chicago.
-              duration: 2600
+              duration: 2400
               events:
                 - { type: activate, node: checks, status: thinking, at: [0, 0.5] }
                 - { type: send, edge: evidence, token: { kind: result, label: 3 answers }, at: [0.5, 0.95] }
-                - { type: send, edge: claims, token: { kind: result, label: 3 claims }, at: [0.4, 0.95] }
             - id: cross
-              caption: The cross-check sets each claim against its evidence and marks Clinton INCONSISTENT.
+              caption: The cross-check sets each claim against its own evidence and marks the Clinton claim INCONSISTENT.
               duration: 2600
               events:
                 - { type: activate, node: crosscheck, status: thinking, at: [0, 0.5] }
                 - { type: send, edge: verdicts, token: { kind: feedback, label: 1 inconsistent }, at: [0.5, 0.95] }
             - id: revise
-              caption: The reviser drops the inconsistent claim and returns the two names that hold up.
+              caption: The reviser builds the answer from the two consistent claims only.
               duration: 2400
               events:
                 - { type: activate, node: reviser, status: thinking, at: [0, 0.5] }

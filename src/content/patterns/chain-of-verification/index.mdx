@@ -6,13 +6,13 @@ Ask a model "Name some politicians who were born in New York City" and you may g
 
 Chain-of-verification makes the model check its own claims with questions it answers separately. It runs in four stages and makes one pass.
 
-First the <NodeRef id="question">question</NodeRef> goes to the <NodeRef id="drafter">draft and plan</NodeRef> stage. One call answers it the usual way. A second call reads that draft and writes one stand-alone question per claim: "Where was Hillary Clinton born?", "Where was Donald Trump born?", "Where was Theodore Roosevelt born?"
+First the <NodeRef id="question">question</NodeRef> goes to the <NodeRef id="drafter">draft</NodeRef> call, which answers it the usual way. Then <NodeRef id="planner">plan</NodeRef> reads the draft and writes one stand-alone question per claim: "Where was Hillary Clinton born?", "Where was Donald Trump born?", "Where was Theodore Roosevelt born?"
 
 Each question is then answered in its own call: <NodeRef id="v1">check 1</NodeRef>, <NodeRef id="v2">check 2</NodeRef> and <NodeRef id="v3">check 3</NodeRef>. This is the important part. The checks never see the draft. A model that has just read "Clinton was born in New York" tends to agree with it, but a model asked the bare question answers from what it knows, and says Chicago.
 
 Finally the <NodeRef id="reviser">revise</NodeRef> call gets the draft and every question with its answer. Chicago contradicts the draft, so Clinton is removed, and the <NodeRef id="answer">answer</NodeRef> names only Trump and Roosevelt.
 
-The paper tried four ways to run the checks, shown as tabs. **Joint** plans and answers the checks in one prompt with the draft in view; it is the cheapest and the weakest, because the answers copy the draft. **Two-step** answers all the checks in one call without the draft. **Factored**, the default here, gives each check its own call. Both beat joint in the paper's list tasks, which supports the central idea: the checks should not see the draft. **Factor + revise** adds an explicit cross-check that labels each claim consistent or not before the rewrite; on biographies it raised the paper's factuality score from 63.7 to 71.4.
+The paper tried four ways to run the checks, shown as tabs. **Joint** plans and answers the checks in one prompt with the draft in view; it is the cheapest and the weakest, because the answers copy the draft. **Two-step** answers all the checks in one call without the draft. **Factored**, the default here, gives each check its own call. Both beat joint in the paper's list tasks, which supports the central idea: the checks should not see the draft. **Factor + revise** adds an explicit cross-check that labels each claim consistent, inconsistent or partly consistent before the answer is rebuilt from the consistent parts; on biographies it raised the paper's factuality score from 63.7 (factored) to 71.4.
 
 ## When to use
 
@@ -35,4 +35,4 @@ The factored form makes two calls plus one per claim plus one, so a ten-claim an
 - **Checks that see the draft:** if the draft leaks into a verify prompt, the check tends to agree with it. Build verify prompts from the question alone.
 - **Questions that are not stand-alone:** "Was he born there?" cannot be answered without the draft. Require each question to make sense on its own.
 - **The checks are wrong too:** the model can be wrong about a fact both times. Treat the result as fewer errors, not none.
-- **Over-pruning:** the reviser removes claims the checks were merely unsure about. Tell it how to treat "unsure".
+- **Over-pruning:** the reviser removes claims the checks were merely unsure about. The revise prompt tells it to keep those unless another check contradicts them.
