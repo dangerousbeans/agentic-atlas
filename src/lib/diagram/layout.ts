@@ -20,7 +20,8 @@ export function shownLabelIds(d: DiagramSpec): Set<string> {
   const returns = returnEdges(d);
   return new Set(d.edges.filter((e, i) => e.label && (returns.has(e.id) || !d.edges.slice(0, i).some(o => o.to === e.to && o.label === e.label))).map(e => e.id));
 }
-export interface EdgeLabelPos { x: number; y: number; anchor: 'start' | 'middle' | 'end' }
+/** An edge label's spot; `lines` when a phone layout wraps it (the first line sits at y, the rest below). */
+export interface EdgeLabelPos { x: number; y: number; anchor: 'start' | 'middle' | 'end'; lines?: string[] }
 export interface EdgeGeom { d: string; mid: Pt; label: EdgeLabelPos }
 export interface DiagramLayout { width: number; height: number; nodes: Record<string, Box>; edges: Record<string, EdgeGeom>; groups: Record<string, Box & { label: string }> }
 
@@ -89,13 +90,27 @@ export function labelLines(label: string, variant: LayoutVariant): string[] {
   return [label.slice(0, best), label.slice(best + 1)];
 }
 
-export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN', variant: LayoutVariant = 'wide'): Promise<DiagramLayout> {
+/** Narrow sublabels wrap like labels (the second line sits below the first). */
+export const sublabelLines = (text: string, variant: LayoutVariant) => labelLines(text, variant);
+/** Estimated rendered width of a node's label and sublabel lines (10.5px and 10px mono, diagram.css). */
+export function nodeTextWidth(n: { label: string; sublabel?: string }, variant: LayoutVariant): number {
+  return Math.max(...labelLines(n.label, variant).map(l => l.length * 6.93), ...(n.sublabel ? sublabelLines(n.sublabel, variant).map(l => l.length * 6.05) : [0]));
+}
+
+/**
+ * `tight` (internal): a narrow layout too wide for a phone is laid out again with boxes trimmed to their text, so
+ * a wide fan-out fits the stage instead of scrolling its outer nodes out of view.
+ */
+export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN', variant: LayoutVariant = 'wide', tight = false): Promise<DiagramLayout> {
   const dims = (id: string) => {
     const n = d.nodes.find(x => x.id === id)!;
     if (variant === 'compact') return COMPACT_DIMS;
     const size = n.size ?? DEFAULT_SIZE[n.kind];
     if (variant === 'wide') return NODE_DIMS[size];
-    return { w: NARROW_DIMS[size].w, h: NARROW_DIMS[size].h + LINE * (labelLines(n.label, variant).length - 1) };
+    const h = NARROW_DIMS[size].h + LINE * (labelLines(n.label, variant).length - 1 + (n.sublabel ? sublabelLines(n.sublabel, variant).length - 1 : 0));
+    // hubs keep their full width: their fanned ports need it
+    const w = tight && !hubs.has(id) ? Math.min(NARROW_DIMS[size].w, Math.max(2 * glyphReach(n.kind) + 10, Math.ceil(nodeTextWidth(n, variant) + 10))) : NARROW_DIMS[size].w;
+    return { w, h };
   };
   const compact = variant === 'compact';
   const PAD = compact ? 10 : variant === 'narrow' ? 16 : WIDE_PAD;
@@ -143,7 +158,7 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   // spacing is set on the root and repeated on groups, whose children ELK otherwise lays out with defaults
   const spacing: Record<string, string> = {
     'elk.layered.spacing.nodeNodeBetweenLayers': compact ? '36' : direction === 'RIGHT' ? String(rightGap) : d.edges.some(e => e.label) ? '112' : '56',
-    'elk.spacing.nodeNode': compact ? '14' : direction === 'RIGHT' ? '32' : variant === 'narrow' ? '12' : '24',
+    'elk.spacing.nodeNode': compact ? '14' : direction === 'RIGHT' ? '32' : variant === 'narrow' ? (tight ? '8' : '12') : '24',
     'elk.spacing.edgeNode': '20', 'elk.spacing.edgeEdge': '16',
     'elk.layered.spacing.edgeEdgeBetweenLayers': '16', 'elk.layered.spacing.edgeNodeBetweenLayers': '20',
   };
@@ -427,8 +442,9 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   // Phones scroll sideways when a narrow diagram is wider than the stage, and start scrolled to the middle: prefer
   // label spots inside that centred window, so no label starts out cut off at either side.
   const spanX = [Math.min(...xs) - minX, Math.max(...xs) - minX];
-  const inset = variant === 'narrow' ? Math.max(0, (spanX[1] - spanX[0] + 2 * PAD - PHONE_STAGE / MIN_LABEL_SCALE) / 2 - PAD) : 0;
-  const within = (b: Box) => !inset || (b.x >= spanX[0] + inset && b.x + b.w <= spanX[1] - inset);
+  // (the window is centred on the drawing, so labels kept inside it never widen the canvas past a phone's view)
+  const mid = (spanX[0] + spanX[1]) / 2, half = PHONE_STAGE / MIN_LABEL_SCALE / 2 - (spanX[1] - spanX[0] + 2 * PAD > PHONE_STAGE / MIN_LABEL_SCALE ? 0 : 2);
+  const within = (b: Box) => variant !== 'narrow' || (b.x >= mid - half && b.x + b.w <= mid + half);
   // two labels on one baseline need a clear gap, or they read as a single phrase ("TRIPWIRE OFF-TOPIC")
   const apart = (b: Box) => !placed.some(o => Math.abs(o.y - b.y) < 8 && b.x < o.x + o.w + LABEL_GAP && o.x < b.x + b.w + LABEL_GAP);
   for (const [k, r] of Object.entries(raw)) {
@@ -444,7 +460,13 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
         // (a spot beside a run never touches that run, so any hit on the edge's own line is a real crossing)
         const clear = (c: EdgeLabelPos) => { const b = labelBox(c, text); return ![...others, pts].some(o => o.some((q, i) => i > 0 && segHitsBox(o[i - 1], q, b))); };
         const inside = (c: EdgeLabelPos) => within(labelBox(c, text));
-        label = cands.find(c => free(c) && clear(c) && inside(c)) ?? cands.find(c => free(c) && clear(c)) ?? cands.find(free) ?? cands[0];
+        const good = (c: EdgeLabelPos) => free(c) && clear(c) && inside(c);
+        // on a phone, a pair lane's label may cross to the pair's other side rather than leave the view
+        const flipped = () => variant === 'narrow' && r.side ? labelCandidates(pts, others, direction, 0, returns.has(k), Object.values(nodes)).find(good) : undefined;
+        // last resort before leaving the view: wrap a two-word label onto two lines
+        const sp = text.lastIndexOf(' ', Math.ceil(text.length / 2)) > 0 ? text.lastIndexOf(' ', Math.ceil(text.length / 2)) : text.indexOf(' ');
+        const wrapped = () => variant === 'narrow' && sp > 0 ? cands.map(c => ({ ...c, lines: [text.slice(0, sp), text.slice(sp + 1)] })).find(good) : undefined;
+        label = cands.find(good) ?? flipped() ?? wrapped() ?? cands.find(c => free(c) && clear(c)) ?? cands.find(free) ?? cands[0];
         taken.push(labelBox(label, text)); placed.push(labelBox(label, text));
       }
       geo[k] = { pts, label, text };
@@ -475,7 +497,12 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
     if (g.pts) { const pts = g.pts.map(mv); edges[k] = { d: roundedPath(pts, 10), mid: polylineMid(pts), label }; }
     else { const [s, c1, c2, e] = g.arc!.map(mv); edges[k] = { d: cubicPath(s, c1, c2, e), mid: mv(g.mid!), label }; }
   }
-  return { width: Math.ceil(width + dx), height: Math.ceil(height + dy), nodes, edges, groups };
+  const result = { width: Math.ceil(width + dx), height: Math.ceil(height + dy), nodes, edges, groups };
+  if (variant === 'narrow' && !tight && result.width * MIN_LABEL_SCALE > PHONE_STAGE) {
+    const trimmed = await layoutDiagram(d, direction, variant, true);
+    if (trimmed.width < result.width) return trimmed;
+  }
+  return result;
 }
 
 /** Does the axis-aligned (or any) segment p-q pass through box b? Sampled, which is plenty at label scale. */
@@ -490,9 +517,10 @@ function segHitsBox(p: Pt, q: Pt, b: Box): boolean {
 
 /** Approximate box of an edge label (14px italic display font) drawn at p. */
 export function labelBox(p: EdgeLabelPos, text: string): Box {
-  const w = text.length * 7 + 6;
+  const lines = p.lines ?? [text];
+  const w = Math.max(...lines.map(l => l.length)) * 7 + 6;
   const x = p.anchor === 'middle' ? p.x - w / 2 : p.anchor === 'start' ? p.x : p.x - w;
-  return { x, y: p.y - 13, w, h: 17 };
+  return { x, y: p.y - 13, w, h: 17 + LINE * (lines.length - 1) };
 }
 export const boxesOverlap = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
