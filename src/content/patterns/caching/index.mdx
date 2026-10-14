@@ -38,4 +38,5 @@ Prefix caching is close to free: the answer is the same either way, and the only
 - **Silent cache busting:** a timestamp, a random id or a reordered tool list in the prefix makes every call a miss. Watch the cache-read share and alert when it drops.
 - **Wrong semantic hit:** "How do I cancel my order?" matches "How do I cancel my subscription?" and gets the wrong answer. Tune the threshold on labelled pairs and sample hits for review.
 - **Leaking across users:** a cached answer containing one customer's details is served to another. Never response-cache personal content.
+- **Replayed actions:** in an agent, a cached turn that called a tool replays an old decision against new state. Cache only final text answers, never turns with tool calls or results from side-effecting tools.
 - **Stale answers:** the manual changes but the cache still serves old answers. Put the document version in the cache key and purge on release.

@@ -11,6 +11,8 @@ sources:
     url: https://claude.com/blog/prompt-caching
   - title: "Prompt Cache: Modular Attention Reuse for Low-Latency Inference (Gim et al., 2023)"
     url: https://arxiv.org/abs/2311.04934
+  - title: "Efficient Memory Management for Large Language Model Serving with PagedAttention (Kwon et al., 2023)"
+    url: https://arxiv.org/abs/2309.06180
   - title: "SGLang: Efficient Execution of Structured Language Model Programs (Zheng et al., 2023)"
     url: https://arxiv.org/abs/2312.07104
   - title: "GPTCache: semantic cache for LLMs (Zilliz)"
@@ -27,7 +29,7 @@ origin:
   url: https://arxiv.org/abs/2311.04934
   kind: introduced
   uncertain: true
-  note: "No single inventor. Prompt Cache (MLSys 2024) is the earliest verified paper on reusing attention states across prompts; Anthropic popularized API-level prompt caching in 2024, and Zilliz's GPTCache popularized semantic response caches in 2023."
+  note: "No single inventor. Prompt Cache (MLSys 2024) was among the first papers dedicated to reusing attention states across prompts; vLLM's PagedAttention (2023) had already shared KV cache across requests with a common prefix. Anthropic popularized API prompt caching in 2024."
 defaultVariantName: Prefix cache
 build:
   goal: "Cut the cost and latency of repeated calls by putting everything that stays the same at the front of the prompt and marking it cacheable, so later calls reuse the processed prefix and pay only for the new part."
@@ -166,6 +168,7 @@ variants:
         - "Include everything that changes the answer in the key: model id, prompt version, parameters and documents."
         - "Set an expiry (default 24 hours) and a way to purge all entries for a prompt version."
         - "Log hits and misses with the key, and report the hit rate."
+        - "Cache only final text answers from calls with no tool use. Never cache a response that contains a tool call or was produced from live tool results, and never cache the result of a tool with side effects."
         - "Add a test with a stub model and an in-memory store: send the same request twice and assert one model call, and two identical answers."
     diagram:
       nodes:
@@ -272,11 +275,13 @@ variants:
         - "If the similarity is above a threshold (start around 0.92 and tune it), return the stored answer."
         - "Otherwise call the model with the {{prompt:system}} and the question, return its answer, and store the question's embedding with the answer."
         - "Scope the cache: keep separate stores, or a filter, per prompt version, language and anything else that changes the right answer."
+        - "Bypass the cache entirely for requests that must be fresh, that are personal, or whose answer depends on tools or live data."
       stop: "Each request is either a hit (no model call) or a miss (one call, then a write). Entries expire after a set time so answers do not go stale."
       requirements:
         - "Make the similarity threshold configurable, and tune it on labelled pairs of questions that should and should not share an answer."
         - "Never serve cached answers across users for anything personal; exclude questions that mention account details."
         - "Log every hit with both questions and the score, and sample hits for review."
+        - "Cache only final text answers from calls with no tool use. Never cache a response that contains a tool call or was produced from live tool results, and never cache the result of a tool with side effects."
         - "Add a test with a stub embedder returning fixed vectors: a question at similarity 0.95 to a stored one must return the stored answer with zero model calls; one at 0.80 must call the model once."
     diagram:
       nodes:
