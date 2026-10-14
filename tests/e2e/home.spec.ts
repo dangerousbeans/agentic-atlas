@@ -216,6 +216,7 @@ test.describe('atlas map', () => {
   });
 
   test('a keyboard-focused tile is never hidden under the map controls', async ({ page }) => {
+    test.setTimeout(90_000); // walks every tile in the catalog, one flight each
     await openMap(page);
     await page.locator('[data-zoom-btn="home"]').focus();
     await page.keyboard.press('Tab');
