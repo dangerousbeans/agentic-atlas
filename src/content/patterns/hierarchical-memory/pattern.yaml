@@ -69,12 +69,12 @@ diagram:
     - { id: user, kind: io, label: User, description: "The person chatting with the long-running assistant, e.g. 'Remind me when my Lisbon trip is, and I'm vegetarian now.'" }
     - { id: llm, kind: llm, label: Agent, description: "The memory-aware agent. Calls recall_search, archival_search and core_memory_append, and replies when it has what it needs." }
     - { id: core, kind: memory, label: Core, sublabel: always in context, description: "Small block of stable facts about the user, always in the prompt; core_memory_append writes new facts here." }
-    - { id: recall, kind: memory, label: Recall, sublabel: full message log, description: "Verbatim log of evicted messages, searchable with recall_search so old turns are never lost." }
+    - { id: recall, kind: memory, label: Recall, sublabel: full message log, description: "Verbatim log of evicted messages, kept so old turns stay searchable via recall_search (a tool call, not drawn as an edge)." }
     - { id: archival, kind: memory, label: Archival, sublabel: searchable store, description: "Long-term store of documents and facts, searched with archival_search and paged into context on demand." }
     - { id: summarizer, kind: llm, label: Summarizer, description: "Folds evicted messages into the running summary at the top of context, keeping names, decisions and numbers." }
   edges:
     - { id: msg, from: user, to: llm, description: "A new user message is appended to the context queue and starts the agent's turn.", example: "I'm vegetarian now. Also, when is that Lisbon trip again?" }
-    - { id: search, from: llm, to: archival, label: search, description: "The agent's tool call for facts that are no longer in view.", example: "{\"tool\": \"archival_search\", \"query\": \"Lisbon trip dates\"}" }
+    - { id: search, from: llm, to: archival, label: search, description: "The agent's tool call for facts that are no longer in view.", example: "{\"tool\": \"archival_search\", \"query\": \"Lisbon trip dates\"}  (the trip was saved to archival memory earlier)" }
     - { id: found, from: archival, to: llm, style: dashed, label: facts, description: "The matching facts are appended to the agent's context for its next step.", example: "[{\"text\": \"Lisbon trip booked 12-19 May, hotel near Alfama\"}]" }
     - { id: save, from: llm, to: core, label: save fact, description: "A durable fact is written into core memory so it appears in every future prompt.", example: "{\"tool\": \"core_memory_append\", \"text\": \"User is vegetarian.\"}" }
     - { id: evict, from: llm, to: recall, label: raw messages, description: "When the context passes the token limit, the oldest messages are stored verbatim in recall memory.", example: "recall.store([\"user: Can you book the Lisbon hotel?\", \"assistant: Booked, 7 nights.\"])" }
