@@ -1,0 +1,20 @@
+---
+interface Props { badges: { autonomy: string; cost: string; latency: string } }
+const { badges } = Astro.props;
+const n = (l: string) => ({ low: 1, medium: 2, high: 3 } as Record<string, number>)[l];
+const items = [['Autonomy', badges.autonomy], ['Cost', badges.cost], ['Latency', badges.latency]] as const;
+---
+<dl class="badges">
+  {items.map(([k, v]) => (
+    <div class="badge"><dt>{k}</dt><dd><span class="dots" aria-hidden="true">{[1, 2, 3].map(i => <i class:list={{ on: i <= n(v) }} />)}</span><span class="v">{v}</span></dd></div>
+  ))}
+</dl>
+<style>
+  .badges { display: flex; gap: 22px; margin: 18px 0 28px; flex-wrap: wrap; }
+  .badge { display: flex; flex-direction: column; gap: 4px; }
+  dt { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
+  dd { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); text-transform: capitalize; }
+  .dots { display: inline-flex; gap: 4px; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+  .dots i.on { background: var(--family-accent); box-shadow: 0 0 8px var(--family-accent); }
+</style>

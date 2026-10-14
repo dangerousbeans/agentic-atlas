@@ -1,8 +1,15 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import Diagram from '../../components/diagram/Diagram.astro';
+import PatternHeader from '../../components/pattern/PatternHeader.astro';
+import CodePanel from '../../components/pattern/CodePanel.astro';
+import NodeRef from '../../components/pattern/NodeRef.astro';
+import RelatedPatterns from '../../components/pattern/RelatedPatterns.astro';
+import Sources from '../../components/pattern/Sources.astro';
+import PrevNext from '../../components/pattern/PrevNext.astro';
 import { getCatalog } from '../../lib/catalog';
-import type { DiagramSpec } from '../../lib/diagram/types';
+import { getEntry, render } from 'astro:content';
+import type { DiagramSpec, CodeBlock } from '../../lib/diagram/types';
 export async function getStaticPaths() {
   const cat = await getCatalog();
   return cat.patterns.map(p => ({ params: { slug: p.slug } }));
@@ -10,12 +17,29 @@ export async function getStaticPaths() {
 const cat = await getCatalog();
 const p = cat.bySlug.get(Astro.params.slug!)!;
 const fam = cat.family(p.family);
+const prose = await getEntry('patternProse', p.slug);
+if (!prose) throw new Error(`Missing index.mdx for pattern ${p.slug}`);
+const { Content } = await render(prose);
+const { prev, next } = cat.neighbors(p.slug);
 ---
 <BaseLayout title={p.name} description={p.summary} accent={fam.accent} pagefind>
   <article class="wrap pattern">
-    <p class="eyebrow">{fam.name}</p>
-    <h1>{p.name}</h1>
-    <p class="summary">{p.summary}</p>
+    <PatternHeader pattern={p} family={fam} />
     <Diagram uid={p.slug} spec={p.diagram as DiagramSpec} title={p.name} />
+    <div class="body">
+      <div class="prose"><Content components={{ NodeRef }} /></div>
+      <div class="side"><CodePanel uid={p.slug} code={p.code as CodeBlock[]} prompts={p.prompts as CodeBlock[]} /></div>
+    </div>
+    <RelatedPatterns pattern={p} catalog={cat} />
+    <Sources sources={p.sources} />
+    <PrevNext prev={prev} next={next} />
   </article>
 </BaseLayout>
+<style>
+  .body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 48px; align-items: start; margin-top: 16px; }
+  .side { position: sticky; top: 80px; padding-top: 2.4rem; }
+  .prose { font-size: 17px; color: var(--text-2); max-width: 40rem; }
+  .prose :global(strong) { color: var(--text); font-weight: 500; }
+  .prose :global(li) { margin: 6px 0; }
+  @media (max-width: 960px) { .body { grid-template-columns: minmax(0, 1fr); } .side { position: static; } }
+</style>

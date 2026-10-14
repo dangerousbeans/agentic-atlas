@@ -1,0 +1,19 @@
+---
+import Badges from './Badges.astro';
+import { href } from '../../lib/url';
+import type { Pattern, Family } from '../../lib/schema';
+interface Props { pattern: Pattern; family: Family }
+const { pattern: p, family: f } = Astro.props;
+---
+<header class="pattern-header">
+  <a class="chip" href={href(`/families/${f.slug}/`)} data-pagefind-filter="family">{f.name}</a>
+  <h1 data-pagefind-meta="title">{p.name}</h1>
+  {p.aliases.length > 0 && <p class="aliases">Also known as {p.aliases.join(' · ')}</p>}
+  <p class="summary">{p.summary}</p>
+  <Badges badges={p.badges} />
+</header>
+<style>
+  .chip { display: inline-block; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; text-decoration: none; color: var(--family-accent); border: 1px solid color-mix(in oklab, var(--family-accent) 40%, transparent); padding: 5px 12px; border-radius: 99px; margin-top: 40px; }
+  .aliases { color: var(--text-3); font-size: 14px; margin: -6px 0 10px; }
+  .summary { font: 400 clamp(1.15rem, 2.2vw, 1.4rem)/1.5 var(--font-ui); color: var(--text-2); max-width: 46rem; margin: 0; }
+</style>

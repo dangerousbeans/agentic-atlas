@@ -1,0 +1,19 @@
+---
+interface Props { id: string }
+const { id } = Astro.props;
+---
+<span class="noderef" data-noderef={id} tabindex="0"><slot /></span>
+<script>
+  const send = (node: string | null) => document.dispatchEvent(new CustomEvent('noderef', { detail: { node } }));
+  document.querySelectorAll<HTMLElement>('.noderef').forEach(el => {
+    if (el.dataset.bound) return; el.dataset.bound = '1';
+    el.addEventListener('mouseenter', () => send(el.dataset.noderef!));
+    el.addEventListener('focus', () => send(el.dataset.noderef!));
+    el.addEventListener('mouseleave', () => send(null));
+    el.addEventListener('blur', () => send(null));
+  });
+</script>
+<style>
+  .noderef { color: var(--text); border-bottom: 1px dashed var(--family-accent); cursor: help; }
+  .noderef:hover, .noderef:focus { color: var(--family-accent); outline: none; }
+</style>

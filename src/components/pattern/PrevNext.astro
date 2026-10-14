@@ -1,0 +1,16 @@
+---
+import { href } from '../../lib/url';
+import type { Pattern } from '../../lib/schema';
+interface Props { prev?: Pattern; next?: Pattern }
+const { prev, next } = Astro.props;
+---
+<nav class="prevnext" aria-label="More in this family">
+  {prev ? <a rel="prev" href={href(`/patterns/${prev.slug}/`)}><span>← Previous</span>{prev.name}</a> : <span />}
+  {next ? <a rel="next" href={href(`/patterns/${next.slug}/`)}><span>Next →</span>{next.name}</a> : <span />}
+</nav>
+<style>
+  .prevnext { display: flex; justify-content: space-between; gap: 16px; margin-top: 64px; border-top: 1px solid var(--line); padding-top: 24px; }
+  a { display: flex; flex-direction: column; text-decoration: none; font: 400 22px var(--font-display); }
+  a[rel="next"] { text-align: right; }
+  a span { font: 500 11px var(--font-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
+</style>

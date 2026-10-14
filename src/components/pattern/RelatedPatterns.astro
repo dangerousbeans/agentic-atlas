@@ -1,0 +1,28 @@
+---
+import { href } from '../../lib/url';
+import type { Pattern } from '../../lib/schema';
+import type { Catalog } from '../../lib/catalog';
+interface Props { pattern: Pattern; catalog: Catalog }
+const { pattern: p, catalog } = Astro.props;
+const composes = p.related.composesWith.map(s => catalog.bySlug.get(s)!);
+const confused = p.related.confusedWith.map(c => ({ ...c, p: catalog.bySlug.get(c.slug)! }));
+---
+{confused.length > 0 && (
+  <aside class="confused" aria-label="Often confused with">
+    {confused.map(c => (
+      <div class="callout"><p class="eyebrow">Often confused with</p><h3><a href={href(`/patterns/${c.p.slug}/`)}>{c.p.name}</a></h3><p>{c.difference}</p></div>
+    ))}
+  </aside>
+)}
+<section>
+  <h2>Related patterns</h2>
+  {composes.length === 0 && confused.length === 0 && <p class="muted">This pattern is a building block that most other patterns use.</p>}
+  {composes.length > 0 && <p class="muted">Composes well with:</p>}
+  <ul class="related">{composes.map(r => <li><a href={href(`/patterns/${r.slug}/`)}>{r.name}</a><span> {r.summary}</span></li>)}</ul>
+</section>
+<style>
+  .callout { border: 1px solid var(--line); border-left: 3px solid var(--family-accent); border-radius: 10px; padding: 16px 20px; margin: 32px 0; background: var(--bg-1); }
+  .callout h3 { margin: 6px 0; }
+  .callout p:last-child { margin: 0; color: var(--text-2); }
+  .related { list-style: none; padding: 0; } .related li { margin: 10px 0; } .related span { color: var(--text-2); }
+</style>

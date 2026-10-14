@@ -1,0 +1,6 @@
+---
+interface Props { sources: { title: string; url: string }[] }
+const { sources } = Astro.props;
+---
+<section><h2>Sources</h2><ol class="sources">{sources.map(s => <li><a href={s.url} rel="noopener">{s.title}</a></li>)}</ol></section>
+<style> .sources { color: var(--text-2); } .sources li { margin: 6px 0; } </style>
