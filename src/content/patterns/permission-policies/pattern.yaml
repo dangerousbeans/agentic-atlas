@@ -1,0 +1,224 @@
+slug: permission-policies
+name: Permission Policies
+family: safety-oversight
+aliases: [Tool allowlists, Allow/ask/deny rules, Budget caps, Least privilege, Policy engine]
+summary: "Every tool call is checked against declarative allow, ask and deny rules and a budget before it runs."
+badges: { autonomy: medium, cost: low, latency: low }
+sources:
+  - title: Configure permissions (Claude Code docs, Anthropic)
+    url: https://code.claude.com/docs/en/permissions
+  - title: A practical guide to building agents (OpenAI, 2025)
+    url: https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf
+related:
+  composesWith: [human-in-the-loop, sandboxed-execution, guardrails, react]
+  confusedWith:
+    - { slug: human-in-the-loop, difference: "Human-in-the-loop is the approval step itself. A permission policy decides most calls automatically by rule and sends only the ask lane to a person." }
+    - { slug: guardrails, difference: "Guardrails check content: the text going in and coming out. A permission policy checks actions: which tool, with which arguments, and what it costs." }
+origin:
+  by: OpenAI and Anthropic
+  org: OpenAI; Anthropic
+  year: 2025
+  url: https://code.claude.com/docs/en/permissions
+  kind: popularized
+  uncertain: true
+  note: "OpenAI's 2025 agent guide rates each tool's risk to decide when to escalate, and Claude Code ships tiered allow, ask and deny rules. The idea itself is classic least privilege, with no single inventor for agents."
+build:
+  goal: "Put a policy check between an agent and its tools, so every proposed call is allowed, escalated to a person, or denied by declarative rules, and the run stops when a spend or step budget is used up."
+  steps:
+    - "Load the policy from a config file: ordered deny, ask and allow rules, each a tool name plus an optional argument pattern, and a budget with a spend cap and a step cap."
+    - "Run the agent with the {{prompt:agent}}, which tells it that some calls may be denied or need approval and how to react."
+    - "When the agent proposes a tool call, match it against the rules in the order deny, then ask, then allow. A call that matches no rule is treated as ask."
+    - "On allow, run the tool and return its result to the agent. On deny, do not run it; return an error to the agent that names the rule that matched."
+    - "On ask, send the person a message built from the {{prompt:approval}} and wait. Run the tool if they approve; return their refusal and reason to the agent if they reject."
+    - "Before each call, add its estimated cost to the budget meter. If the call would pass the spend or step cap, stop the run instead of calling the tool."
+    - "Record every decision (the call, the matched rule, the verdict, who approved it and the running spend) in an audit log."
+  stop: "Stop when the agent returns a final answer, or when the spend or step cap is reached. On a cap, return the partial work with a status that says which cap stopped it."
+  requirements:
+    - "Keep the policy in data (a file or a table), not in prompt text, and never let the agent change it."
+    - "Evaluate deny before ask before allow, so a broad allow rule can never override a specific deny."
+    - "Treat a call that matches no rule as ask, never as allow."
+    - "Match rules on the parsed tool name and arguments, not on the raw text, so that 'git status; rm -rf ~' does not match an allow rule for 'git status'."
+    - "Add a test with a stub LLM that proposes 'git status', then 'rm -rf /', then a final answer; with rules allow 'git status' and deny 'rm *', assert the tool ran once and the agent received exactly one denial error."
+prompts:
+  - id: agent
+    title: Agent prompt with a permission policy
+    lang: markdown
+    source: |
+      You are a coding agent working in {{repo}}. Your task:
+      <task>{{task}}</task>
+
+      Every tool call you make is checked against a permission policy before it runs.
+      - Some calls run at once. Some need a person's approval, so say why you need them.
+      - A denied call returns an error naming the rule. Do not retry it or try to
+        reach the same effect another way; find a different approach or explain
+        why the task cannot be finished.
+      - The run has a budget of {{budget}}. Prefer cheap, read-only calls first.
+
+      Before each call that changes anything, write one line saying what it will
+      change and why it is needed.
+  - id: approval
+    title: Approval request message
+    lang: markdown
+    source: |
+      **The agent wants to run a call that your policy marks as "ask".**
+
+      Tool: `{{tool_name}}`
+      Arguments: `{{arguments}}`
+      Matched rule: `{{rule}}`
+      Agent's reason: {{rationale}}
+      Spent so far: {{spent}} of {{budget}}
+
+      Reply approve or reject. A rejection is passed to the agent with your reason.
+diagram:
+  nodes:
+    - id: user
+      kind: io
+      label: Task
+      description: "The request that starts the run, such as 'Fix the failing date-parsing test in this repo'."
+    - id: agent
+      kind: agent
+      label: Agent
+      description: "The coding agent. It proposes tool calls one at a time and reads each result, denial or refusal before its next move."
+    - id: policy
+      kind: guard
+      label: Policy
+      sublabel: "rules + $2 budget"
+      description: "Plain code that matches each proposed call against the rules, in the order deny, ask, allow, and adds its cost to the budget meter."
+    - id: human
+      kind: human
+      label: Developer
+      description: "The person asked about calls in the ask lane only, such as installing a new package. Everything else is decided without them."
+    - id: tool
+      kind: tool
+      label: Shell
+      description: "The tool that actually runs commands. It only ever receives calls the policy allowed or the developer approved."
+    - id: out
+      kind: io
+      label: Result
+      description: "The agent's final answer, or a stop report naming the cap that ended the run."
+  edges:
+    - id: task
+      from: user
+      to: agent
+      description: "The task goes to the agent, which starts proposing tool calls."
+      example: "Fix the failing test in tests/date.test.ts without changing its assertions."
+    - id: propose
+      from: agent
+      to: policy
+      label: call
+      description: "Every tool call the agent proposes goes to the policy first; nothing reaches the shell directly."
+      example: '{"tool": "shell", "command": "npm install date-fns@4"}'
+    - id: allow
+      from: policy
+      to: tool
+      label: allow
+      description: "A call that matches an allow rule, and no deny or ask rule, runs at once with no person involved."
+      example: "git status matched allow rule shell(git status); spent $0.02 of $2.00."
+    - id: ask
+      from: policy
+      to: human
+      label: ask
+      description: "A call that matches an ask rule, or no rule at all, waits for the developer's decision."
+      example: "npm install date-fns@4 matched ask rule shell(npm install *). Agent's reason: the parser needs date-fns."
+    - id: approve
+      from: human
+      to: tool
+      label: approve
+      description: "An approved call goes on to the shell exactly as proposed."
+      example: "approve: npm install date-fns@4"
+    - id: deny
+      from: policy
+      to: agent
+      style: dashed
+      label: deny
+      description: "A denied call never runs. The agent gets an error naming the rule, so it can choose another approach."
+      example: "Error: shell(rm -rf /) denied by rule shell(rm *). Choose a different approach."
+    - id: result
+      from: tool
+      to: agent
+      style: loop
+      label: result
+      description: "The command's output goes back to the agent, which decides its next call."
+      example: "On branch fix/date-parse. Changes not staged: src/date.ts"
+    - id: done
+      from: agent
+      to: out
+      description: "When the agent is finished, its answer leaves the loop."
+      example: "Fixed: parseDate now handles ISO week dates. tests/date.test.ts passes (14/14)."
+    - id: cap
+      from: policy
+      to: out
+      style: dashed
+      label: cap hit
+      description: "When the next call would pass the spend or step cap, the policy ends the run instead of running it."
+      example: "Stopped: spend cap reached ($2.00 of $2.00) after 31 calls. Partial work is on branch fix/date-parse."
+  scenarios:
+    - id: mixed-calls
+      label: Allow, ask and deny
+      steps:
+        - id: start
+          caption: The task reaches the agent, which proposes 'git status'.
+          duration: 1600
+          events:
+            - { type: send, edge: task, token: { kind: prompt, label: task } }
+            - { type: activate, node: agent, status: thinking, at: [0.5, 1] }
+        - id: allowed
+          caption: "'git status' matches an allow rule, so it runs at once and the output goes back to the agent."
+          duration: 3000
+          events:
+            - { type: send, edge: propose, token: { kind: tool-call, label: git status }, at: [0, 0.25] }
+            - { type: branch, node: policy, taken: allow, notTaken: [ask, deny, cap], at: [0.25, 0.4] }
+            - { type: send, edge: allow, token: { kind: tool-call, label: git status }, at: [0.4, 0.6] }
+            - { type: activate, node: tool, status: calling, at: [0.6, 0.75] }
+            - { type: send, edge: result, token: { kind: result, label: output }, at: [0.75, 1] }
+        - id: asked
+          caption: "'npm install' matches an ask rule. The developer approves it, and only then does it run."
+          duration: 4000
+          events:
+            - { type: send, edge: propose, token: { kind: tool-call, label: npm install }, at: [0, 0.18] }
+            - { type: branch, node: policy, taken: ask, notTaken: [allow, deny, cap], at: [0.18, 0.3] }
+            - { type: send, edge: ask, token: { kind: prompt, label: approve? }, at: [0.3, 0.45] }
+            - { type: activate, node: human, status: waiting, at: [0.45, 0.65] }
+            - { type: send, edge: approve, token: { kind: tool-call, label: npm install }, at: [0.65, 0.8] }
+            - { type: send, edge: result, token: { kind: result, label: installed }, at: [0.8, 1] }
+        - id: denied
+          caption: "'rm -rf /' matches a deny rule. It never runs; the agent gets an error naming the rule."
+          duration: 3000
+          events:
+            - { type: send, edge: propose, token: { kind: tool-call, label: rm -rf / }, at: [0, 0.3] }
+            - { type: branch, node: policy, taken: deny, notTaken: [allow, ask, cap], at: [0.3, 0.45] }
+            - { type: activate, node: policy, status: error, at: [0.4, 0.6] }
+            - { type: send, edge: deny, token: { kind: feedback, label: denied }, at: [0.55, 0.9] }
+            - { type: activate, node: agent, status: thinking, at: [0.85, 1] }
+        - id: finish
+          caption: The agent fixes the bug with the calls it was allowed and returns its answer.
+          duration: 1800
+          events:
+            - { type: send, edge: done, token: { kind: result, label: fixed }, at: [0, 0.8] }
+            - { type: activate, node: out, status: done, at: [0.7, 1] }
+    - id: budget-exhausted
+      label: Budget cap reached
+      steps:
+        - id: start
+          caption: The task reaches the agent, which starts calling allowed tools.
+          duration: 1400
+          events:
+            - { type: send, edge: task, token: { kind: prompt, label: task } }
+        - id: spend
+          caption: Each allowed call runs and adds its cost to the budget meter.
+          duration: 2600
+          repeat: 3
+          events:
+            - { type: send, edge: propose, token: { kind: tool-call, label: npm test }, at: [0, 0.3] }
+            - { type: branch, node: policy, taken: allow, notTaken: [ask, deny, cap], at: [0.3, 0.45] }
+            - { type: send, edge: allow, token: { kind: tool-call, label: npm test }, at: [0.45, 0.7] }
+            - { type: send, edge: result, token: { kind: result, label: 1 failing }, at: [0.7, 1] }
+        - id: capped
+          caption: The next call would pass the $2 cap, so the policy stops the run and reports the partial work.
+          duration: 3000
+          events:
+            - { type: send, edge: propose, token: { kind: tool-call, label: npm test }, at: [0, 0.3] }
+            - { type: branch, node: policy, taken: cap, notTaken: [allow, ask, deny], at: [0.3, 0.45] }
+            - { type: activate, node: policy, status: error, at: [0.4, 0.6] }
+            - { type: send, edge: cap, token: { kind: result, label: cap reached }, at: [0.55, 0.9] }
+            - { type: activate, node: out, status: done, at: [0.85, 1] }
