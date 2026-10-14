@@ -46,4 +46,45 @@ describe('layoutDiagram', () => {
     const g = L.groups.team, a = L.nodes.gen;
     expect(a.x).toBeGreaterThanOrEqual(g.x); expect(a.x + a.w).toBeLessThanOrEqual(g.x + g.w);
   });
+
+  const first = (d: string) => { const m = /^M(-?[\d.]+),(-?[\d.]+)/.exec(d)!; return { x: +m[1], y: +m[2] }; };
+  const last = (d: string) => { const m = /(-?[\d.]+),(-?[\d.]+)$/.exec(d)!; return { x: +m[1], y: +m[2] }; };
+  const onBorder = (b: { x: number; y: number; w: number; h: number }, p: { x: number; y: number }) => {
+    const tol = 1;
+    const inX = p.x >= b.x - tol && p.x <= b.x + b.w + tol, inY = p.y >= b.y - tol && p.y <= b.y + b.h + tol;
+    const nearX = Math.abs(p.x - b.x) <= tol || Math.abs(p.x - (b.x + b.w)) <= tol;
+    const nearY = Math.abs(p.y - b.y) <= tol || Math.abs(p.y - (b.y + b.h)) <= tol;
+    return inX && inY && (nearX || nearY);
+  };
+  const expectEdgesOnBorders = (spec: DiagramSpec, L: Awaited<ReturnType<typeof layoutDiagram>>, only?: Set<string>) => {
+    for (const e of spec.edges) {
+      if (e.style === 'loop') continue;
+      if (only && !only.has(e.id)) continue;
+      const d = L.edges[e.id].d;
+      expect(onBorder(L.nodes[e.from], first(d)), `${e.id} start ${d}`).toBe(true);
+      expect(onBorder(L.nodes[e.to], last(d)), `${e.id} end ${d}`).toBe(true);
+    }
+  };
+  for (const dir of ['RIGHT', 'DOWN'] as const) {
+    it(`${dir}: with a group, edge endpoints lie on their node borders`, async () => {
+      const spec: DiagramSpec = { ...loop, groups: [{ id: 'team', label: 'Team', children: ['gen', 'eval'] }] };
+      expectEdgesOnBorders(spec, await layoutDiagram(spec, dir));
+    });
+  }
+  it('bidirectional pair gets visibly separate paths', async () => {
+    const spec: DiagramSpec = {
+      nodes: [{ id: 'a', kind: 'llm', label: 'A' }, { id: 'b', kind: 'llm', label: 'B' }],
+      edges: [{ id: 'ab', from: 'a', to: 'b' }, { id: 'ba', from: 'b', to: 'a' }],
+      scenarios: loop.scenarios.map(s => ({ ...s, steps: [{ id: 'a', caption: 'A', events: [{ type: 'send' as const, edge: 'ab', token: { kind: 'prompt' as const } }] }] })),
+    };
+    const L = await layoutDiagram(spec, 'RIGHT');
+    expect(L.edges.ab.d).not.toBe(L.edges.ba.d);
+    const p = first(L.edges.ab.d), q = first(L.edges.ba.d);
+    expect(Math.hypot(p.x - q.x, p.y - q.y)).toBeGreaterThanOrEqual(8);
+  });
+  it('edges touching pinned nodes start and end on the pinned borders', async () => {
+    const spec: DiagramSpec = { ...loop, nodes: loop.nodes.map(n => n.id === 'in' ? { ...n, pos: { x: 0, y: 0 } } : n.id === 'out' ? { ...n, pos: { x: 600, y: 0 } } : n) };
+    const L = await layoutDiagram(spec, 'RIGHT');
+    expectEdgesOnBorders(spec, L, new Set(['task', 'accept']));
+  });
 });

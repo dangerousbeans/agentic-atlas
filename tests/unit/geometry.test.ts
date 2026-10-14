@@ -4,6 +4,11 @@ import { roundedPath, loopArc, borderPoint, polylineMid, offsetPolyline } from '
 describe('geometry', () => {
   it('straight path has no curve', () => expect(roundedPath([{ x: 0, y: 0 }, { x: 10, y: 0 }])).toBe('M0,0 L10,0'));
   it('rounds a corner with a quadratic', () => expect(roundedPath([{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }], 5)).toBe('M0,0 L15,0 Q20,0 20,5 L20,20'));
+  it('drops consecutive duplicate points instead of producing NaN', () => {
+    const d = roundedPath([{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }], 5);
+    expect(d).toBe('M0,0 L15,0 Q20,0 20,5 L20,20');
+    expect(d).not.toMatch(/NaN/);
+  });
   it('clamps radius to half the shorter segment', () => expect(roundedPath([{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 20 }], 10)).toBe('M0,0 L2,0 Q4,0 4,2 L4,20'));
   it('loop arc RIGHT leaves from the top centers and bulges upward', () => {
     const a = loopArc({ x: 200, y: 100, w: 100, h: 60 }, { x: 0, y: 100, w: 100, h: 60 }, 'RIGHT');

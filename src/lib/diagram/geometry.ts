@@ -5,7 +5,8 @@ const f = (n: number) => Math.round(n * 10) / 10;
 const p = (pt: Pt) => `${f(pt.x)},${f(pt.y)}`;
 const dist = (a: Pt, b: Pt) => Math.hypot(b.x - a.x, b.y - a.y);
 
-export function roundedPath(pts: Pt[], r = 10): string {
+export function roundedPath(input: Pt[], r = 10): string {
+  const pts = input.filter((q, i) => i === 0 || q.x !== input[i - 1].x || q.y !== input[i - 1].y);
   if (pts.length < 2) return '';
   let d = `M${p(pts[0])}`;
   for (let i = 1; i < pts.length - 1; i++) {
