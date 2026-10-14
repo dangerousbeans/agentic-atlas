@@ -13,7 +13,8 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "budget": "node scripts/check-budget.mjs",
-    "perf": "lhci autorun"
+    "perf": "lhci autorun",
+    "crawl:subpath": "BASE_PATH=/agentic-atlas astro build --outDir dist-subpath && node scripts/crawl-subpath.mjs dist-subpath"
   },
   "dependencies": {
     "@astrojs/mdx": "^8.0.3",

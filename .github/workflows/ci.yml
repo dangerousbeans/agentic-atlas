@@ -32,3 +32,14 @@ jobs:
             test-results
             lhci-results
           retention-days: 7
+  subpath:
+    # The site deploys to a GitHub Pages project path: build with that base and crawl it for 404s and for links,
+    # assets or absolute URLs that escape /agentic-atlas/.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24, cache: npm }
+      - run: npm ci
+      - name: Build with BASE_PATH=/agentic-atlas and crawl it
+        run: npm run crawl:subpath

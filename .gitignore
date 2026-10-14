@@ -7,3 +7,4 @@ dist/
 test-results/
 .lighthouseci/
 lhci-results/
+dist-subpath/

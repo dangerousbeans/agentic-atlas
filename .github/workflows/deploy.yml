@@ -1,6 +1,10 @@
 name: Deploy
+# Deploy only after CI has passed on main (or by hand). workflow_run fires for the CI run of each push; deploy the
+# exact commit CI tested, not whatever main points at by then.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 permissions:
@@ -10,9 +14,18 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
+    # Only a successful CI run for a push to this repo's main: a pull_request from a fork's own "main" branch also
+    # matches the branch filter, and must never deploy.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 24, cache: npm }
       - run: npm ci
