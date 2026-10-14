@@ -41,7 +41,7 @@ flow-player { display: block; --accent: var(--family-accent); }
 .edge[data-state="active"] { stroke: var(--accent); stroke-width: 1.8; }
 .edge[data-state="traversed"] { stroke: color-mix(in oklab, var(--accent) 55%, var(--line-strong)); }
 .edge[data-state="dim"] { opacity: 0.2; }
-.edge--pending[data-state="idle"] { opacity: 0.12; }
+.edge--pending[data-state="idle"], .edge-label.edge--pending[data-state="idle"] { opacity: 0.12; }
 .arrow { fill: var(--line-strong); }
 .edge-label { font: italic 400 14px var(--font-display); fill: var(--text-2); }
 .edge-label--loop { fill: var(--accent); }

@@ -12,7 +12,7 @@ const timelines = compileDiagram(spec);
 const payload = JSON.stringify({ spec, timelines }).replace(/</g, '\\u003c');
 ---
 <flow-player data-uid={uid} compact={compact ? '' : undefined} class:list={['diagram', { 'diagram--compact': compact }]}>
-  <div class="diagram-stage" tabindex={compact ? undefined : 0} aria-label={compact ? undefined : `${title} diagram player. Space plays or pauses; arrow keys step.`}>
+  <div class="diagram-stage" tabindex={compact ? undefined : 0} role={compact ? undefined : 'group'} aria-label={compact ? undefined : `${title} diagram player. Space plays or pauses; arrow keys step.`}>
     <DiagramSvg uid={uid} spec={spec} layout={wide} variant="wide" title={title} />
     {narrow && <DiagramSvg uid={uid} spec={spec} layout={narrow} variant="narrow" title={title} />}
   </div>
@@ -43,3 +43,4 @@ const payload = JSON.stringify({ spec, timelines }).replace(/</g, '\\u003c');
   )}
   <script type="application/json" data-diagram set:html={payload} />
 </flow-player>
+<script>import "./flow-player.ts";</script>

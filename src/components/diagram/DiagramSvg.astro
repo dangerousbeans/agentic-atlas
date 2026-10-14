@@ -6,6 +6,7 @@ interface Props { uid: string; spec: DiagramSpec; layout: DiagramLayout; variant
 const { uid, spec, layout, variant, title } = Astro.props;
 const pid = `${uid}-${variant}`;
 const hiddenIds = new Set(spec.nodes.filter(n => n.hidden).map(n => n.id));
+const pending = (e: { from: string; to: string }) => hiddenIds.has(e.from) || hiddenIds.has(e.to);
 ---
 <svg class="diagram-svg" data-layout={variant} viewBox={`0 0 ${layout.width} ${layout.height}`} style={variant === 'narrow' ? `--min-w:${Math.round(layout.width * 0.8)}px` : undefined} role="img" aria-labelledby={`${pid}-t ${pid}-d`}>
   <title id={`${pid}-t`}>{title} diagram</title>
@@ -23,10 +24,10 @@ const hiddenIds = new Set(spec.nodes.filter(n => n.hidden).map(n => n.id));
   </g>
   <g class="edges">
     {spec.edges.map(e => (
-      <path id={`${pid}-e-${e.id}`} class={`edge edge--${e.style ?? 'solid'}${hiddenIds.has(e.from) || hiddenIds.has(e.to) ? ' edge--pending' : ''}`} data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} marker-end={`url(#${pid}-arrow)`} />
+      <path id={`${pid}-e-${e.id}`} class={`edge edge--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} marker-end={`url(#${pid}-arrow)`} />
     ))}
     {spec.edges.filter(e => e.label).map(e => (
-      <text class={`edge-label edge-label--${e.style ?? 'solid'}`} data-edge={e.id} x={layout.edges[e.id].mid.x} y={layout.edges[e.id].mid.y - 8} text-anchor="middle">{e.label}</text>
+      <text class={`edge-label edge-label--${e.style ?? 'solid'}${pending(e) ? ' edge--pending' : ''}`} data-edge={e.id} x={layout.edges[e.id].mid.x} y={layout.edges[e.id].mid.y - 8} text-anchor="middle">{e.label}</text>
     ))}
   </g>
   <g class="nodes">

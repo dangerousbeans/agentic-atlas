@@ -93,6 +93,7 @@ diagram:
             - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.3, 0.6] }
             - { type: branch, node: evaluator, taken: accept, notTaken: [revise], at: [0.6, 0.8] }
             - { type: send, edge: accept, token: { kind: result, label: final }, at: [0.8, 1] }
+            - { type: activate, node: output, status: done, at: [0.9, 1] }
     - id: passes-first-time
       label: Passes first time
       steps:
@@ -111,3 +112,4 @@ diagram:
             - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.3, 0.6] }
             - { type: branch, node: evaluator, taken: accept, notTaken: [revise], at: [0.6, 0.8] }
             - { type: send, edge: accept, token: { kind: result, label: final }, at: [0.8, 1] }
+            - { type: activate, node: output, status: done, at: [0.9, 1] }
