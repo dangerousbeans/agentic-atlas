@@ -26,9 +26,10 @@ npm run build               # static site in dist/
 npx playwright test         # end-to-end, accessibility (axe), screenshot sweep, runtime perf
 npm run budget              # JS budget: <= 15 KB gzip per page (needs a build)
 npm run perf                # Lighthouse CI, mobile, against dist (needs a build)
+                            # LCP is ~2.1s against the 2.5s cap in lighthouserc.json; the LCP element is the display-font h1
 ```
 
-`npx playwright install chromium` is needed once before the Playwright tests. Set `PW_PORT` to run Playwright's server on another port. Screenshots land in `test-results/screens/`.
+`npx playwright install chromium` is needed once before the Playwright tests. Set `PW_PORT` to run Playwright's server on another port, and `PW_SKIP_BUILD=1` to serve the existing `dist/` instead of rebuilding. With `CI` set, the runtime perf specs use looser limits; they run in their own `perf` project, after the rest, on one worker. Screenshots land in `test-results/screens/`.
 
 To build for a sub-path (as GitHub Pages does), set `BASE_PATH`, for example `BASE_PATH=/agentic-atlas npm run build`.
 
@@ -106,7 +107,7 @@ diagram:
           codeRef: { block: main, lines: "1-3" }   # optional: highlight pseudocode lines
 ```
 
-Every node needs a `description`, and every edge needs a `description` and an `example`; the tests enforce this. Quote any value that contains ` #`, because YAML treats the rest of the line as a comment. The full schema is in `src/lib/schema.ts`.
+Every node needs a `description`, and every edge needs a `description` and an `example`; the schema requires them, so a pattern without them fails the build and `npm test`. Quote any value that contains ` #`, because YAML treats the rest of the line as a comment. The full schema is in `src/lib/schema.ts`.
 
 ## Credits
 

@@ -13,14 +13,17 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
       - name: JS budget (≤ 15 KB gzip per page)
         run: npm run budget
-      - name: Lighthouse CI (mobile, 3 runs per URL)
-        run: npm run perf
-      - run: npx playwright install --with-deps chromium
-      - name: Playwright (e2e, a11y, screenshots, runtime perf)
+      - name: Lighthouse CI (mobile, 3 runs per URL, Playwright's pinned Chromium)
+        run: |
+          export CHROME_PATH="$(node -e "console.log(require('@playwright/test').chromium.executablePath())")"
+          echo "Lighthouse browser: $CHROME_PATH"
+          npm run perf
+      - name: Playwright (e2e, a11y, screenshots, runtime perf; serves the dist built above)
         run: npx playwright test
-        env: { CI: '1' }
+        env: { CI: '1', PW_SKIP_BUILD: '1' }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

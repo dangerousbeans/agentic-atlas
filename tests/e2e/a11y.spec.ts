@@ -7,10 +7,14 @@ const pages: { name: string; path: string; status?: number; width?: number }[] =
   { name: 'home', path: '/' },
   // Phones start the map zoomed out, where tile text is faded; the tile links must keep their names.
   { name: 'home at 390px', path: '/', width: 390 },
+  { name: 'atlas', path: '/atlas/' },
+  { name: 'atlas at 390px', path: '/atlas/', width: 390 },
   { name: 'families index', path: '/families/' },
   { name: 'family page', path: '/families/workflows/' },
   { name: 'pattern: evaluator-optimizer', path: '/patterns/evaluator-optimizer/' },
   { name: 'pattern: supervisor', path: '/patterns/supervisor/' },
+  { name: 'pattern at 390px', path: '/patterns/evaluator-optimizer/', width: 390 },
+  { name: 'family page at 390px', path: '/families/workflows/', width: 390 },
   { name: 'about', path: '/about/' },
   { name: '404', path: '/no-such-page/', status: 404 },
 ];

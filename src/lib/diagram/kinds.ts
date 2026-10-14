@@ -19,7 +19,7 @@ export const KIND_LABEL: Record<NodeKind, string> = {
   evaluator: 'Evaluator', aggregator: 'Aggregator', memory: 'Memory', human: 'Human', guard: 'Guard',
 };
 
-export const nodeDescription = (n: Pick<DiagramNode, 'kind' | 'description'>): string => n.description ?? KIND_DESCRIPTION[n.kind];
+export const nodeDescription = (n: Pick<DiagramNode, 'kind'> & Partial<Pick<DiagramNode, 'description'>>): string => n.description ?? KIND_DESCRIPTION[n.kind];
 
 type Labels = ReadonlyMap<string, { label: string }>;
 
@@ -29,7 +29,7 @@ export function edgeTitle(e: Pick<DiagramEdge, 'from' | 'to'>, nodes: Labels): s
 }
 
 /** Edge description, falling back to "<from> → <to>" plus the label when present. */
-export function edgeDescription(e: Pick<DiagramEdge, 'from' | 'to' | 'label' | 'description'>, nodes: Labels): string {
+export function edgeDescription(e: Pick<DiagramEdge, 'from' | 'to'> & Partial<Pick<DiagramEdge, 'label' | 'description'>>, nodes: Labels): string {
   return e.description ?? (e.label ? `${edgeTitle(e, nodes)}: ${e.label}` : edgeTitle(e, nodes));
 }
 
