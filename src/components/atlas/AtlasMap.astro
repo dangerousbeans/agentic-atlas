@@ -166,7 +166,10 @@ const px = (n: number) => `${n}px`;
   /* opacity, not visibility: hidden text would drop out of the accessibility tree and leave the tile links nameless */
   [data-far] .tile-name, [data-far] .tile-stats { opacity: 0; }
   [data-enhanced] .atlas-island li { position: absolute; left: var(--rx); top: var(--ry); }
-  [data-enhanced] .atlas-tile { transition: opacity .2s, border-color .15s; }
+  /* content-visibility: the browser skips painting tiles out of view. With 52 tiles, the off-screen ones' paint
+     roughly doubled cc Layerize time per frame while six diagrams animated (draw-perf); skipping them restores it.
+     The tile's own border, focus outline and spot shadow are not clipped (containment clips only descendants). */
+  [data-enhanced] .atlas-tile { transition: opacity .2s, border-color .15s; content-visibility: auto; contain-intrinsic-size: 220px 170px; }
   [data-enhanced] .atlas-tile[data-dim], [data-enhanced] .atlas-island[data-dim] .atlas-island-label { opacity: .22; }
   [data-enhanced] .atlas-island[data-dim] { opacity: .6; }
   [data-enhanced] .atlas-tile[data-spot] { border-color: var(--accent); box-shadow: 0 0 0 calc(4px / var(--z, 1)) var(--accent-soft); }
