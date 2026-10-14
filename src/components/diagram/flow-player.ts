@@ -130,7 +130,7 @@ class FlowPlayer extends HTMLElement {
     on(tip, 'pointerenter', () => { clearTimeout(this.hideTimer); this.hover = true; this.sync(); });
     on(tip, 'pointerleave', () => { this.hover = false; this.sync(); this.hideSoon(); });
     on(this, 'pointerover', e => { const el = hit(e); if (el) this.showTip(el, e); });
-    on(this, 'pointermove', e => { if (this.tipFor?.hasAttribute('data-hit')) this.place(e.clientX, e.clientY, e.clientX, e.clientY); });
+    on(this, 'pointermove', e => { if (this.tipFor?.hasAttribute('data-hit') && !tip.contains(e.target as Node)) this.place(e.clientX, e.clientY, e.clientX, e.clientY); });
     on(this, 'pointerout', e => {
       if (e.pointerType === 'touch') return;
       const to = (e.relatedTarget as Element | null)?.closest?.('[data-tip-t]') ?? null;

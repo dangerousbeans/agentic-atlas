@@ -135,6 +135,25 @@ test('the tooltip is hoverable: the pointer can move onto it without it closing'
   await expect(tip(page)).toBeHidden();
 });
 
+test('an edge tooltip is hoverable and does not chase the pointer', async ({ page }) => {
+  await page.goto(url);
+  const pt = await page.locator('svg[data-layout="wide"] path.edge-hit[data-hit="revise"]').evaluate((p: SVGPathElement) => {
+    const m = p.getPointAtLength(p.getTotalLength() / 2), c = p.getScreenCTM()!;
+    return { x: m.x * c.a + c.e, y: m.y * c.d + c.f };
+  });
+  await page.mouse.move(pt.x, pt.y);
+  await expect(tip(page)).toBeVisible();
+  await page.waitForTimeout(300);
+  const before = (await tip(page).boundingBox())!;
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2, { steps: 6 });
+  await page.mouse.move(before.x + before.width / 2 + 5, before.y + before.height / 2 + 3);
+  await page.waitForTimeout(400);
+  await expect(tip(page)).toBeVisible();
+  const after = (await tip(page).boundingBox())!;
+  expect(Math.abs(after.x - before.x)).toBeLessThan(1);
+  expect(Math.abs(after.y - before.y)).toBeLessThan(1);
+});
+
 test('re-inserting the player clears stale hover state', async ({ page }) => {
   await page.goto(url);
   const fp = fpOf(page);
