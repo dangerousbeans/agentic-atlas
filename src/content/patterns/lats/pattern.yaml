@@ -20,7 +20,7 @@ origin:
   year: 2023
   url: https://arxiv.org/abs/2310.04406
   kind: introduced
-  note: "Published at ICML 2024. It combines Monte Carlo tree search with ReAct-style acting and Reflexion-style self-reflection; the paper evaluates it on HumanEval, HotpotQA and WebShop."
+  note: "Published at ICML 2024. It combines Monte Carlo tree search with ReAct-style acting and Reflexion-style self-reflection; the paper evaluates it on HumanEval, HotpotQA and WebShop. For programming, its environment runs tests the model wrote itself as well as the visible examples."
 build:
   goal: "Find a sequence of actions that solves a task in an environment you can reset or branch, by running Monte Carlo tree search where a model proposes actions, the environment executes them, and a model scores the outcomes."
   steps:
@@ -28,16 +28,17 @@ build:
     - "Select: starting at the root, repeatedly pick the child with the highest UCT score (value plus an exploration bonus that shrinks with visits) until you reach a node that has not been expanded. Do this in code, not with a model."
     - "Expand: call the model with the {{prompt:expand}} k times (default 2) to sample different next actions from that node, including every saved reflection in the prompt."
     - "Act: run each sampled action in the environment from that node's state, such as executing the code against the visible tests, and record the observation as a new child node."
-    - "Evaluate: if the environment says a child solved the task, return its trajectory. Otherwise score each child with the {{prompt:value}} and use the score as that child's value."
+    - "Simulate (multi-step tasks only): roll a new child forward to a terminal state by repeating expand and act with one sample per step. Skip this when one action is a complete answer, such as a whole program."
+    - "Evaluate: if the environment says a child solved the task, return its trajectory. Otherwise score it with the {{prompt:value}}; blend that score with a self-consistency score or, where tests exist, the test pass rate, and use the blend as the child's value."
     - "Backpropagate: walk from each new child up to the root, adding one to each node's visit count and folding the child's value into each node's running average."
-    - "Reflect: when a child is a terminal failure, call the model with the {{prompt:reflect}}, passing its trajectory and the environment's feedback, and save the reflection for later expansions. Then start the next rollout at the select step."
+    - "Reflect: for each child that ends in a terminal failure, call the model with the {{prompt:reflect}}, passing its trajectory and the environment's feedback, and save the reflection for every later expansion. Then start the next rollout at the select step."
   stop: "Stop as soon as the environment confirms a solution, or after a rollout budget (default 8). On the budget, return the trajectory of the highest-value node with a status saying no solution was confirmed."
   requirements:
     - "The environment must be resettable or snapshotable, because siblings start from the same state. Never run this over actions that cannot be undone."
     - "Cap rollouts (default 8) and children per expansion (default 2), and log the model calls and environment runs for each rollout."
     - "Parse the value prompt's score into a number between 0 and 1; if it does not parse, retry once, then score the child 0."
     - "Keep the tree, with visit counts and values, in a form you can dump to a log, so a run can be inspected after it ends."
-    - "Add a test with a stub LLM and a fake test runner that fails both children of the first rollout and passes the child from the second; assert reflect was called once, its text appears in the second expand prompt, and the passing code is returned."
+    - "Add a test with a stub LLM and a fake test runner that fails both children of the first rollout and passes the child from the second; assert reflect was called twice, both lessons appear in every expand prompt of rollout 2, and the passing code is returned."
 defaultVariantName: Real environment
 prompts:
   - id: expand
@@ -105,11 +106,11 @@ diagram:
     - id: value
       kind: evaluator
       label: Value
-      description: "Scores each new child from 0 to 1 using the test results, then backs the score up to every ancestor in the tree."
+      description: "Scores each new child from 0 to 1, blending the test pass rate with a model score, then backs it up to every ancestor."
     - id: reflector
       kind: llm
       label: Reflector
-      description: "After a failed attempt, writes a short lesson about what went wrong, without writing code."
+      description: "For every failed attempt, writes a short lesson about what went wrong, without writing code."
     - id: reflections
       kind: memory
       label: Reflections
@@ -154,16 +155,17 @@ diagram:
       style: dashed
       label: fail
       description: "A failed attempt, with its test output, goes to the reflector."
-      example: "B failed test_empty: is_valid_bracket_seq('') returned False, expected True."
+      example: "A failed test_order: ')(' returned True. B failed test_empty: '' returned False, expected True."
     - id: note
       from: reflector
       to: reflections
-      description: "The lesson is saved for every later expansion."
-      example: "I returned False for an empty string, but an empty sequence is balanced. Check the stack only at the end."
+      description: "Each lesson is saved for every later expansion."
+      example: "A: counting alone accepts ')('; track depth and fail if it goes negative. B: an empty string is balanced; return True for it."
     - id: recall
       from: reflections
       to: expander
       style: dashed
+      label: lessons
       description: "Saved lessons go into the expand prompt, so new branches avoid known mistakes."
       example: "<reflections>Empty string is valid. Counting alone accepts ')('.</reflections>"
     - id: solved
@@ -202,20 +204,20 @@ diagram:
             - { type: branch, node: value, taken: backprop, notTaken: [solved], at: [0.4, 0.55] }
             - { type: send, edge: backprop, token: { kind: feedback, label: "A .3 · B .6" }, at: [0.55, 1] }
         - id: reflect
-          caption: B failed on the empty string, so the reflector writes a lesson and saves it.
-          duration: 2600
+          caption: Both children are failed programs, so the reflector writes one lesson for each and saves them.
+          duration: 3000
           events:
-            - { type: send, edge: fail, token: { kind: feedback, label: test_empty }, at: [0, 0.35] }
+            - { type: send, edge: fail, token: { kind: feedback, label: 2 failures }, at: [0, 0.35] }
             - { type: activate, node: reflector, status: thinking, at: [0.35, 0.7] }
-            - { type: send, edge: note, token: { kind: result, label: lesson }, at: [0.7, 0.95] }
+            - { type: send, edge: note, token: { kind: result, label: 2 lessons }, at: [0.7, 0.95] }
             - { type: write, node: reflections, at: [0.9, 1] }
         - id: expand-b
-          caption: Rollout 2. The selector follows the higher value to B, and the expander reads the lesson.
+          caption: Rollout 2. The selector follows the higher value to B, and the expander reads both lessons.
           duration: 2800
           events:
             - { type: send, edge: pick, token: { kind: prompt, label: node B }, at: [0, 0.35] }
             - { type: read, node: reflections, at: [0.3, 0.45] }
-            - { type: send, edge: recall, token: { kind: prompt, label: lesson }, at: [0.35, 0.65] }
+            - { type: send, edge: recall, token: { kind: prompt, label: lessons }, at: [0.35, 0.65] }
             - { type: activate, node: expander, status: thinking, at: [0.65, 1] }
         - id: solved
           caption: The new child passes all four tests, so the search stops and returns it.
@@ -376,18 +378,24 @@ variants:
                 - { type: branch, node: reward, taken: backprop, notTaken: [done], at: [0.4, 0.55] }
                 - { type: send, edge: backprop, token: { kind: feedback, label: "0.0 · 0.7" }, at: [0.55, 1] }
             - id: rollout-2
-              caption: Rollout 2 follows the better branch, simulating one more action per round without touching real blocks.
-              duration: 3400
-              repeat: 3
+              caption: Each new rollout reselects from the root, goes one level deeper on the best branch, and backs up its reward. No real block moves.
+              duration: 4200
+              repeat: 2
               events:
-                - { type: send, edge: pick, token: { kind: prompt, label: state }, at: [0, 0.25] }
-                - { type: send, edge: propose, token: { kind: prompt, label: action }, at: [0.3, 0.55] }
-                - { type: activate, node: world, status: thinking, at: [0.55, 0.75] }
-                - { type: send, edge: predict, token: { kind: result, label: next state }, at: [0.75, 1] }
+                - { type: send, edge: pick, token: { kind: prompt, label: state }, at: [0, 0.18] }
+                - { type: send, edge: propose, token: { kind: prompt, label: action }, at: [0.2, 0.38] }
+                - { type: activate, node: world, status: thinking, at: [0.38, 0.52] }
+                - { type: send, edge: predict, token: { kind: result, label: next state }, at: [0.52, 0.68] }
+                - { type: activate, node: reward, status: thinking, at: [0.68, 0.8] }
+                - { type: send, edge: backprop, token: { kind: feedback, label: reward }, at: [0.8, 1] }
             - id: goal
-              caption: The predicted state has blue on red, so the four actions on that path are returned as the plan.
-              duration: 2400
+              caption: One level deeper, 'stack blue on red' leads to a predicted state that meets the goal, so the four actions on that path are returned as the plan.
+              duration: 4000
               events:
-                - { type: branch, node: reward, taken: done, notTaken: [backprop], at: [0, 0.3] }
-                - { type: send, edge: done, token: { kind: result, label: 4-step plan }, at: [0.3, 0.85] }
-                - { type: activate, node: out, status: done, at: [0.8, 1] }
+                - { type: send, edge: pick, token: { kind: prompt, label: state }, at: [0, 0.15] }
+                - { type: send, edge: propose, token: { kind: prompt, label: stack blue }, at: [0.17, 0.33] }
+                - { type: activate, node: world, status: thinking, at: [0.33, 0.45] }
+                - { type: send, edge: predict, token: { kind: result, label: blue on red }, at: [0.45, 0.6] }
+                - { type: branch, node: reward, taken: done, notTaken: [backprop], at: [0.6, 0.7] }
+                - { type: send, edge: done, token: { kind: result, label: 4-step plan }, at: [0.7, 0.92] }
+                - { type: activate, node: out, status: done, at: [0.88, 1] }

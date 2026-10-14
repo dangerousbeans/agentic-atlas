@@ -4,15 +4,17 @@ An agent writing `is_valid_bracket_seq(s)` has many plausible first moves: count
 
 ## How it works
 
-Language Agent Tree Search, from Zhou et al., runs Monte Carlo tree search over the agent's actions. Every node in the tree is a real state reached by real actions, and each rollout has the same five moves.
+Language Agent Tree Search, from Zhou et al., runs Monte Carlo tree search over the agent's actions. Every node in the tree is a real state reached by real actions. The paper defines six operations: selection, expansion, evaluation, simulation, backpropagation and reflection.
 
 The <NodeRef id="task">task</NodeRef> becomes the root. The <NodeRef id="selector">selector</NodeRef>, plain code, walks down the tree, at each level picking the child with the best value plus a bonus for being rarely visited. That balance makes the search keep exploiting what works while still trying neglected branches.
 
 The <NodeRef id="expander">expander</NodeRef> samples a few different next actions from the selected node: here, two candidate implementations. Each one runs for real in the <NodeRef id="env">environment</NodeRef>, here a test runner with the visible tests. Candidate A, which only counts brackets, passes 2 of 4 because it accepts `)(`. Candidate B, a stack, passes 3 of 4 but returns False for the empty string.
 
-The <NodeRef id="value">value</NodeRef> step scores each child from 0 to 1 using those results, and backpropagates: every ancestor's visit count goes up and its average absorbs the new score. Meanwhile the failed attempt goes to the <NodeRef id="reflector">reflector</NodeRef>, which writes a lesson, "an empty sequence is balanced", into <NodeRef id="reflections">reflections</NodeRef>.
+The <NodeRef id="value">value</NodeRef> step scores each child from 0 to 1. The paper blends a model's judgement with a self-consistency score; for code, the test pass rate carries most of the signal. Then it backpropagates: every ancestor's visit count goes up and its average absorbs the new score. Simulation, rolling a child forward until it reaches an end state, matters for multi-step tasks such as web navigation. Here each action is a whole program, so the paper skips simulation and backs up the pass rate directly.
 
-On the second rollout the selector follows the higher value down to B. The expander reads the saved lesson, writes a child that handles the empty string, and the tests all pass. The search stops and the code goes to the <NodeRef id="out">solution</NodeRef>.
+Both children are failed programs, so each goes to the <NodeRef id="reflector">reflector</NodeRef>, which writes one lesson per failure into <NodeRef id="reflections">reflections</NodeRef>: "counting alone accepts `)(`" and "an empty sequence is balanced".
+
+On the second rollout the selector follows the higher value down to B. The expander reads both saved lessons, writes a child that handles the empty string, and the tests all pass. The search stops and the code goes to the <NodeRef id="out">solution</NodeRef>.
 
 **The World model (RAP) variant.** RAP, from Hao et al., came first and drops the real environment. The same model plays two roles: one prompt proposes actions, another predicts the state each action leads to. The search runs entirely over imagined states. In a Blocksworld puzzle, the world model can say that "pick up blue" is illegal while red sits on top of it, without anyone touching a block. Use it when acting is impossible or costly, and accept that a wrong prediction leads the search astray with no environment to correct it.
 
