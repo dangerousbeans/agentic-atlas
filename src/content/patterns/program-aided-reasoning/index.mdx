@@ -1,0 +1,42 @@
+## Problem
+
+"Roger has 5 tennis balls. He buys 2 more cans of tennis balls. Each can has 3 tennis balls. How many does he have now?" Chain-of-thought gets models to break this down correctly, but the model still does the arithmetic itself, one token at a time. On bigger numbers, dates or long sums, the plan is often right and a single calculation is wrong. A language model is a poor calculator; a computer is a perfect one.
+
+## How it works
+
+Program-aided reasoning splits the job along that line. The <NodeRef id="question">question</NodeRef> goes to the <NodeRef id="model">model</NodeRef> with worked examples whose answers are short programs. So instead of writing "5 + 6 = 11", the model writes:
+
+```python
+tennis_balls = 5
+bought_balls = 2 * 3
+print(tennis_balls + bought_balls)
+```
+
+Your code extracts the program and runs it in a sandboxed <NodeRef id="interpreter">interpreter</NodeRef>. What it prints, 11, is the <NodeRef id="answer">answer</NodeRef>. It does not go back through the model, so the model never gets a chance to restate it wrongly. The model does the part it is good at, turning words into a plan; the interpreter does the part it is good at, computing.
+
+In the original method that is the whole pattern: one model call and one run. The "Crashes, then repaired" scenario shows a common extension: if the program raises an error, the error goes back to the model once and the corrected program is run.
+
+PAL (Gao, Madaan, Zhou et al., Carnegie Mellon, 2022) writes programs whose comments and variable names carry the reasoning. Program of Thoughts (Chen et al., 2022) appeared at the same time, aimed at numerical and financial questions: the program is pure computation, and the model may read the result and phrase the final answer. That form is the second tab.
+
+## When to use
+
+- The task involves arithmetic, dates, counting, unit conversion or symbolic manipulation, and wrong calculations are the main source of errors.
+- The reasoning maps naturally onto code: quantities, formulas, loops over items.
+- You can run code safely, in a sandbox with time and memory limits.
+
+## When to avoid
+
+- You have no sandbox. Running model-written code with access to your network or files is not an option.
+- The reasoning is qualitative, such as weighing arguments or interpreting text, and does not translate into code.
+- The calculation is trivial. A single sum does not need an interpreter.
+
+## Trade-offs
+
+You add an interpreter to your stack and a sandbox to maintain, plus one execution per question. In exchange, the arithmetic is exact, and the program is a precise record of how the answer was reached, which you can read, test and rerun. The model can still misread the problem, and then the computer calculates the wrong thing perfectly.
+
+## Failure modes
+
+- **Correct code for the wrong problem:** the model misreads the question, and the program faithfully computes a wrong answer. Check the program's variables against the question when the stakes are high.
+- **Crashes:** a typo or an undefined name stops the run. Catch errors, and allow one repair if you need robustness.
+- **No output:** the program computes the answer but never prints it. Treat empty output as a failure, or read a named variable as Program of Thoughts does.
+- **Unsafe code:** a program reads files, opens connections or loops forever. Sandbox every run, block the network and the file system, and set a time limit.

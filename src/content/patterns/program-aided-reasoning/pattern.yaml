@@ -1,0 +1,293 @@
+slug: program-aided-reasoning
+name: Program-Aided Reasoning
+family: reasoning-prompting
+aliases: [PAL, Program of Thoughts, PoT, Code-as-reasoning, Code interpreter reasoning]
+summary: The model writes a program that encodes its reasoning, an interpreter runs it, and the program's output is the answer.
+badges: { autonomy: low, cost: low, latency: low }
+sources:
+  - title: "PAL: Program-aided Language Models (Gao et al., 2022)"
+    url: https://arxiv.org/abs/2211.10435
+  - title: "Program of Thoughts Prompting: Disentangling Computation from Reasoning for Numerical Reasoning Tasks (Chen et al., 2022)"
+    url: https://arxiv.org/abs/2211.12588
+related:
+  composesWith: [chain-of-thought, voting]
+  confusedWith:
+    - { slug: augmented-llm, difference: "An augmented LLM may call any tool and then keep talking; here the model writes one program and the interpreter's output is the answer." }
+    - { slug: react, difference: "ReAct deliberates over many turns and tools; program-aided reasoning generates code once and runs it, with no loop in the original form." }
+    - { slug: chain-of-thought, difference: "Chain-of-thought does the arithmetic in text, where the model can slip; here the reasoning is code and the computer does the arithmetic." }
+origin:
+  by: Luyu Gao, Aman Madaan, Shuyan Zhou et al.
+  org: Carnegie Mellon University
+  year: 2022
+  url: https://arxiv.org/abs/2211.10435
+  kind: introduced
+  note: "Gao, Madaan and Zhou were equal first authors. Program of Thoughts (Chen et al., University of Waterloo, Vector Institute, UC Santa Barbara and Google Research) was introduced concurrently in November 2022: see its tab."
+defaultVariantName: PAL
+build:
+  goal: "Answer a question that needs calculation by having the model write a short program for it, running that program in a sandbox, and returning what the program prints."
+  steps:
+    - "Fill in the {{prompt:pal}} with worked examples and the user's question, and call the model once."
+    - "Extract the code block from the reply. If there is none, return no answer with a status saying the model wrote no program."
+    - "Run the code in a sandboxed interpreter with no network or file access, a time limit and a memory limit, and capture what it prints."
+    - "Return the printed output, trimmed, as the answer, and keep the program alongside it as the working."
+    - "If the run raises an error, call the model once with the {{prompt:fix}}, passing the program and the error, and run the corrected program the same way."
+  stop: "Stop when a program runs and prints an answer, or after one repair attempt. If the repaired program also fails, return no answer with the program, the error and a status saying execution failed."
+  requirements:
+    - "Never run generated code outside a sandbox; block the network and the file system, and set a time limit (default 5 s) and a memory limit."
+    - "Treat empty output as a failure, the same as an exception."
+    - "Make the repair step optional and off by default, since it is an extension to the original method."
+    - "Log the question, the program, the output or error, and whether a repair was used."
+    - "Add a test with a stub LLM that returns a program printing 5 + 2 * 3 and a real sandbox; assert one model call and that the answer is exactly '11'."
+prompts:
+  - id: pal
+    title: Program-aided prompt
+    lang: markdown
+    source: |
+      Solve the problem by writing a Python program. Use comments for your
+      reasoning and variables for every quantity, and print the final answer.
+      Return only the program, in one code block.
+
+      Question: Olivia has $23. She bought five bagels for $3 each.
+      How much money does she have left?
+      ```python
+      # Olivia starts with $23
+      money_initial = 23
+      # she buys 5 bagels at $3 each
+      bagels = 5
+      bagel_cost = 3
+      money_spent = bagels * bagel_cost
+      print(money_initial - money_spent)
+      ```
+
+      Question: {{question}}
+  - id: fix
+    title: Repair prompt
+    lang: markdown
+    source: |
+      Your program for the question below failed when it ran.
+
+      <question>{{question}}</question>
+      <program>{{program}}</program>
+      <error>{{error}}</error>
+
+      Fix the program so it runs and prints the final answer.
+      Return only the corrected program, in one code block.
+diagram:
+  nodes:
+    - id: question
+      kind: io
+      label: Question
+      description: "A word problem with arithmetic: 'Roger has 5 tennis balls. He buys 2 cans of 3. How many does he have now?'"
+    - id: model
+      kind: llm
+      label: Model
+      sublabel: writes the program
+      description: "Turns the problem into a short program, with its reasoning as comments and variables. It does no arithmetic itself."
+    - id: interpreter
+      kind: tool
+      label: Interpreter
+      sublabel: sandboxed Python
+      description: "Runs the program in a sandbox and captures what it prints. Every calculation happens here."
+    - id: answer
+      kind: io
+      label: Answer
+      description: "What the program printed, '11', returned as the answer without passing back through the model."
+  edges:
+    - id: ask
+      from: question
+      to: model
+      description: "The question goes to the model with worked examples that answer in code."
+      example: "Question: Roger has 5 tennis balls. He buys 2 more cans of tennis balls. Each can has 3 tennis balls. How many tennis balls does he have now?"
+    - id: code
+      from: model
+      to: interpreter
+      label: program
+      description: "The model's reply is a program; your code extracts it and sends it to the sandbox."
+      example: "tennis_balls = 5; bought_balls = 2 * 3; print(tennis_balls + bought_balls)"
+    - id: output
+      from: interpreter
+      to: answer
+      label: printed
+      description: "What the program prints is the answer. The model never restates it, so it cannot get it wrong."
+      example: "stdout: 11"
+    - id: traceback
+      from: interpreter
+      to: model
+      style: loop
+      label: error
+      description: "An extension, not in the original paper: if the program crashes, the error goes back for one repair."
+      example: "NameError: name 'bought_ball' is not defined (line 3)"
+  scenarios:
+    - id: runs-clean
+      label: Runs clean
+      steps:
+        - id: ask
+          caption: The tennis-ball problem arrives at the model.
+          duration: 1200
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: write
+          caption: Instead of calculating, the model writes a program that names each quantity and prints the total.
+          duration: 2600
+          events:
+            - { type: activate, node: model, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: code, token: { kind: tool-call, label: 5 + 2*3 }, at: [0.5, 1] }
+        - id: run
+          caption: The interpreter runs it and prints 11, which is returned as the answer.
+          duration: 2400
+          events:
+            - { type: activate, node: interpreter, status: calling, at: [0, 0.4] }
+            - { type: branch, node: interpreter, taken: output, notTaken: [traceback], at: [0.35, 0.45] }
+            - { type: send, edge: output, token: { kind: result, label: "11" }, at: [0.45, 0.85] }
+            - { type: activate, node: answer, status: done, at: [0.8, 1] }
+    - id: traceback
+      label: Crashes, then repaired
+      steps:
+        - id: ask
+          caption: The tennis-ball problem arrives at the model.
+          duration: 1200
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: write
+          caption: The model writes a program, but misspells a variable name.
+          duration: 2400
+          events:
+            - { type: activate, node: model, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: code, token: { kind: tool-call, label: program }, at: [0.5, 1] }
+        - id: crash
+          caption: The program crashes with a NameError, and the error goes back to the model (an extension to the original method).
+          duration: 2800
+          events:
+            - { type: activate, node: interpreter, status: error, at: [0, 0.4] }
+            - { type: branch, node: interpreter, taken: traceback, notTaken: [output], at: [0.35, 0.45] }
+            - { type: send, edge: traceback, token: { kind: feedback, label: NameError }, at: [0.45, 1] }
+        - id: repair
+          caption: The model fixes the name, the corrected program runs, and it prints 11.
+          duration: 3200
+          events:
+            - { type: activate, node: model, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: code, token: { kind: tool-call, label: fixed }, at: [0.3, 0.55] }
+            - { type: activate, node: interpreter, status: calling, at: [0.55, 0.7] }
+            - { type: branch, node: interpreter, taken: output, notTaken: [traceback], at: [0.65, 0.72] }
+            - { type: send, edge: output, token: { kind: result, label: "11" }, at: [0.72, 0.95] }
+            - { type: activate, node: answer, status: done, at: [0.9, 1] }
+variants:
+  - id: program-of-thoughts
+    name: Program of Thoughts
+    summary: "The program is pure computation with meaningful variable names; the model can then read the result and phrase the answer."
+    origin:
+      by: Wenhu Chen et al.
+      org: University of Waterloo, Vector Institute, UC Santa Barbara, Google Research
+      year: 2022
+      url: https://arxiv.org/abs/2211.12588
+      kind: introduced
+      note: "Published in TMLR 2023, concurrently with PAL. It separates computation (done by the interpreter) from reasoning (done by the model), aimed at numerical and financial questions."
+    build:
+      goal: "Answer a numerical question by having the model write a program that binds every quantity to a named variable and computes the result, then phrase the computed value as the answer."
+      steps:
+        - "Call the model with the {{prompt:pot}} and the question. The program must bind every quantity to a meaningfully named variable and store the result in a variable called ans."
+        - "Run the program in a sandboxed interpreter with time and memory limits, and read the value of ans."
+        - "If the caller wants a bare value, return ans. Otherwise call the model with the {{prompt:phrase}}, passing the question and ans, and return its sentence."
+        - "Keep the program with the answer, so a reviewer can see exactly how the number was computed."
+      stop: "Stop when ans has been read (and phrased, if requested). If the program fails or never sets ans, return no answer with the program and the error."
+      requirements:
+        - "Never run generated code outside a sandbox; block the network and the file system, and set time and memory limits."
+        - "Read the answer from the variable ans, not from printed output, and fail clearly if it is missing."
+        - "Make the phrasing call optional; when it runs, check that its sentence contains the value of ans."
+        - "Add a test with a stub LLM whose program sets ans = 5 + 2 * 3 and whose phrasing is 'Roger has 11 tennis balls.'; assert ans is exactly 11 and two model calls."
+    prompts:
+      - id: pot
+        title: Program of Thoughts prompt
+        lang: markdown
+        source: |
+          Write a Python program that computes the answer to the question.
+          Bind every quantity to a variable with a meaningful name, compute
+          step by step, and store the final result in a variable called ans.
+          Return only the program, in one code block.
+
+          Question: {{question}}
+      - id: phrase
+        title: Phrase the answer prompt
+        lang: markdown
+        source: |
+          A program computed the answer to the question below.
+
+          <question>{{question}}</question>
+          <result>{{ans}}</result>
+
+          State the answer in one sentence, using the result exactly as given.
+    diagram:
+      nodes:
+        - id: question
+          kind: io
+          label: Question
+          description: "A numerical question: 'Roger has 5 tennis balls. He buys 2 cans of 3. How many does he have now?'"
+        - id: model
+          kind: llm
+          label: Model
+          sublabel: code, then phrasing
+          description: "Writes a program of named variables that computes ans, then, optionally, turns the computed value into a sentence."
+        - id: interpreter
+          kind: tool
+          label: Interpreter
+          sublabel: sandboxed Python
+          description: "Runs the program and reads the value of the variable ans. All the arithmetic happens here."
+        - id: answer
+          kind: io
+          label: Answer
+          description: "The computed value, phrased as a sentence by the model: 'Roger has 11 tennis balls.'"
+      edges:
+        - id: ask
+          from: question
+          to: model
+          description: "The question goes to the model with the instruction to compute it in code and store the result in ans."
+          example: "Question: Roger has 5 tennis balls. He buys 2 more cans of tennis balls. Each can has 3 tennis balls. How many does he have now?"
+        - id: code
+          from: model
+          to: interpreter
+          label: program
+          description: "The program, pure computation with meaningful variable names and no prose."
+          example: "initial_balls = 5; cans = 2; balls_per_can = 3; ans = initial_balls + cans * balls_per_can"
+        - id: result
+          from: interpreter
+          to: model
+          style: loop
+          label: ans
+          description: "The value of ans goes back to the model, which only has to phrase it, not compute it."
+          example: "ans = 11 (int)"
+        - id: phrase
+          from: model
+          to: answer
+          label: sentence
+          description: "The model states the computed value as the answer, using the number exactly as the interpreter gave it."
+          example: "Roger has 11 tennis balls."
+      scenarios:
+        - id: compute-then-phrase
+          label: Compute, then phrase
+          steps:
+            - id: ask
+              caption: The tennis-ball problem arrives at the model.
+              duration: 1200
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question } }
+            - id: write
+              caption: The model writes a program that names each quantity and stores the result in ans.
+              duration: 2600
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.5] }
+                - { type: branch, node: model, taken: code, notTaken: [phrase], at: [0.45, 0.55] }
+                - { type: send, edge: code, token: { kind: tool-call, label: program }, at: [0.55, 1] }
+            - id: run
+              caption: The interpreter runs the program and sends back ans = 11.
+              duration: 2400
+              events:
+                - { type: activate, node: interpreter, status: calling, at: [0, 0.4] }
+                - { type: send, edge: result, token: { kind: result, label: ans = 11 }, at: [0.4, 1] }
+            - id: phrase
+              caption: The model states the computed value in a sentence, without redoing any arithmetic.
+              duration: 2400
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.35] }
+                - { type: branch, node: model, taken: phrase, notTaken: [code], at: [0.3, 0.4] }
+                - { type: send, edge: phrase, token: { kind: result, label: 11 balls }, at: [0.4, 0.85] }
+                - { type: activate, node: answer, status: done, at: [0.8, 1] }

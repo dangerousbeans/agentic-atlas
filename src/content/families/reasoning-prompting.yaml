@@ -3,4 +3,4 @@ name: "Reasoning & Prompting"
 rank: 2
 accent: "#60A5FA"
 description: "Shape how one model thinks inside a call or a short fixed chain: decompose, ask follow-ups, verify its own claims, or hand the arithmetic to code."
-order: [chain-of-thought, least-to-most, self-ask, chain-of-verification]
+order: [chain-of-thought, least-to-most, self-ask, chain-of-verification, program-aided-reasoning]
