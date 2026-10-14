@@ -1,0 +1,36 @@
+## Problem
+
+Ask a team of chatty agents to "build a command-line 2048 game" and they talk past each other: the engineer starts coding before anyone has decided what the game must do, the reviewer comments on a design that was never written down, and every agent rereads a long, unstructured chat to find the one detail it needs. Human teams solved this long ago with standard operating procedures: a PRD before a design, a design before code, and tests before shipping.
+
+## How it works
+
+An SOP-driven team encodes that procedure. Each role agent has one job and one output, a structured document with a fixed template. The <NodeRef id="pm">product manager</NodeRef> turns the requirement into a PRD with user stories and a prioritized requirement list. The <NodeRef id="architect">architect</NodeRef> turns the PRD into a system design: a file list, data structures and interfaces. The <NodeRef id="engineer">engineer</NodeRef> turns the design into code. The <NodeRef id="qa">QA engineer</NodeRef> writes and runs tests against it.
+
+The roles do not talk to each other. Each one publishes its document to a shared <NodeRef id="pool">message pool</NodeRef>, and each one subscribes to the document types it needs: the architect to PRDs, the engineer to designs and QA reports, QA to code. A role's context is therefore a few clean documents, not a transcript.
+
+The only loop is at the end. When a test fails, QA's report goes back to the engineer, who fixes the code and publishes it again. When everything passes, the <NodeRef id="out">software</NodeRef> ships with every document the team produced, which doubles as its documentation.
+
+MetaGPT, which introduced the pattern, also has a project manager that splits the design into tasks; it is left out of the diagram for space. ChatDev, in the second tab, keeps the fixed order but runs each phase as a two-agent chat instead of a single document hand-off.
+
+## When to use
+
+- The domain has a well-known human process with standard artifacts: software, reports, research reviews.
+- Each step's output can be written as a template, so it can be checked before the next role starts.
+- You want the intermediate documents themselves, for review, audit or reuse.
+
+## When to avoid
+
+- The process is unknown or exploratory. A fixed order cannot adapt; use a supervisor or a group chat.
+- The roles barely differ. Four agents doing slight variations of the same job just multiply the cost.
+- The task is small. A single agent writes a 50-line script faster than a team writes a PRD for it.
+
+## Trade-offs
+
+The procedure makes runs predictable and the documents make them inspectable: you can see exactly where a misunderstanding entered. Structured hand-offs also cut down on drift, because each role answers a narrow template. The price is rigidity and overhead. Every role is a full model call, usually a long one, and a mistake in an early document, such as a wrong requirement in the PRD, flows all the way down the line unless someone checks it.
+
+## Failure modes
+
+- **Garbage in, cascaded:** an early document is wrong, and every later role builds faithfully on it. Validate each document against its template, and add a human checkpoint after the PRD for high-stakes work.
+- **Template theatre:** roles fill every section with plausible filler. Require concrete, checkable content, such as named files and testable acceptance criteria.
+- **QA ping-pong:** the engineer and QA bounce the same failure back and forth. Cap the QA rounds and return the failing report with the code.
+- **Subscription gaps:** a role misses a document it needed, such as QA without the PRD. Declare each role's subscriptions explicitly and test them.

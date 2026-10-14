@@ -1,0 +1,260 @@
+slug: sop-team
+name: SOP-Driven Team
+family: multi-agent
+aliases: [MetaGPT, Assembly line, Waterfall team, Standard operating procedure]
+summary: Role agents follow a fixed procedure, each publishing a structured document to a shared pool that the next role picks up.
+badges: { autonomy: medium, cost: high, latency: high }
+sources:
+  - title: "MetaGPT: Meta Programming for A Multi-Agent Collaborative Framework (Hong et al., 2023)"
+    url: https://arxiv.org/abs/2308.00352
+  - title: "ChatDev: Communicative Agents for Software Development (Qian et al., 2023)"
+    url: https://arxiv.org/abs/2307.07924
+related:
+  composesWith: [evaluator-optimizer, human-in-the-loop]
+  confusedWith:
+    - { slug: prompt-chaining, difference: "Prompt chaining is a fixed series of LLM calls passing text along; an SOP team has role agents that publish typed documents to a shared pool and pick up only the ones they subscribe to." }
+    - { slug: supervisor, difference: "A supervisor decides at run time who works next; in an SOP team the procedure fixes the order before the run starts." }
+    - { slug: group-chat, difference: "A group chat is free conversation with a manager picking speakers; an SOP team exchanges structured documents in a set order, with no open chat." }
+origin:
+  by: Sirui Hong et al.
+  org: DeepWisdom, KAUST, Xiamen University, CUHK-Shenzhen and others
+  year: 2023
+  url: https://arxiv.org/abs/2308.00352
+  kind: introduced
+  note: "MetaGPT encoded a software company's standard operating procedure as prompts: each role must output a structured document, published to a shared message pool that other roles subscribe to."
+defaultVariantName: Message pool
+build:
+  goal: "Run a fixed procedure of role agents, where each role turns the documents it subscribes to into one structured document of its own, ending with a quality check that can send work back."
+  steps:
+    - "Write the procedure down as an ordered list of roles. For each role, record the document types it reads and the one document type it writes, with a template for that document."
+    - "Keep a message pool: an append-only store of documents, each tagged with its type and author. Post the user's requirement to it."
+    - "For each role in order, collect the documents it subscribes to from the pool and call it with the {{prompt:role}}, filling in its profile and its output template."
+    - "Validate each output against its template (required sections present, code parses) and publish it to the pool; on a validation failure, retry that role once with the errors."
+    - "Run the QA role with the {{prompt:qa}} and publish its report to the pool. If the report lists failures, run the engineer again with it, then QA again."
+    - "When QA passes, return the final code with every document in the pool."
+  stop: "Stop when QA passes, or after 3 QA rounds. On the cap, return the latest code, the failing test report and every document, with a status of qa_failed."
+  requirements:
+    - "Keep the role order in configuration, not in prompts, so a role can be added or reordered without rewriting the others."
+    - "Each role sees only the document types it subscribes to, never the whole pool, so its context stays small."
+    - "Cap the QA rounds with a parameter (default 3)."
+    - "Log every published document with its type, author and token cost."
+    - "Add a test with a stub LLM whose QA role fails once and then passes; assert the roles ran in the order PM, architect, engineer, QA, engineer, QA, and the pool holds 7 documents including the requirement."
+prompts:
+  - id: role
+    title: Role agent prompt
+    lang: markdown
+    source: |
+      You are the {{role}} on a software team. Your goal: {{role_goal}}
+      You follow the team's standard procedure; do only your own step.
+
+      <inputs>
+      {{subscribed_documents}}
+      </inputs>
+
+      Produce your {{document_type}}, using exactly this template:
+      <template>
+      {{output_template}}
+      </template>
+
+      Fill every section. Where an input is unclear, state your assumption in
+      the document's "Assumptions" section instead of asking questions.
+  - id: qa
+    title: QA engineer prompt
+    lang: markdown
+    source: |
+      You are the QA engineer. Check the code against the requirements and design.
+
+      <requirements>{{prd}}</requirements>
+      <design>{{design}}</design>
+      <code>{{code}}</code>
+      <test_results>{{test_output}}</test_results>
+
+      Respond in JSON:
+      {"passed": true|false,
+       "failures": [{"test": "...", "expected": "...", "actual": "...", "file": "..."}]}
+      Fail the code if any requirement is unmet or any test fails.
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Request, description: "A one-line requirement from the user, such as 'Build a command-line 2048 game'." }
+    - { id: pm, kind: agent, label: Product manager, description: "Turns the requirement into a PRD: user stories, a competitive note and a prioritized requirement list." }
+    - { id: pool, kind: memory, label: Message pool, description: "The shared store of typed documents. Every role publishes here and subscribes only to the document types it needs." }
+    - { id: architect, kind: agent, label: Architect, description: "Reads the PRD and writes the system design: file list, data structures and the interfaces between modules." }
+    - { id: engineer, kind: agent, label: Engineer, description: "Reads the design and writes the code file by file, then fixes it when QA sends failures back." }
+    - { id: qa, kind: agent, label: QA engineer, description: "Writes and runs tests against the code, then passes it or reports each failure back to the engineer." }
+    - { id: out, kind: io, label: Software, description: "The working code, returned with every document the team produced along the way." }
+  edges:
+    - { id: req, from: user, to: pm, description: "The requirement goes to the first role in the procedure.", example: "Build a command-line 2048 game in Python." }
+    - { id: pub-prd, from: pm, to: pool, label: PRD, description: "The product manager publishes a PRD to the pool, in the PRD template.", example: "PRD. Goal: playable 2048 in a terminal. Stories: arrow keys move tiles; equal tiles merge; show the score. P0: 4x4 board." }
+    - { id: sub-arch, from: pool, to: architect, style: dashed, description: "The architect subscribes to PRDs, so it receives the new one from the pool.", example: "Subscribed: PRD (from Product manager)." }
+    - { id: pub-design, from: architect, to: pool, label: design, description: "The architect publishes the system design to the pool.", example: "Design. Files: game.py (Board, move, merge), cli.py (input loop). Board: 4x4 int grid; move(direction) returns bool." }
+    - { id: sub-eng, from: pool, to: engineer, style: dashed, description: "The engineer subscribes to designs, and to QA reports when there are any.", example: "Subscribed: System design (from Architect)." }
+    - { id: pub-code, from: engineer, to: pool, label: code, description: "The engineer publishes the code, file by file, to the pool.", example: "game.py: class Board: def move(self, direction): ... cli.py: while not board.is_over(): ..." }
+    - { id: sub-qa, from: pool, to: qa, style: dashed, description: "QA subscribes to code, plus the PRD and design it checks the code against.", example: "Subscribed: game.py, cli.py (from Engineer); PRD; System design." }
+    - { id: bug, from: qa, to: engineer, style: loop, label: fail, description: "A failing test report goes back to the engineer, who fixes the code and publishes it again.", example: '{"passed": false, "failures": [{"test": "test_merge_row", "expected": "[4, 0, 0, 0]", "actual": "[2, 2, 0, 0]", "file": "game.py"}]}' }
+    - { id: ship, from: qa, to: out, label: pass, description: "When every test passes, the code leaves the line with its documents.", example: '{"passed": true, "failures": []} 2048 ships: game.py, cli.py, test_game.py.' }
+  scenarios:
+    - id: assembly-line
+      label: Assembly line
+      steps:
+        - id: prd
+          caption: The requirement reaches the product manager, who publishes a PRD to the message pool.
+          duration: 2600
+          events:
+            - { type: send, edge: req, token: { kind: prompt, label: requirement }, at: [0, 0.25] }
+            - { type: activate, node: pm, status: thinking, at: [0.25, 0.55] }
+            - { type: send, edge: pub-prd, token: { kind: result, label: PRD }, at: [0.55, 0.9] }
+            - { type: write, node: pool, at: [0.85, 1] }
+        - id: design
+          caption: The architect, subscribed to PRDs, picks it up and publishes a system design.
+          duration: 2800
+          events:
+            - { type: read, node: pool, at: [0, 0.15] }
+            - { type: send, edge: sub-arch, token: { kind: prompt, label: PRD }, at: [0.1, 0.35] }
+            - { type: activate, node: architect, status: thinking, at: [0.35, 0.6] }
+            - { type: send, edge: pub-design, token: { kind: result, label: design }, at: [0.6, 0.9] }
+            - { type: write, node: pool, at: [0.85, 1] }
+        - id: code
+          caption: The engineer picks up the design and publishes the code.
+          duration: 2800
+          events:
+            - { type: read, node: pool, at: [0, 0.15] }
+            - { type: send, edge: sub-eng, token: { kind: prompt, label: design }, at: [0.1, 0.35] }
+            - { type: activate, node: engineer, status: thinking, at: [0.35, 0.6] }
+            - { type: send, edge: pub-code, token: { kind: result, label: code }, at: [0.6, 0.9] }
+            - { type: write, node: pool, at: [0.85, 1] }
+        - id: test
+          caption: QA picks up the code, runs its tests against the PRD and design, and everything passes.
+          duration: 3000
+          events:
+            - { type: read, node: pool, at: [0, 0.15] }
+            - { type: send, edge: sub-qa, token: { kind: prompt, label: code }, at: [0.1, 0.35] }
+            - { type: activate, node: qa, status: calling, at: [0.35, 0.6] }
+            - { type: branch, node: qa, taken: ship, notTaken: [bug], at: [0.6, 0.7] }
+            - { type: send, edge: ship, token: { kind: result, label: 2048 game }, at: [0.7, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
+    - id: qa-bounce
+      label: QA sends it back
+      steps:
+        - id: upstream
+          caption: The PRD and the design are already in the pool; the engineer publishes its first version of the code.
+          duration: 2600
+          events:
+            - { type: send, edge: sub-eng, token: { kind: prompt, label: design }, at: [0, 0.3] }
+            - { type: activate, node: engineer, status: thinking, at: [0.3, 0.6] }
+            - { type: send, edge: pub-code, token: { kind: result, label: code v1 }, at: [0.6, 0.9] }
+            - { type: write, node: pool, at: [0.85, 1] }
+        - id: fail
+          caption: QA's merge test fails, and the failure report goes straight back to the engineer.
+          duration: 3000
+          events:
+            - { type: send, edge: sub-qa, token: { kind: prompt, label: code v1 }, at: [0, 0.3] }
+            - { type: activate, node: qa, status: calling, at: [0.3, 0.55] }
+            - { type: branch, node: qa, taken: bug, notTaken: [ship], at: [0.55, 0.65] }
+            - { type: send, edge: bug, token: { kind: feedback, label: merge fails }, at: [0.65, 1] }
+        - id: fix
+          caption: The engineer fixes the merge and republishes; QA's tests now pass and the game ships.
+          duration: 3600
+          events:
+            - { type: activate, node: engineer, status: thinking, at: [0, 0.2] }
+            - { type: send, edge: pub-code, token: { kind: result, label: code v2 }, at: [0.2, 0.4] }
+            - { type: write, node: pool, at: [0.35, 0.45] }
+            - { type: send, edge: sub-qa, token: { kind: prompt, label: code v2 }, at: [0.45, 0.65] }
+            - { type: branch, node: qa, taken: ship, notTaken: [bug], at: [0.65, 0.75] }
+            - { type: send, edge: ship, token: { kind: result, label: 2048 game }, at: [0.75, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
+variants:
+  - id: chat-chain
+    name: Chat chain (ChatDev)
+    summary: "Each phase of the procedure is a two-agent chat, an instructor and an assistant, that runs until they agree; its conclusion is handed to the next phase."
+    origin:
+      by: Chen Qian et al.
+      org: Tsinghua University and others
+      year: 2023
+      url: https://arxiv.org/abs/2307.07924
+      kind: introduced
+      note: "ChatDev's chat chain splits development into design, coding and testing, with five subtasks, each solved by a two-agent instructor and assistant dialogue."
+    build:
+      goal: "Run a fixed chain of phases in which each phase is a short dialogue between two role agents, an instructor and an assistant, whose agreed conclusion becomes the next phase's input."
+      steps:
+        - "Write the chain down as an ordered list of phases. For each phase, record the instructor role, the assistant role, the phase goal and the shape of its conclusion (a design note, code, a review)."
+        - "For each phase, start a fresh two-agent dialogue: give the instructor the {{prompt:instructor}} and the assistant the {{prompt:assistant}}, each filled in with the phase goal and the previous phase's conclusion."
+        - "Alternate turns: the instructor gives one instruction or review comment, and the assistant replies. When the assistant's reply begins with <SOLUTION>, take it as the phase's conclusion."
+        - "For coding phases, run the code after each assistant reply and give the instructor the compiler or test output with the next turn."
+        - "Pass only the conclusion, never the whole dialogue, to the next phase. After the last phase, return the final code with every phase's conclusion."
+      stop: "End a phase when the assistant replies with <SOLUTION>, after 10 turns, or when the code is unchanged for two turns in a row. End the chain after its last phase; if a phase hits its cap without a solution, carry its latest reply forward and mark that phase unresolved."
+      requirements:
+        - "Keep each phase's dialogue separate, so later phases see only the earlier conclusions and not the full chat."
+        - "Cap every phase at a configurable number of turns (default 10)."
+        - "Run the code for real in the testing phase and feed the actual errors to the tester; do not let it guess at results."
+        - "Log every phase with its two roles, its turn count and its conclusion."
+        - "Add a test with a stub LLM in which every assistant replies with <SOLUTION> on its second turn; assert that 4 phases ran, each took exactly 2 turns, and each phase received the previous phase's conclusion as its input."
+    prompts:
+      - id: instructor
+        title: Phase instructor prompt
+        lang: markdown
+        source: |
+          You are the {{instructor_role}} at a software company, working with the
+          {{assistant_role}} on this phase: {{phase_goal}}
+
+          <input_from_previous_phase>{{previous_conclusion}}</input_from_previous_phase>
+          {{#if run_output}}<latest_run_output>{{run_output}}</latest_run_output>{{/if}}
+
+          Give the {{assistant_role}} one specific instruction or review comment that
+          moves this phase forward. Do not do the work yourself.
+      - id: assistant
+        title: Phase assistant prompt
+        lang: markdown
+        source: |
+          You are the {{assistant_role}} at a software company, working with the
+          {{instructor_role}} on this phase: {{phase_goal}}
+
+          <input_from_previous_phase>{{previous_conclusion}}</input_from_previous_phase>
+
+          Carry out the instruction you were given. If you need a detail you do not
+          have, ask for it in one question before answering.
+          When you and the {{instructor_role}} have agreed on the result, begin your
+          reply with <SOLUTION> and give the complete {{conclusion_type}}.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Request, description: "A one-line requirement from the user, such as 'Build a command-line 2048 game'." }
+        - { id: design, kind: agent, label: Design chat, sublabel: CEO and CTO, description: "Two agents agree the product's shape and language in a short instructor and assistant dialogue." }
+        - { id: coding, kind: agent, label: Coding chat, sublabel: CTO and programmer, description: "The CTO instructs and the programmer writes and completes the code, turn by turn, until they agree it is done." }
+        - { id: review, kind: agent, label: Review chat, sublabel: reviewer and programmer, description: "Static testing: a reviewer reads the code and raises issues, and the programmer fixes them, until no issues remain." }
+        - { id: test, kind: agent, label: Test chat, sublabel: tester and programmer, description: "Dynamic testing: the tester runs the code and reports real errors, and the programmer fixes them, until it runs cleanly." }
+        - { id: out, kind: io, label: Software, description: "The working code, returned with the conclusion of every phase in the chain." }
+      edges:
+        - { id: req, from: user, to: design, description: "The requirement opens the first phase of the chain.", example: "Build a command-line 2048 game in Python." }
+        - { id: spec, from: design, to: coding, label: design, description: "Only the design phase's agreed conclusion moves on, not its whole dialogue.", example: "<SOLUTION> A terminal app in Python, using curses for arrow keys, with a 4x4 board and a score line." }
+        - { id: draft, from: coding, to: review, label: code, description: "The code the coding phase agreed on goes to the review phase.", example: "<SOLUTION> game.py: class Board ... def move(self, d): ... main.py: curses.wrapper(run)" }
+        - { id: reviewed, from: review, to: test, label: reviewed, description: "The reviewed code, with the reviewer's issues fixed, goes to system testing.", example: "<SOLUTION> Fixed: merge now skips already-merged tiles; added the missing import of random." }
+        - { id: ship, from: test, to: out, label: runs, description: "When the code runs without errors, the chain ends and the software is returned.", example: "<SOLUTION> main.py runs; 10 scripted moves produce the expected board and score." }
+      scenarios:
+        - id: chain
+          label: Four chats in a chain
+          steps:
+            - id: design
+              caption: The design chat settles on a Python terminal app; only its conclusion moves on.
+              duration: 2800
+              events:
+                - { type: send, edge: req, token: { kind: prompt, label: requirement }, at: [0, 0.25] }
+                - { type: activate, node: design, status: thinking, at: [0.25, 0.65] }
+                - { type: send, edge: spec, token: { kind: result, label: design }, at: [0.65, 1] }
+            - id: coding
+              caption: In the coding chat, the CTO instructs and the programmer writes the code, turn by turn.
+              duration: 2800
+              events:
+                - { type: activate, node: coding, status: thinking, at: [0, 0.65] }
+                - { type: send, edge: draft, token: { kind: result, label: code }, at: [0.65, 1] }
+            - id: review
+              caption: The reviewer flags a double-merge bug and a missing import; the programmer fixes both.
+              duration: 2800
+              events:
+                - { type: activate, node: review, status: thinking, at: [0, 0.65] }
+                - { type: send, edge: reviewed, token: { kind: result, label: reviewed }, at: [0.65, 1] }
+            - id: test
+              caption: The tester runs the game and reports the real errors until it runs cleanly; then it ships.
+              duration: 3000
+              events:
+                - { type: activate, node: test, status: calling, at: [0, 0.6] }
+                - { type: send, edge: ship, token: { kind: result, label: 2048 game }, at: [0.6, 0.95] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
