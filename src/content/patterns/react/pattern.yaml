@@ -25,7 +25,10 @@ code:
               transcript.append(out.text)
               if out.final_answer:
                   return out.final_answer
-              observation = tools[out.action.name](out.action.input)
+              try:
+                  observation = tools[out.action.name](out.action.input)
+              except ToolError as err:  # a failed call is an observation too
+                  observation = f"Error: {err}"
               transcript.append(f"Observation: {observation}")
           return "Stopped: step budget spent"
 prompts:
@@ -126,7 +129,7 @@ diagram:
         - id: turn-1
           caption: The agent thinks it needs the Eiffel Tower's date and acts by searching for it.
           duration: 3000
-          codeRef: { block: react, lines: "3-9" }
+          codeRef: { block: react, lines: "3-12" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
             - { type: send, edge: act-search, token: { kind: tool-call, label: Eiffel year }, at: [0.25, 0.5] }
@@ -135,7 +138,7 @@ diagram:
         - id: turn-2
           caption: With one date observed, the next thought is to search for the other.
           duration: 3000
-          codeRef: { block: react, lines: "3-9" }
+          codeRef: { block: react, lines: "3-12" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
             - { type: send, edge: act-search, token: { kind: tool-call, label: Golden Gate }, at: [0.25, 0.5] }
@@ -144,7 +147,7 @@ diagram:
         - id: turn-3
           caption: Both dates are in the transcript, so the agent switches tools and has the calculator subtract.
           duration: 3000
-          codeRef: { block: react, lines: "3-9" }
+          codeRef: { block: react, lines: "3-12" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
             - { type: send, edge: act-calc, token: { kind: tool-call, label: 1937-1889 }, at: [0.25, 0.5] }
@@ -169,7 +172,7 @@ diagram:
         - id: turn-1
           caption: The agent searches for last year's revenue, but the search tool fails.
           duration: 3000
-          codeRef: { block: react, lines: "3-9" }
+          codeRef: { block: react, lines: "3-12" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
             - { type: send, edge: act-search, token: { kind: tool-call, label: ACME revenue }, at: [0.25, 0.5] }
@@ -178,7 +181,7 @@ diagram:
         - id: turn-2
           caption: The next Thought reads the error and retries with a narrower query that succeeds.
           duration: 3000
-          codeRef: { block: react, lines: "3-9" }
+          codeRef: { block: react, lines: "3-12" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
             - { type: send, edge: act-search, token: { kind: tool-call, label: ACME 10-K }, at: [0.25, 0.5] }
@@ -187,7 +190,7 @@ diagram:
         - id: turn-3
           caption: With the figure in hand, the calculator takes 15 percent of it.
           duration: 3000
-          codeRef: { block: react, lines: "3-9" }
+          codeRef: { block: react, lines: "3-12" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
             - { type: send, edge: act-calc, token: { kind: tool-call, label: 4.2M*0.15 }, at: [0.25, 0.5] }

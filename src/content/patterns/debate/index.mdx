@@ -4,7 +4,7 @@ A single model asked a hard question will commit to one line of reasoning and de
 
 ## How it works
 
-Run several instances as debaters and make them read each other. The <NodeRef id="user">question</NodeRef> goes to <NodeRef id="a">debater A</NodeRef>, <NodeRef id="b">debater B</NodeRef> and <NodeRef id="c">debater C</NodeRef> at the same time. Each answers independently, so the first answers often disagree: one says 42, another 36.
+Run several instances as debaters and make them read each other. The <NodeRef id="user">question</NodeRef> goes to <NodeRef id="a">debater A</NodeRef>, <NodeRef id="b">debater B</NodeRef> and <NodeRef id="c">debater C</NodeRef> at the same time. Each answers independently, so the first answers often disagree: asked whether 3,599 is prime, one says yes, the others find 59 × 61.
 
 Then come the rounds. In each round every debater sees what the others wrote, critiques it, and revises its own answer in light of it. A debater that finds an arithmetic slip in a peer's reasoning says so, and a debater whose own answer is exposed as wrong changes it. The diagram draws one cross edge per debater (A to B, B to C, C to A) to keep it readable, but in the original method each agent reads all the others. All of this happens in parallel, and two rounds are typically enough for answers to converge or for the disagreement to sharpen.
 

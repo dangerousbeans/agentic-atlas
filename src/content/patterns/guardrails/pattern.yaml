@@ -23,7 +23,7 @@ code:
                   return blocked(verdict.reason)
           output = await agent_task
           for g in output_guards:
-              if g.check(output).tripwire:
+              if (await g.check(output)).tripwire:
                   return blocked("unsafe output")
           return output
 prompts:

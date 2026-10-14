@@ -1,7 +1,7 @@
 slug: debate
 name: Multi-Agent Debate
 family: multi-agent
-aliases: [Society of minds, Debate-and-judge (optional judge)]
+aliases: [Society of minds, Debate-and-judge]
 summary: Several agents answer independently, read and critique each other's answers over rounds, then converge by majority or an optional judge.
 badges: { autonomy: medium, cost: high, latency: high }
 sources:
