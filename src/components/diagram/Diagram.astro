@@ -7,8 +7,9 @@ import DiagramSvg from './DiagramSvg.astro';
 import './diagram.css';
 interface Props { uid: string; spec: DiagramSpec; title: string; compact?: boolean }
 const { uid, spec, title, compact = false } = Astro.props;
-const wide = await layoutDiagram(spec, spec.direction ?? 'RIGHT');
-const narrow = compact ? null : await layoutDiagram(spec, 'DOWN');
+const wide = await layoutDiagram(spec, spec.direction ?? 'RIGHT', compact ? 'compact' : 'wide');
+// Phones: top-to-bottom. (A left-to-right phone layout was never narrower for any pattern, so it is not offered.)
+const narrow = compact ? null : await layoutDiagram(spec, 'DOWN', 'narrow');
 const timelines = compileDiagram(spec);
 // The player only needs structure, not the tooltip prose (that lives in the markup).
 const lean = { ...spec, nodes: spec.nodes.map(({ description, ...n }) => n), edges: spec.edges.map(({ description, example, ...e }) => e) };
