@@ -19,7 +19,7 @@ Each pattern lives in `src/content/patterns/<slug>/` as two files:
 `pattern.yaml` contains:
 
 - **Metadata:** `slug`, `name`, `family`, `aliases`, `summary` (10-160 characters), `badges` (autonomy, cost, latency), `sources` (at least one) and `related`.
-- **Prompts:** at least one block in `prompts`. Each has an `id`, `title`, `lang` (`markdown`, `text` or `python`) and `source`.
+- **Prompts:** at least one block in `prompts`. Each has an `id`, `title`, `lang` (`markdown` or `text`) and `source`.
 - **Build:** the brief behind the page's "Build it with your AI" tab (see below).
 - **Origin:** who introduced or popularized the pattern (see below).
 - **Variants** (optional): 1 to 3 alternative topologies, shown as tabs (see below).

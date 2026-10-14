@@ -1,10 +1,12 @@
 import type { Origin } from './schema';
 
-/** "Shunyu Yao et al." -> "Yao et al."; "Erik Schluntz and Barry Zhang" -> "Schluntz & Zhang"; anything else as written. */
+/** First author's surname: "Maciej Besta, Nils Blach et al." -> "Besta et al."; "A B, C D, E F" -> "B et al."; "Erik Schluntz and Barry Zhang" -> "Schluntz & Zhang"; anything else as written. */
 export function shortBy(by: string): string {
   const surname = (name: string) => name.trim().split(/\s+/).pop()!;
   const etAl = /^(.+?)\s+et al\.?(\s*\(.*\))?$/.exec(by.trim());
-  if (etAl) return `${surname(etAl[1])} et al.`;
+  if (etAl) return `${surname(etAl[1].split(',')[0])} et al.`;
+  const list = by.split(/\s*,\s*/).filter(Boolean);
+  if (list.length >= 3 && list.every(n => n.split(/\s+/).length >= 2)) return `${surname(list[0])} et al.`;
   const pair = by.split(/\s+and\s+/);
   if (pair.length === 2 && pair.every(n => n.trim().split(/\s+/).length >= 2)) return pair.map(surname).join(' & ');
   return by.trim();
@@ -38,8 +40,16 @@ export function originCitation(o: Origin): Record<string, unknown> {
     '@type': 'CreativeWork',
     url: o.url,
     datePublished: String(o.year),
-    author: o.org && o.by !== o.org
-      ? [{ '@type': 'Person', name: o.by }, { '@type': 'Organization', name: o.org }]
-      : { '@type': /\bet al\.|\band\b/.test(o.by) ? 'Person' : 'Organization', name: o.by },
+    author: citationAuthors(o),
   };
+}
+
+/** People named in `by` (split on commas and "and", "et al." dropped) plus the organisation; a bare name that is
+ *  not two or more capitalised words (e.g. "Anthropic", "LangChain team") is the organisation itself. */
+function citationAuthors(o: Origin): Record<string, string>[] {
+  const names = o.by.replace(/\s+et al\.?(\s*\(.*\))?$/, '').split(/\s*,\s*|\s+and\s+/).map(n => n.trim()).filter(Boolean);
+  const isPerson = (n: string) => /^(\p{Lu}[\p{L}.'-]*\s+)+\p{Lu}[\p{L}'-]+$/u.test(n) && !/\b(team|Labs?|AI|Inc)\b/.test(n);
+  const people = names.filter(isPerson).map(name => ({ '@type': 'Person', name }));
+  const orgName = o.org ?? (people.length ? undefined : o.by);
+  return orgName ? [...people, { '@type': 'Organization', name: orgName }] : people;
 }

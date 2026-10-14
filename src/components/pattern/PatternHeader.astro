@@ -21,7 +21,7 @@ const multi = origins.length > 1;
           <span class="origin-lead">{o.lead}</span>{' '}
           {o.by
             ? <a href={o.url} rel="noopener" title={o.org ? `${o.by} · ${origin.org}` : o.by}>{shortBy(o.by)} ({o.year}){o.org && <> · {o.org}</>}<span aria-hidden="true"> ↗</span></a>
-            : <a href={o.url} rel="noopener">source<span aria-hidden="true"> ↗</span></a>}
+            : <>· <a href={o.url} rel="noopener">see source<span aria-hidden="true"> ↗</span></a></>}
         </p>
         {o.note && <p class="origin-note">{o.note}</p>}
       </div>

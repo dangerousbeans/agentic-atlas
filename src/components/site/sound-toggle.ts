@@ -37,8 +37,9 @@ if (btn) {
   const awaitGesture = (on: boolean) => gestures.forEach(g => (on ? window.addEventListener(g, onGesture, true) : window.removeEventListener(g, onGesture, true)));
   const running = () => { if (synth?.ctx.state === 'running') awaitGesture(false); };
 
-  /** Fetch the synth chunk once; a failure (offline, a stale chunk after a deploy) turns sound back off. */
-  const load = () => (loading ??= import('./synth').then(m => { mod = m; }, () => { loading = null; if (want) off(); }));
+  /** Fetch the synth chunk once; a failure (offline, a stale chunk after a deploy) turns sound off for this page only,
+   *  without saving that, so the stored choice is retried on the next page load. */
+  const load = () => (loading ??= import('./synth').then(m => { mod = m; }, () => { loading = null; if (want) { want = false; btn.setAttribute('aria-pressed', 'false'); stop(); } }));
 
   /** Start the audio: synchronously when the chunk is already here (inside the gesture), else once it arrives. */
   function start() {

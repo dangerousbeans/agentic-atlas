@@ -105,11 +105,14 @@ test('a hidden tab suspends the audio', async ({ page }) => {
 });
 
 test('quick on, off, on while the chunk loads ends with exactly one running context', async ({ page }) => {
-  await page.route(SYNTH, async route => { await new Promise(r => setTimeout(r, 400)); await route.continue(); });
+  let release!: () => void;
+  const held = new Promise<void>(r => { release = r; });
+  await page.route(SYNTH, async route => { await held; await route.continue(); });
   await page.goto(PATTERN);
   await toggle(page).click();
   await toggle(page).click();
   await toggle(page).click();
+  release();
   await expect(toggle(page)).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(async () => (await ac(page)).state).toBe('running');
   await page.waitForTimeout(600);
