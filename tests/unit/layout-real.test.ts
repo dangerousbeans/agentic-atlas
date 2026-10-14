@@ -44,15 +44,15 @@ describe('layout of every real pattern diagram', () => {
         }
       });
 
-      if (variant === 'narrow') it('on a phone-scrolling canvas, edge labels stay within the drawing width', () => {
-        const xs = Object.values(L.nodes).flatMap(b => [b.x, b.x + b.w]);
-        const lo = Math.min(...xs), hi = Math.max(...xs);
-        if ((hi - lo + 32) * 0.86 <= 330) return; // fits a 390px phone without scrolling
+      if (variant === 'narrow') it('on a 390px phone, scrolled to the middle as the player starts, no edge label is cut off', () => {
+        const view = 330 / 0.86; // stage content width / the narrow layout's minimum scale, in SVG units
+        const lo = (L.width - view) / 2, hi = (L.width + view) / 2;
+        if (lo <= 0) return; // fits without scrolling
         for (const e of spec.edges) {
           if (!shownLabelIds(spec).has(e.id)) continue;
           const b = labelBox(L.edges[e.id].label, e.label!);
-          expect(b.x, `${e.id} left`).toBeGreaterThanOrEqual(lo - 24);
-          expect(b.x + b.w, `${e.id} right`).toBeLessThanOrEqual(hi + 24);
+          expect(b.x, `${e.id} left`).toBeGreaterThanOrEqual(lo);
+          expect(b.x + b.w, `${e.id} right`).toBeLessThanOrEqual(hi);
         }
       });
 

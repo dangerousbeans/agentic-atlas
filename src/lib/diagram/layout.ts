@@ -424,11 +424,11 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   const taken: Box[] = Object.values(nodes).map(b => ({ ...b }));
   const placed: Box[] = [];
   const hits = boxesOverlap;
-  // Phones scroll sideways when a narrow diagram is wider than the stage, and start scrolled to the middle: a label
-  // hung outside the drawing would widen it and sit off-screen, so prefer spots that stay within its width.
+  // Phones scroll sideways when a narrow diagram is wider than the stage, and start scrolled to the middle: prefer
+  // label spots inside that centred window, so no label starts out cut off at either side.
   const spanX = [Math.min(...xs) - minX, Math.max(...xs) - minX];
-  const scrolls = variant === 'narrow' && (spanX[1] - spanX[0] + 2 * PAD) * MIN_LABEL_SCALE > PHONE_STAGE;
-  const within = (b: Box) => !scrolls || (b.x >= spanX[0] - (PAD - 8) && b.x + b.w <= spanX[1] + (PAD - 8));
+  const inset = variant === 'narrow' ? Math.max(0, (spanX[1] - spanX[0] + 2 * PAD - PHONE_STAGE / MIN_LABEL_SCALE) / 2 - PAD) : 0;
+  const within = (b: Box) => !inset || (b.x >= spanX[0] + inset && b.x + b.w <= spanX[1] - inset);
   // two labels on one baseline need a clear gap, or they read as a single phrase ("TRIPWIRE OFF-TOPIC")
   const apart = (b: Box) => !placed.some(o => Math.abs(o.y - b.y) < 8 && b.x < o.x + o.w + LABEL_GAP && o.x < b.x + b.w + LABEL_GAP);
   for (const [k, r] of Object.entries(raw)) {
