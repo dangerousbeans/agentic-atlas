@@ -9,7 +9,10 @@ export function pickRandom(slugs: string[], current: string, rnd: () => number =
 /** Targets whose arrow keys and letters belong to something else. */
 const OWNED = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .fp-tabs, .fp-captions, [role="tablist"]';
 
-/** True when a page shortcut must not fire for this event. */
+/**
+ * True when a page shortcut must not fire for this event. This includes Esc inside the diagram's step list and
+ * scenario tabs: those widgets own the keyboard there, so Esc does not leave the page from them.
+ */
 export function shouldIgnore(e: KeyboardEvent, doc: Document = document): boolean {
   if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return true;
   if (doc.querySelector('dialog[open]')) return true;
@@ -49,7 +52,7 @@ function init() {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       const a = nav.querySelector<HTMLAnchorElement>(`[data-nav="${e.key === 'ArrowLeft' ? 'prev' : 'next'}"]`);
       if (a?.href) { e.preventDefault(); go(a.href); }
-    } else if (e.key === 'r') {
+    } else if (e.key === 'r' || e.key === 'R') {
       const u = randomUrl();
       if (u) { e.preventDefault(); go(u); }
     }

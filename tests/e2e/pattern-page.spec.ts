@@ -63,6 +63,12 @@ test.describe('no JS', () => {
     await expect(page.locator('[role="tablist"]:visible')).toHaveCount(0);
     await expect(page.locator('[data-code-block="generator"]')).toBeVisible();
   });
+  test('code blocks are keyboard-focusable without JS', async ({ page }) => {
+    await page.goto(url);
+    const pres = page.locator('[data-code-panel] pre');
+    expect(await pres.count()).toBeGreaterThan(0);
+    for (const pre of await pres.all()) await expect(pre).toHaveAttribute('tabindex', '0');
+  });
 });
 
 test('spec tooltips: hover shows, Escape dismisses without leaving the page', async ({ page }) => {

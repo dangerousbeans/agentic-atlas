@@ -24,8 +24,6 @@ const { uid, code, prompts } = Astro.props;
     const panes = [...panel.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
     panel.querySelector('[role="tablist"]')?.removeAttribute('hidden');
     panel.classList.add('is-enhanced');
-    // Code can scroll sideways: let keyboard users reach it (axe: scrollable-region-focusable).
-    panel.querySelectorAll('pre').forEach(pre => { pre.tabIndex = 0; });
     const select = (i: number) => {
       tabs.forEach((t, j) => { t.setAttribute('aria-selected', String(i === j)); t.tabIndex = i === j ? 0 : -1; });
       panes.forEach((p, j) => (p.hidden = i !== j));
