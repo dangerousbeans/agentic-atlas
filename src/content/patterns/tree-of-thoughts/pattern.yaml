@@ -178,16 +178,16 @@ diagram:
           caption: The model proposes three different first moves instead of committing to one.
           duration: 2400
           events:
-            - { type: send, edge: p1, token: { kind: prompt, label: 4+9=13 }, at: [0, 0.6] }
-            - { type: send, edge: p2, token: { kind: prompt, label: 10-4=6 }, at: [0.15, 0.75] }
-            - { type: send, edge: p3, token: { kind: prompt, label: 13*4=52 }, at: [0.3, 0.9] }
+            - { type: send, edge: p1, token: { kind: prompt, label: 4+9=13 }, at: [0, 0.45] }
+            - { type: send, edge: p2, token: { kind: prompt, label: 10-4=6 }, at: [0.25, 0.7] }
+            - { type: send, edge: p3, token: { kind: prompt, label: 13*4=52 }, at: [0.5, 0.95] }
         - id: score
           caption: The evaluator rates each candidate and judges thoughts 1 and 3 impossible and thought 2 sure.
           duration: 3000
           events:
-            - { type: send, edge: s1, token: { kind: prompt, label: "4+9=13" }, at: [0, 0.5] }
-            - { type: send, edge: s2, token: { kind: prompt, label: "10-4=6" }, at: [0.2, 0.7] }
-            - { type: send, edge: s3, token: { kind: prompt, label: "13*4=52" }, at: [0.4, 0.9] }
+            - { type: send, edge: s1, token: { kind: prompt, label: "4+9=13" }, at: [0, 0.4] }
+            - { type: send, edge: s2, token: { kind: prompt, label: "10-4=6" }, at: [0.25, 0.65] }
+            - { type: send, edge: s3, token: { kind: prompt, label: "13*4=52" }, at: [0.5, 0.9] }
             - { type: activate, node: evaluator, status: thinking, at: [0.1, 1] }
         - id: prune
           caption: The impossible branches are pruned and never expanded.
