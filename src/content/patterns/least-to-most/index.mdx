@@ -1,0 +1,34 @@
+## Problem
+
+Chain-of-thought works well on problems like its examples, and less well on problems that are harder than anything it was shown. "Amy takes 4 minutes to climb the slide and 1 minute to slide down. The slide closes in 15 minutes. How many times can she slide?" is easy for a person because they first work out how long one trip takes. A model reasoning in one pass can divide 15 by 4, or forget the slide down, because nothing makes it settle the easier question first.
+
+## How it works
+
+Least-to-most splits the work into two stages. In the first, the <NodeRef id="question">question</NodeRef> goes to the <NodeRef id="decomposer">decompose</NodeRef> call, which lists simpler subquestions in the order they have to be answered, ending with the original question. For the slide: "Q1: how long does each trip take? Q2: how many times can she slide before it closes?" The list is kept as the <NodeRef id="subqs">subquestions</NodeRef>.
+
+In the second stage, the <NodeRef id="solver">solve</NodeRef> call takes the subquestions one at a time. Each call sees the original problem, every earlier question with its answer, and the current subquestion. Q1 gets "4 + 1 = 5 minutes", which is written in beside it. Q2 is then asked with that answer above it, and 15 ÷ 5 = 3 is easy. Because the last subquestion is the original one, its answer is the <NodeRef id="answer">answer</NodeRef>.
+
+The name describes the order: least difficult first, most difficult last, with each answer making the next question easier. The model chooses the subquestions, not your code, but there are no tools and no replanning. If a decomposition is wrong, the solving stage follows it anyway. Successive prompting (Dua et al., 2022) is a close cousin that interleaves the two stages instead: it asks one simple question, answers it, then decides the next.
+
+## When to use
+
+- The problems are harder or longer than your worked examples, such as longer word problems or longer instruction sequences.
+- The problem splits into parts that build on each other, where a later part needs an earlier answer.
+- Plain chain-of-thought gets the parts right but loses track of how they combine.
+
+## When to avoid
+
+- The parts are independent of each other. Solve them in parallel instead, as in sectioning.
+- The steps need facts from outside the model or need to act on something. Use self-ask with search, or plan-and-execute with tools.
+- The problem takes one or two steps. The extra decompose call costs more than it saves.
+
+## Trade-offs
+
+You make one more call than the number of subquestions, in sequence, so latency grows with the length of the decomposition. Each solve call also repeats the problem and all earlier answers, so prompts get longer as you go. In return, each call faces an easier question than the original, and the intermediate answers are explicit, so you can see exactly where a wrong result came from.
+
+## Failure modes
+
+- **A bad decomposition:** the subquestions miss a step or are in the wrong order, and every later answer inherits the mistake. Give decompose examples close to your real problems, and log the list.
+- **An early wrong answer:** a mistake in Q1 carries forward, because later calls trust the answers above them. Check intermediate answers that can be checked cheaply.
+- **Runaway lists:** the model splits a simple problem into many tiny steps. Cap the number of subquestions.
+- **A missing final question:** the list ends before the original question is asked. Append it if it is missing.

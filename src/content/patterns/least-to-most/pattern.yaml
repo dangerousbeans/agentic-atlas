@@ -1,0 +1,158 @@
+slug: least-to-most
+name: Least-to-Most Prompting
+family: reasoning-prompting
+aliases: [Decompose-then-solve, Easy-to-hard decomposition]
+summary: First break the problem into easier subquestions, then solve them in order, feeding each answer into the next.
+badges: { autonomy: low, cost: medium, latency: medium }
+sources:
+  - title: "Least-to-Most Prompting Enables Complex Reasoning in Large Language Models (Zhou et al., 2022)"
+    url: https://arxiv.org/abs/2205.10625
+related:
+  composesWith: [chain-of-thought]
+  confusedWith:
+    - { slug: plan-and-execute, difference: "Plan-and-execute runs its steps with tools and can replan; least-to-most has no tools and no replanner, and each answer is carried forward in the prompt." }
+    - { slug: prompt-chaining, difference: "In prompt chaining your code fixes the steps in advance; in least-to-most the model writes the subquestions for each problem." }
+    - { slug: self-ask, difference: "Self-ask raises one follow-up question at a time as it goes; least-to-most writes the whole list of subquestions before solving any." }
+origin:
+  by: Denny Zhou et al.
+  org: Google Research, Brain Team
+  year: 2022
+  url: https://arxiv.org/abs/2205.10625
+  kind: introduced
+  note: "Published at ICLR 2023. The paper's aim was easy-to-hard generalization: solving problems harder than any of the worked examples in the prompt."
+build:
+  goal: "Answer a hard question by having the model list easier subquestions first, then solve them in order, with every earlier question and answer in the prompt for the next."
+  steps:
+    - "Call the model with the {{prompt:decompose}} and the question. Parse its reply into an ordered list of subquestions, the last of which is the original question."
+    - "Start an empty list of solved pairs."
+    - "For each subquestion in order, call the model with the {{prompt:solve}}, passing the original problem, every solved question and answer so far, and the current subquestion."
+    - "Parse the answer from the reply's 'Answer:' line and append the subquestion with its answer to the solved list."
+    - "When the last subquestion is answered, return its answer as the final answer, together with the solved list as the working."
+  stop: "Stop when every subquestion is answered. If the decomposition, including the appended original question, has more than 6 subquestions, return no answer before solving, with status 'decomposition too long'. If an answer cannot be parsed, return no answer with the solved list so far."
+  requirements:
+    - "Make the subquestion cap a parameter (default 6) and check it before solving, not after."
+    - "If the decomposition does not end with the original question, append the original question as the last subquestion."
+    - "Pass the solved pairs to each solve call oldest first, in the same question and answer format the examples use."
+    - "Log the decomposition and every solve call with its prompt, reply and token counts."
+    - "Add a test with a stub LLM that decomposes into two subquestions, answers '5 minutes' then '3'; assert exactly three model calls and that the final answer is exactly '3'."
+prompts:
+  - id: decompose
+    title: Decompose prompt
+    lang: markdown
+    source: |
+      Break the problem into simpler subquestions that, answered in order,
+      lead to the solution. Each subquestion may rely on the answers before it.
+      Make the last subquestion the original question.
+
+      {{#each examples}}
+      Problem: {{problem}}
+      Subquestions:
+      {{subquestions}}
+
+      {{/each}}
+      Problem: {{problem}}
+      Subquestions:
+  - id: solve
+    title: Solve prompt
+    lang: markdown
+    source: |
+      {{problem}}
+
+      {{#each solved}}
+      Q: {{question}}
+      A: {{answer}}
+      {{/each}}
+      Q: {{subquestion}}
+
+      Use the answers above. Reason briefly, then end with one line
+      that starts with "Answer:".
+diagram:
+  nodes:
+    - id: question
+      kind: io
+      label: Question
+      description: "A problem that needs one result before another: 'Amy climbs for 4 min, slides for 1. It closes in 15 min. How many slides?'"
+    - id: decomposer
+      kind: llm
+      label: Decompose
+      description: "The first call. The model lists easier subquestions in the order they must be solved, ending with the original question."
+    - id: subqs
+      kind: memory
+      label: Subquestions
+      sublabel: Q1 → Q2, answers so far
+      description: "The ordered list of subquestions, with the answer to each one written in beside it once it is solved."
+    - id: solver
+      kind: llm
+      label: Solve
+      description: "Answers one subquestion per call, with every earlier question and answer in its prompt."
+    - id: answer
+      kind: io
+      label: Answer
+      description: "The answer to the last subquestion, which is the original question: '3 times'."
+  edges:
+    - id: ask
+      from: question
+      to: decomposer
+      description: "The original problem goes to the model with examples of breaking problems down."
+      example: "Amy takes 4 min to climb the slide and 1 min to slide down. The slide closes in 15 min. How many times can she slide?"
+    - id: list
+      from: decomposer
+      to: subqs
+      label: ordered list
+      description: "The model's ordered list of subquestions, stored before any of them is solved."
+      example: "Q1: How long does each trip take? Q2: How many times can she slide before it closes?"
+    - id: next
+      from: subqs
+      to: solver
+      label: next Q
+      description: "The next unsolved subquestion goes to the solver, with every earlier question and its answer above it."
+      example: "Q: How long does each trip take? A: 4 + 1 = 5 minutes. Q: How many times can she slide before it closes?"
+    - id: record
+      from: solver
+      to: subqs
+      style: loop
+      label: answer
+      description: "The answer is written in beside its subquestion, so the next one can build on it."
+      example: "A1: each trip takes 4 + 1 = 5 minutes."
+    - id: final
+      from: solver
+      to: answer
+      label: last answer
+      description: "When the last subquestion, the original question, is solved, its answer leaves as the result."
+      example: "15 ÷ 5 = 3. Answer: 3"
+  scenarios:
+    - id: decompose-then-solve
+      label: Decompose, then solve
+      steps:
+        - id: ask
+          caption: The slide problem arrives at the model.
+          duration: 1200
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: problem } }
+        - id: decompose
+          caption: "Before solving anything, the model breaks it into two subquestions: the time per trip, then the number of trips."
+          duration: 2600
+          events:
+            - { type: activate, node: decomposer, status: thinking, at: [0, 0.45] }
+            - { type: send, edge: list, token: { kind: result, label: "Q1, Q2" }, at: [0.45, 0.85] }
+            - { type: write, node: subqs, at: [0.8, 1] }
+        - id: q1
+          caption: "The solver takes Q1 and works out that each trip takes 4 + 1 = 5 minutes; the answer is written in beside Q1."
+          duration: 3000
+          events:
+            - { type: read, node: subqs, at: [0, 0.15] }
+            - { type: send, edge: next, token: { kind: prompt, label: Q1 }, at: [0.1, 0.35] }
+            - { type: activate, node: solver, status: thinking, at: [0.35, 0.6] }
+            - { type: branch, node: solver, taken: record, notTaken: [final], at: [0.6, 0.7] }
+            - { type: send, edge: record, token: { kind: result, label: 5 min }, at: [0.7, 0.95] }
+            - { type: write, node: subqs, at: [0.9, 1] }
+        - id: q2
+          caption: "Q2 goes to the solver with Q1 and its answer above it. 15 ÷ 5 = 3, and since Q2 is the original question, 3 is the answer."
+          duration: 3200
+          events:
+            - { type: read, node: subqs, at: [0, 0.15] }
+            - { type: send, edge: next, token: { kind: prompt, label: Q2 + A1 }, at: [0.1, 0.35] }
+            - { type: activate, node: solver, status: thinking, at: [0.35, 0.6] }
+            - { type: branch, node: solver, taken: final, notTaken: [record], at: [0.6, 0.7] }
+            - { type: send, edge: final, token: { kind: result, label: "3" }, at: [0.7, 0.95] }
+            - { type: activate, node: answer, status: done, at: [0.9, 1] }

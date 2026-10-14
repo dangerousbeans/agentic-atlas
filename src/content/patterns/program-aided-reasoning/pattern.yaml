@@ -1,0 +1,328 @@
+slug: program-aided-reasoning
+name: Program-Aided Reasoning
+family: reasoning-prompting
+aliases: [PAL, Program of Thoughts, PoT, Code-as-reasoning, Code interpreter reasoning]
+summary: The model writes a program that encodes its reasoning, an interpreter runs it, and the program's output is the answer.
+badges: { autonomy: low, cost: low, latency: low }
+sources:
+  - title: "PAL: Program-aided Language Models (Gao et al., 2022)"
+    url: https://arxiv.org/abs/2211.10435
+  - title: "Program of Thoughts Prompting: Disentangling Computation from Reasoning for Numerical Reasoning Tasks (Chen et al., 2022)"
+    url: https://arxiv.org/abs/2211.12588
+related:
+  composesWith: [chain-of-thought, voting]
+  confusedWith:
+    - { slug: augmented-llm, difference: "An augmented LLM may call any tool and then keep talking; here the model writes one program and the interpreter's output is the answer." }
+    - { slug: react, difference: "ReAct deliberates over many turns and tools; program-aided reasoning generates code once and runs it, with no loop in the original form." }
+    - { slug: chain-of-thought, difference: "Chain-of-thought does the arithmetic in text, where the model can slip; here the reasoning is code and the computer does the arithmetic." }
+origin:
+  by: Luyu Gao, Aman Madaan, Shuyan Zhou et al.
+  org: Carnegie Mellon University, Inspired Cognition
+  year: 2022
+  url: https://arxiv.org/abs/2211.10435
+  kind: introduced
+  note: "Gao, Madaan and Zhou were equal first authors. Program of Thoughts (Chen et al., University of Waterloo, Vector Institute, UC Santa Barbara and Google Research) was introduced concurrently in November 2022: see its tab."
+defaultVariantName: PAL
+build:
+  goal: "Answer a question that needs calculation by having the model write a short program for it, running that program in a sandbox, and returning what the program prints."
+  steps:
+    - "Fill in the {{prompt:pal}} with worked examples and the user's question, and call the model once."
+    - "Extract the code block from the reply. If there is none, return no answer with a status saying the model wrote no program."
+    - "Run the code in a sandboxed interpreter with no network or file access, a time limit and a memory limit, and capture what it prints."
+    - "Return the printed output, trimmed, as the answer, and keep the program alongside it as the working."
+    - "If repair is enabled and the run raises an error, call the model once with the {{prompt:fix}}, passing the program and the error, and run the corrected program the same way."
+  stop: "Stop when a program runs and prints an answer. If the run fails and repair is off, return no answer with the program and the error. With repair on, stop after one attempt; if that also fails, return no answer with a status saying execution failed."
+  requirements:
+    - "Never run generated code outside a sandbox; block the network and the file system, and set a time limit (default 5 s) and a memory limit."
+    - "Treat empty output as a failure, the same as an exception."
+    - "Make the repair step optional and off by default, since it is an extension to the original method."
+    - "Log the question, the program, the output or error, and whether a repair was used."
+    - "Add a test with a stub LLM that returns a program printing 5 + 2 * 3 and a real sandbox; assert one model call and that the answer is exactly '11'."
+prompts:
+  - id: pal
+    title: Program-aided prompt
+    lang: markdown
+    source: |
+      Solve the problem by writing a Python program. Use comments for your
+      reasoning and variables for every quantity, and print the final answer.
+      Return only the program, in one code block.
+
+      Question: Olivia has $23. She bought five bagels for $3 each.
+      How much money does she have left?
+      ```python
+      # Olivia starts with $23
+      money_initial = 23
+      # she buys 5 bagels at $3 each
+      bagels = 5
+      bagel_cost = 3
+      money_spent = bagels * bagel_cost
+      print(money_initial - money_spent)
+      ```
+
+      Question: {{question}}
+  - id: fix
+    title: Repair prompt
+    lang: markdown
+    source: |
+      Your program for the question below failed when it ran.
+
+      <question>{{question}}</question>
+      <program>{{program}}</program>
+      <error>{{error}}</error>
+
+      Fix the program so it runs and prints the final answer.
+      Return only the corrected program, in one code block.
+diagram:
+  nodes:
+    - id: question
+      kind: io
+      label: Question
+      description: "A word problem with arithmetic: 'Roger has 5 tennis balls. He buys 2 cans of 3. How many does he have now?'"
+    - id: model
+      kind: llm
+      label: Model
+      sublabel: writes the program
+      description: "Turns the problem into a short program, with its reasoning as comments and variables. It does no arithmetic itself."
+    - id: interpreter
+      kind: tool
+      label: Interpreter
+      sublabel: sandboxed Python
+      description: "Runs the program in a sandbox and captures what it prints. Every calculation happens here."
+    - id: answer
+      kind: io
+      label: Answer
+      description: "What the program printed, '11', returned as the answer without passing back through the model."
+  edges:
+    - id: ask
+      from: question
+      to: model
+      description: "The question goes to the model with worked examples that answer in code."
+      example: "Question: Roger has 5 tennis balls. He buys 2 more cans of tennis balls. Each can has 3 tennis balls. How many tennis balls does he have now?"
+    - id: code
+      from: model
+      to: interpreter
+      label: program
+      description: "The model's reply is a program; your code extracts it and sends it to the sandbox."
+      example: "tennis_balls = 5; bought_balls = 2 * 3; print(tennis_balls + bought_balls)"
+    - id: output
+      from: interpreter
+      to: answer
+      label: printed
+      description: "What the program prints is the answer. The model never restates it, so it cannot garble the number in the retelling."
+      example: "stdout: 11"
+    - id: traceback
+      from: interpreter
+      to: model
+      style: loop
+      label: error
+      description: "An extension, not in the original paper: if the program crashes, the error goes back for one repair."
+      example: "NameError: name 'bought_ball' is not defined (line 3)"
+  scenarios:
+    - id: runs-clean
+      label: Runs clean
+      steps:
+        - id: ask
+          caption: The tennis-ball problem arrives at the model.
+          duration: 1200
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: write
+          caption: Instead of calculating, the model writes a program that names each quantity and prints the total.
+          duration: 2600
+          events:
+            - { type: activate, node: model, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: code, token: { kind: tool-call, label: 5 + 2*3 }, at: [0.5, 1] }
+        - id: run
+          caption: The interpreter runs it and prints 11, which is returned as the answer.
+          duration: 2400
+          events:
+            - { type: activate, node: interpreter, status: calling, at: [0, 0.4] }
+            - { type: branch, node: interpreter, taken: output, notTaken: [traceback], at: [0.35, 0.45] }
+            - { type: send, edge: output, token: { kind: result, label: "11" }, at: [0.45, 0.85] }
+            - { type: activate, node: answer, status: done, at: [0.8, 1] }
+    - id: traceback
+      label: Crashes, then repaired
+      steps:
+        - id: ask
+          caption: The tennis-ball problem arrives at the model.
+          duration: 1200
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: write
+          caption: The model writes a program, but misspells a variable name.
+          duration: 2400
+          events:
+            - { type: activate, node: model, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: code, token: { kind: tool-call, label: program }, at: [0.5, 1] }
+        - id: crash
+          caption: The program crashes with a NameError, and the error goes back to the model (an extension to the original method).
+          duration: 2800
+          events:
+            - { type: activate, node: interpreter, status: error, at: [0, 0.4] }
+            - { type: branch, node: interpreter, taken: traceback, notTaken: [output], at: [0.35, 0.45] }
+            - { type: send, edge: traceback, token: { kind: feedback, label: NameError }, at: [0.45, 1] }
+        - id: repair
+          caption: The model fixes the name, the corrected program runs, and it prints 11.
+          duration: 3200
+          events:
+            - { type: activate, node: model, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: code, token: { kind: tool-call, label: fixed }, at: [0.3, 0.55] }
+            - { type: activate, node: interpreter, status: calling, at: [0.55, 0.7] }
+            - { type: branch, node: interpreter, taken: output, notTaken: [traceback], at: [0.65, 0.72] }
+            - { type: send, edge: output, token: { kind: result, label: "11" }, at: [0.72, 0.95] }
+            - { type: activate, node: answer, status: done, at: [0.9, 1] }
+variants:
+  - id: program-of-thoughts
+    name: Program of Thoughts
+    summary: "The program is pure computation that stores its result in ans, which is the answer. For some tasks, the model reasons one step further from ans."
+    origin:
+      by: Wenhu Chen et al.
+      org: University of Waterloo, Vector Institute, UC Santa Barbara, Google Research
+      year: 2022
+      url: https://arxiv.org/abs/2211.12588
+      kind: introduced
+      note: "Published in TMLR 2023, concurrently with PAL. It separates computation (done by the interpreter) from reasoning (done by the model). For multiple-choice questions it also used ans as an intermediate step, reasoning from it to the final option."
+    build:
+      goal: "Answer a numerical question by having the model write a program that binds every quantity to a named variable and stores the result in ans, then returning ans, or reasoning one step further from it where the task needs that."
+      steps:
+        - "Call the model with the {{prompt:pot}} and the question. The program must bind every quantity to a meaningfully named variable and store the result in a variable called ans."
+        - "Run the program in a sandboxed interpreter with time and memory limits, and read the value of ans."
+        - "If the task needs no further step, return ans as the answer. This is the main path: one model call."
+        - "If the task needs a step the program does not take, such as choosing among multiple-choice options or converting units, call the model with the {{prompt:finish}}, passing the question and ans."
+        - "Parse the finishing reply's 'Answer:' line and return it, keeping the program and ans alongside it as the working."
+      stop: "Stop when ans has been read, or after the one finishing call when that step is enabled. If the program fails or never sets ans, return no answer with the program and the error."
+      requirements:
+        - "Never run generated code outside a sandbox; block the network and the file system, and set time and memory limits."
+        - "Read the answer from the variable ans, not from printed output, and fail clearly if it is missing."
+        - "Make the finishing step a per-task setting, off by default; the paper used it only for multiple-choice questions."
+        - "Log the question, the program, ans and, when used, the finishing reply."
+        - "Add a test with a stub LLM whose program sets ans = 5 + 2 * 3, with finishing off; assert exactly one model call and that the answer is exactly 11."
+        - "Add a test with finishing on: the program sets ans = 123 / 60 and the stub finish replies 'Answer: (B)'; assert two calls, that the finish prompt contains '2.05', and the answer '(B)'."
+    prompts:
+      - id: pot
+        title: Program of Thoughts prompt
+        lang: markdown
+        source: |
+          Write a Python program that computes the answer to the question.
+          Bind every quantity to a variable with a meaningful name, compute
+          step by step, and store the final result in a variable called ans.
+          Return only the program, in one code block.
+
+          Question: {{question}}
+      - id: finish
+        title: Finish from ans prompt
+        lang: markdown
+        source: |
+          A program computed an intermediate result for the question below.
+
+          <question>{{question}}</question>
+          <ans>{{ans}}</ans>
+
+          Starting from ans, reason step by step to the final answer, for
+          example by converting units or matching it to one of the options.
+          End with one line that starts with "Answer:".
+    diagram:
+      nodes:
+        - id: question
+          kind: io
+          label: Question
+          description: "A numerical question, such as Roger's tennis balls, or one whose options need one more step after the arithmetic."
+        - id: model
+          kind: llm
+          label: Model
+          sublabel: writes the program
+          description: "Writes a program of named variables that stores its result in ans; for some tasks, it later reasons from ans to the answer."
+        - id: interpreter
+          kind: tool
+          label: Interpreter
+          sublabel: sandboxed Python
+          description: "Runs the program and reads the value of the variable ans. All the arithmetic happens here."
+        - id: answer
+          kind: io
+          label: Answer
+          description: "Either ans itself, such as 11, or the option the model reached from it, such as (B) 1:03 PM."
+      edges:
+        - id: ask
+          from: question
+          to: model
+          description: "The question goes to the model with the instruction to compute it in code and store the result in ans."
+          example: "Question: Roger has 5 tennis balls. He buys 2 more cans of tennis balls. Each can has 3 tennis balls. How many does he have now?"
+        - id: code
+          from: model
+          to: interpreter
+          label: program
+          description: "The program: pure computation with meaningful variable names and no prose."
+          example: "initial_balls = 5; cans = 2; balls_per_can = 3; ans = initial_balls + cans * balls_per_can"
+        - id: result
+          from: interpreter
+          to: answer
+          label: ans
+          description: "On the main path, the value of ans is the answer, with no second model call."
+          example: "ans = 11, returned as the answer."
+        - id: handback
+          from: interpreter
+          to: model
+          style: loop
+          label: ans, reason
+          description: "When the task needs one more step, ans goes back to the model as an intermediate result."
+          example: "ans = 2.05 (hours of travel)"
+        - id: finish
+          from: model
+          to: answer
+          label: option
+          description: "The model reasons from ans to the final answer, such as an option in a multiple-choice question."
+          example: "2.05 h is 2 h 3 min; 11:00 AM + 2 h 3 min = 1:03 PM. Answer: (B)"
+      scenarios:
+        - id: pot-only
+          label: ans is the answer
+          steps:
+            - id: ask
+              caption: The tennis-ball problem arrives at the model.
+              duration: 1200
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question } }
+            - id: write
+              caption: The model writes a program that names each quantity and stores the result in ans.
+              duration: 2600
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.5] }
+                - { type: branch, node: model, taken: code, notTaken: [finish], at: [0.45, 0.55] }
+                - { type: send, edge: code, token: { kind: tool-call, label: program }, at: [0.55, 1] }
+            - id: run
+              caption: The interpreter runs the program; ans = 11 is returned as the answer, with no second call.
+              duration: 2600
+              events:
+                - { type: activate, node: interpreter, status: calling, at: [0, 0.35] }
+                - { type: branch, node: interpreter, taken: result, notTaken: [handback], at: [0.3, 0.4] }
+                - { type: send, edge: result, token: { kind: result, label: "11" }, at: [0.4, 0.85] }
+                - { type: activate, node: answer, status: done, at: [0.8, 1] }
+        - id: intermediate
+          label: ans as an intermediate step
+          steps:
+            - id: ask
+              caption: "A multiple-choice question arrives: a train leaves at 11:00 AM and covers 123 km at 60 km/h. When does it arrive?"
+              duration: 1600
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question } }
+            - id: write
+              caption: The model writes a program for the travel time, ans = 123 / 60.
+              duration: 2400
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.5] }
+                - { type: branch, node: model, taken: code, notTaken: [finish], at: [0.45, 0.55] }
+                - { type: send, edge: code, token: { kind: tool-call, label: program }, at: [0.55, 1] }
+            - id: run
+              caption: The interpreter computes ans = 2.05 hours, which is not yet one of the options, so it goes back to the model.
+              duration: 2600
+              events:
+                - { type: activate, node: interpreter, status: calling, at: [0, 0.35] }
+                - { type: branch, node: interpreter, taken: handback, notTaken: [result], at: [0.3, 0.4] }
+                - { type: send, edge: handback, token: { kind: result, label: ans = 2.05 }, at: [0.4, 1] }
+            - id: finish
+              caption: The model reasons from 2.05 hours to an arrival time of 1:03 PM and picks option (B).
+              duration: 2600
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.4] }
+                - { type: branch, node: model, taken: finish, notTaken: [code], at: [0.35, 0.45] }
+                - { type: send, edge: finish, token: { kind: result, label: "(B) 1:03 PM" }, at: [0.45, 0.85] }
+                - { type: activate, node: answer, status: done, at: [0.8, 1] }
