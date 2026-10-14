@@ -1,0 +1,36 @@
+## Problem
+
+Agents increasingly run for minutes, hours or days: migrating a database in batches, working through a research plan, or waiting for someone to approve a risky step. Processes do not live that long reliably. Deploys restart them, machines are replaced, and a pause for a human's answer can outlast any request timeout. If the agent's state lives only in memory, a crash at step 23 of 40 means starting again at step 1, paying for every model call twice and, worse, repeating side effects such as copying rows or sending emails.
+
+## How it works
+
+The <NodeRef id="user">job</NodeRef> starts a run with a stable run id. <NodeRef id="agent">Worker A</NodeRef> executes it one step at a time: the model picks the next action, the worker calls the <NodeRef id="tool">database</NodeRef>, and the result is added to the run's state. After every step, before the next one begins, the whole state (messages, tool results and the step counter) is written to a durable <NodeRef id="store">checkpoint store</NodeRef>.
+
+In the example, worker A is killed during step 23. Nothing is lost except that step. <NodeRef id="worker2">Worker B</NodeRef>, a fresh process, loads the step-22 checkpoint and continues from step 23 with the full history, as if nothing had happened. Because step 23 may have half-run before the crash, every side-effecting call carries an idempotency key built from the run id and step number, so redoing it cannot copy the same rows twice. The run finishes and reports to <NodeRef id="out">done</NodeRef>.
+
+The same mechanism handles deliberate pauses. When the run needs a person's sign-off, it saves a checkpoint marked as waiting and the process simply exits. Days later, the approval loads the checkpoint on whichever worker is free.
+
+Workflow engines such as Temporal take this further by recording every step's result in an event history and replaying the code against it; agent frameworks such as LangGraph save a snapshot of the graph state after each step. Both give the same guarantee: completed work is never redone.
+
+## When to use
+
+- Runs are long, from minutes to days, and will outlive a deploy or a machine.
+- Steps are expensive or have side effects that must not repeat.
+- The run waits on people or external events: approvals, replies, scheduled times.
+
+## When to avoid
+
+- Calls are short and stateless. If the whole run takes ten seconds, retrying from scratch is simpler and cheaper.
+- Nothing the agent does has side effects, and recomputing is cheap.
+- You cannot make tool calls idempotent. Checkpoints alone will not stop a half-finished step from repeating its effect.
+
+## Trade-offs
+
+Every step pays for a write to the store, and the state has to be serializable, which rules out holding open connections or in-memory objects across steps. In exchange, failures cost one step instead of the whole run, pauses become free, and the history of checkpoints doubles as an audit log you can inspect or replay. The real work is designing steps so they can safely run twice.
+
+## Failure modes
+
+- **Duplicate side effects:** a step that ran just before the crash runs again on resume. Give every external write an idempotency key, or check before writing.
+- **Two workers, one run:** a slow worker comes back after another has taken over, and both advance the run. Version checkpoints and reject stale writes.
+- **State bloat:** the full message history is saved every step and grows without bound. Trim or summarize old messages, and store large tool outputs by reference.
+- **Code drift:** a run paused for days resumes under a new code version that reads the old state differently. Version the state format and migrate it on load.
