@@ -1,0 +1,40 @@
+## Problem
+
+An agent writing `is_valid_bracket_seq(s)` has many plausible first moves: count the brackets, use a stack, use a regular expression. A ReAct loop commits to one and keeps patching it. Reflexion learns from each failure, but it still retries in a straight line and never goes back to compare an earlier, more promising attempt. Tree of Thoughts compares alternatives, but only in the model's head. Nothing runs, so a plausible-looking wrong answer scores as well as a right one.
+
+## How it works
+
+Language Agent Tree Search, from Zhou et al., runs Monte Carlo tree search over the agent's actions. Every node in the tree is a real state reached by real actions, and each rollout has the same five moves.
+
+The <NodeRef id="task">task</NodeRef> becomes the root. The <NodeRef id="selector">selector</NodeRef>, plain code, walks down the tree, at each level picking the child with the best value plus a bonus for being rarely visited. That balance makes the search keep exploiting what works while still trying neglected branches.
+
+The <NodeRef id="expander">expander</NodeRef> samples a few different next actions from the selected node: here, two candidate implementations. Each one runs for real in the <NodeRef id="env">environment</NodeRef>, here a test runner with the visible tests. Candidate A, which only counts brackets, passes 2 of 4 because it accepts `)(`. Candidate B, a stack, passes 3 of 4 but returns False for the empty string.
+
+The <NodeRef id="value">value</NodeRef> step scores each child from 0 to 1 using those results, and backpropagates: every ancestor's visit count goes up and its average absorbs the new score. Meanwhile the failed attempt goes to the <NodeRef id="reflector">reflector</NodeRef>, which writes a lesson, "an empty sequence is balanced", into <NodeRef id="reflections">reflections</NodeRef>.
+
+On the second rollout the selector follows the higher value down to B. The expander reads the saved lesson, writes a child that handles the empty string, and the tests all pass. The search stops and the code goes to the <NodeRef id="out">solution</NodeRef>.
+
+**The World model (RAP) variant.** RAP, from Hao et al., came first and drops the real environment. The same model plays two roles: one prompt proposes actions, another predicts the state each action leads to. The search runs entirely over imagined states. In a Blocksworld puzzle, the world model can say that "pick up blue" is illegal while red sits on top of it, without anyone touching a block. Use it when acting is impossible or costly, and accept that a wrong prediction leads the search astray with no environment to correct it.
+
+## When to use
+
+- The environment gives honest feedback: tests, a web page, a game score, a checker.
+- You can reset the environment or branch from a saved state, so siblings start from the same place.
+- Accuracy matters more than cost, and a straight-line retry loop keeps getting stuck on its first idea.
+
+## When to avoid
+
+- Actions cannot be undone, such as sending email, paying or deleting. You cannot branch from a state you cannot restore.
+- The budget is tight. Each rollout costs several model calls plus environment runs.
+- The first attempt usually works. ReAct or a few Reflexion trials are far cheaper.
+
+## Trade-offs
+
+LATS spends calls to buy a search that can back out of bad decisions. It combines ideas you may already use, ReAct-style acting and Reflexion-style lessons, under a search policy that decides where to spend the next attempt. The price is heavy: rollouts multiply model calls, the environment must support resets, and the run is harder to follow than a loop because it jumps between branches. In exchange, a good early idea that failed on a detail gets revisited instead of abandoned.
+
+## Failure modes
+
+- **Overconfident value scores:** the model rates a broken attempt highly and the search keeps returning to it. Ground the score in the environment's feedback, such as tests passed, wherever you can.
+- **State leakage:** siblings share an environment that was not reset, so one child's side effects change another's result. Snapshot or rebuild the state per node.
+- **Reward hacking on visible tests:** code passes the tests the agent can see and fails the hidden ones. Keep a held-out check for the final answer.
+- **Runaway budget:** without a rollout cap the search keeps exploring. Cap rollouts and children per expansion, and return the best node when the cap is hit.
