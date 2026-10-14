@@ -52,11 +52,11 @@ prompts:
 diagram:
   nodes:
     - { id: user, kind: io, label: Question, pos: { x: 0, y: 0 } }
-    - { id: a, kind: agent, label: Debater A, pos: { x: 220, y: -112 } }
-    - { id: b, kind: agent, label: Debater B, pos: { x: 220, y: 0 } }
-    - { id: c, kind: agent, label: Debater C, pos: { x: 220, y: 112 } }
-    - { id: judge, kind: aggregator, label: Judge, pos: { x: 440, y: 0 } }
-    - { id: out, kind: io, label: Ruling, pos: { x: 620, y: 0 } }
+    - { id: a, kind: agent, label: Debater A, pos: { x: 200, y: -130 } }
+    - { id: b, kind: agent, label: Debater B, pos: { x: 370, y: 0 } }
+    - { id: c, kind: agent, label: Debater C, pos: { x: 200, y: 130 } }
+    - { id: judge, kind: aggregator, label: Judge, pos: { x: 620, y: 0 } }
+    - { id: out, kind: io, label: Ruling, pos: { x: 800, y: 0 } }
   edges:
     - { id: q-a, from: user, to: a }
     - { id: q-b, from: user, to: b }

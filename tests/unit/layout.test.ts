@@ -50,19 +50,19 @@ describe('layoutDiagram', () => {
 
   // Edges end at the glyph (within 2px of its boundary), not at the edge of the wider label box.
   const kind = (spec: DiagramSpec, id: string) => spec.nodes.find(n => n.id === id)!.kind;
-  const expectEdgesOnBorders = (spec: DiagramSpec, L: Awaited<ReturnType<typeof layoutDiagram>>, only?: Set<string>) => {
+  const expectEdgesOnBorders = (spec: DiagramSpec, L: Awaited<ReturnType<typeof layoutDiagram>>, dir: 'RIGHT' | 'DOWN', only?: Set<string>) => {
     for (const e of spec.edges) {
       if (e.style === 'loop') continue;
       if (only && !only.has(e.id)) continue;
       const d = L.edges[e.id].d;
-      expect(attached(kind(spec, e.from), L.nodes[e.from], first(d)), `${e.id} start ${d}`).toBe(true);
-      expect(attached(kind(spec, e.to), L.nodes[e.to], last(d)), `${e.id} end ${d}`).toBe(true);
+      expect(attached(kind(spec, e.from), L.nodes[e.from], first(d), dir), `${e.id} start ${d}`).toBe(true);
+      expect(attached(kind(spec, e.to), L.nodes[e.to], last(d), dir), `${e.id} end ${d}`).toBe(true);
     }
   };
   for (const dir of ['RIGHT', 'DOWN'] as const) {
     it(`${dir}: with a group, edge endpoints lie on their node glyph boundaries`, async () => {
       const spec: DiagramSpec = { ...loop, groups: [{ id: 'team', label: 'Team', children: ['gen', 'eval'] }] };
-      expectEdgesOnBorders(spec, await layoutDiagram(spec, dir));
+      expectEdgesOnBorders(spec, await layoutDiagram(spec, dir), dir);
     });
   }
   it('bidirectional pair gets visibly separate paths', async () => {
@@ -79,6 +79,6 @@ describe('layoutDiagram', () => {
   it('edges touching pinned nodes start and end on the pinned glyph boundaries', async () => {
     const spec: DiagramSpec = { ...loop, nodes: loop.nodes.map(n => n.id === 'in' ? { ...n, pos: { x: 0, y: 0 } } : n.id === 'out' ? { ...n, pos: { x: 600, y: 0 } } : n) };
     const L = await layoutDiagram(spec, 'RIGHT');
-    expectEdgesOnBorders(spec, L, new Set(['task', 'accept']));
+    expectEdgesOnBorders(spec, L, 'RIGHT', new Set(['task', 'accept']));
   });
 });

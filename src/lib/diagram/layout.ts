@@ -245,6 +245,7 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
     }
     return pts;
   };
+  const attachedAt = (q: Pt, id: string) => { const g = glyphCentre(nodes[id]); return Math.abs(Math.hypot(q.x - g.x, q.y - g.y) - reach(id)) < 1; };
   const crossesNode = (p: Pt, q: Pt, from: string, to: string) => Object.entries(nodes).some(([id, b]) => {
     if (id === from || id === to) return false;
     for (let i = 1; i < 30; i++) {
@@ -256,6 +257,28 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   // Loop arcs go over the row (or beside the column); if another node is in the way, try the other side, then
   // a wider bulge, and keep whichever crosses the fewest other nodes.
   const routed = d.edges.filter(e => outEdges.get(e.id)?.sections?.length && !moved.has(e.from) && !moved.has(e.to)).map(e => route(e.id));
+  const arcPts: Pt[] = [];
+  const sampleArc = (a: ReturnType<typeof boxArc>) => { for (let i = 1; i < 40; i++) { const t = i / 40, u = 1 - t; arcPts.push({ x: u * u * u * a.s.x + 3 * u * u * t * a.c1.x + 3 * u * t * t * a.c2.x + t * t * t * a.e.x, y: u * u * u * a.s.y + 3 * u * u * t * a.c1.y + 3 * u * t * t * a.c2.y + t * t * t * a.e.y }); } };
+  // A RIGHT loop under the row: leave the glyph at a shallow 15 degrees on the side facing the other node, run
+  // out past the node label, drop below the row, cross, and come back up the same way into the other glyph.
+  const underArc = (from: string, to: string, depth: number): Pt[] => {
+    const a = nodes[from], b = nodes[to], ga = glyphCentre(a), gb = glyphCentre(b), sa = Math.sign(gb.x - ga.x) || 1;
+    const half = (id: string) => d.nodes.find(n => n.id === id)!.label.length * 4 + 14;
+    const tan = Math.tan(15 * Math.PI / 180), cos = Math.cos(15 * Math.PI / 180), sin = Math.sin(15 * Math.PI / 180);
+    const ra = reach(from), rb = reach(to);
+    const xa = ga.x + sa * Math.max(half(from), ra + 12), xb = gb.x - sa * Math.max(half(to), rb + 12);
+    return [
+      { x: ga.x + sa * cos * ra, y: ga.y + sin * ra }, { x: xa, y: ga.y + Math.abs(xa - ga.x) * tan },
+      { x: xa, y: depth }, { x: xb, y: depth },
+      { x: xb, y: gb.y + Math.abs(xb - gb.x) * tan }, { x: gb.x - sa * cos * rb, y: gb.y + sin * rb },
+    ];
+  };
+  const loopRaw = (from: string, to: string): Raw => {
+    const arc = clearArc(from, to);
+    if (direction === 'RIGHT' && arc.s.y >= glyphCentre(nodes[from]).y - 0.5 && arc.c1.y > arc.s.y + 1 && Math.abs(arc.s.x - glyphCentre(nodes[from]).x) < 0.5)
+      return { kind: 'poly', pts: underArc(from, to, arc.c1.y), side: 0 };
+    return { kind: 'arc', ...arc };
+  };
   const clearArc = (from: string, to: string) => {
     const others = Object.entries(nodes).filter(([id]) => id !== from && id !== to).map(([, b]) => b);
     const cost = (a: ReturnType<typeof boxArc>) => {
@@ -267,6 +290,8 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
         if (others.some(b => x > b.x - 4 && x < b.x + b.w + 4 && y > b.y - 4 && y < b.y + b.h + 4)) n++;
         // running along (or across) a routed edge, or where its label would sit, also counts against a side
         if (routed.some(p => p.some((q, j) => j > 0 && segHitsBox(p[j - 1], q, { x: x - 6, y: y - 22, w: 12, h: 28 })))) n += 0.5;
+        // and keep clear of arcs drawn before this one
+        if (arcPts.some(q => Math.abs(q.x - x) < 14 && Math.abs(q.y - y) < 14)) n += 0.5;
       }
       return n;
     };
@@ -280,13 +305,20 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
       const g = glyphCentre(box), r = reach(id);
       return { x: g.x - r, y: g.y - r, w: 2 * r, h: 2 * r };
     };
-    const arcOn = (side: (typeof sides)[number], extra: number) => boxArc(att(from, a, side), att(to, b, side), side, extra);
+    const arcOn = (side: (typeof sides)[number], extra: number) => {
+      if (side !== 'bottom' || direction !== 'RIGHT') return boxArc(att(from, a, side), att(to, b, side), side, extra);
+      // scored as a plain cubic dipping under the row; drawn by underArc (below) once chosen
+      const ga = glyphCentre(a), gb = glyphCentre(b);
+      const v = Math.max(a.y + a.h, b.y + b.h) + 20 + extra + Math.abs(ga.x - gb.x) * 0.12;
+      return { s: ga, c1: { x: ga.x, y: v }, c2: { x: gb.x, y: v }, e: gb };
+    };
     let best = arcOn(sides[0], 0), bestCost = cost(best);
     for (const extra of [0, 60, 140]) for (const side of sides) {
       if (!bestCost) break;
       const arc = arcOn(side, extra), c = cost(arc);
       if (c < bestCost) { best = arc; bestCost = c; }
     }
+    sampleArc(best);
     return best;
   };
   // Back edges: out of the source's far side into the gap after its layer, along a channel outside the diagram,
@@ -313,6 +345,15 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
       const sa = fb(nodes[a.from]), sb = fb(nodes[b.from]);
       return (sb.u + sb.du) - (sa.u + sa.du) || sa.v - sb.v;
     });
+    // RIGHT entries come in from the target's left side (from below they would have to cross its label). Several
+    // back edges into one node get their own rows within the glyph's reach; the outermost channel takes the top row
+    // so the final legs never cross.
+    const lane = new Map<string, number>();
+    for (const e of sorted) { const n = sorted.filter(o => o.to === e.to); lane.set(e.id, n.length - 1 - n.indexOf(e)); }
+    const entryV = (e: { id: string; to: string }) => {
+      const b = nodes[e.to], r = reach(e.to), n = sorted.filter(o => o.to === e.to).length, j = lane.get(e.id)!;
+      return b.y + SHAPE_CY + Math.min(r - 4, 5 + (n - 1 - j) * 5);
+    };
     sorted.forEach((e, i) => {
       const k = (sorted.length - 1 - i) * 10;
       const s = fb(nodes[e.from]), t = fb(nodes[e.to]);
@@ -320,7 +361,12 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
       const gapU = layerEnd + 16 + k, chan = outer + 24 + k;
       const pts: { u: number; v: number }[] = [{ u: s.u + s.du, v: exitV(nodes[e.from]) }, { u: gapU, v: exitV(nodes[e.from]) }, { u: gapU, v: chan }];
       const blocked = Object.entries(nodes).some(([id, b]) => { const o = fb(b); return id !== e.to && o.v > t.v && o.u < t.u + t.du && t.u < o.u + o.du; });
-      if (!blocked) pts.push({ u: entryU(nodes[e.to]), v: chan }, { u: entryU(nodes[e.to]), v: t.v + t.dv });
+      if (!blocked && direction === 'DOWN') pts.push({ u: entryU(nodes[e.to]), v: chan }, { u: entryU(nodes[e.to]), v: t.v + t.dv });
+      else if (direction === 'RIGHT') {
+        const layerStart = Math.min(...Object.values(nodes).map(fb).filter(b => b.u < t.u + t.du && t.u < b.u + b.du).map(b => b.u));
+        const a = layerStart - 16 - k;
+        pts.push({ u: a, v: chan }, { u: a, v: entryV(e) }, { u: t.u, v: entryV(e) });
+      }
       else {
         const layerStart = Math.min(...Object.values(nodes).map(fb).filter(b => b.u < t.u + t.du && t.u < b.u + b.du).map(b => b.u));
         const a = layerStart - 16 - k;
@@ -331,11 +377,12 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   }
   for (const e of d.edges) {
     if (backRoutes[e.id]) { raw[e.id] = { kind: 'poly', pts: backRoutes[e.id], side: 0 }; continue; }
-    if (e.style === 'loop') { raw[e.id] = { kind: 'arc', ...clearArc(e.from, e.to) }; continue; }
+    if (e.style === 'loop') { raw[e.id] = loopRaw(e.from, e.to); continue; }
     const fwd = returns.get(e.id);
     let pts = fwd ? route(fwd).reverse() : route(e.id);
-    if ((moved.has(e.from) || moved.has(e.to)) && !fwd && !forwards.has(e.id) && crossesNode(pts[0], pts[pts.length - 1], e.from, e.to)) {
-      raw[e.id] = { kind: 'arc', ...clearArc(e.from, e.to) }; continue;
+    const underLabel = direction === 'RIGHT' && (moved.has(e.from) || moved.has(e.to)) && pts.some((q, j) => !attachedAt(q, j ? e.to : e.from));
+    if ((moved.has(e.from) || moved.has(e.to)) && !fwd && !forwards.has(e.id) && (underLabel || crossesNode(pts[0], pts[pts.length - 1], e.from, e.to))) {
+      raw[e.id] = loopRaw(e.from, e.to); continue;
     }
     let side = 0;
     if (pairs.has(e.id) || forwards.has(e.id)) { pts = offsetPath(pts, LANE); side = 1; }

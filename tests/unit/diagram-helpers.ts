@@ -10,10 +10,11 @@ export const last = (d: string): Pt => { const m = /(-?[\d.]+),(-?[\d.]+)$/.exec
 
 /**
  * An edge end is attached to its node when it lies within `tol` px of the glyph boundary (the reach circle:
- * glyph radius plus the small gap), or, for ends that run under the node label, on the box bottom below it.
+ * glyph radius plus the small gap). Only in DOWN layouts may an end instead sit on the box bottom, centred
+ * under the label: that is where top-to-bottom edges deliberately leave a node, so they never cross its label.
  */
-export function attached(kind: NodeKind, box: Box, p: Pt, tol = 2): boolean {
+export function attached(kind: NodeKind, box: Box, p: Pt, direction: 'RIGHT' | 'DOWN', tol = 2): boolean {
   const g = glyphCentre(box);
   if (Math.abs(Math.hypot(p.x - g.x, p.y - g.y) - glyphReach(kind)) <= tol) return true;
-  return Math.abs(p.y - (box.y + box.h)) <= tol && Math.abs(p.x - g.x) <= box.w / 2;
+  return direction === 'DOWN' && Math.abs(p.y - (box.y + box.h)) <= tol && Math.abs(p.x - g.x) <= box.w / 2;
 }

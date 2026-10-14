@@ -37,8 +37,8 @@ describe('layout of every real pattern diagram', () => {
       it('every edge starts and ends within 2px of its node glyph boundary', () => {
         for (const e of spec.edges) {
           const d = L.edges[e.id].d;
-          expect(attached(kind(e.from), L.nodes[e.from], first(d)), `${e.id} start ${d}`).toBe(true);
-          expect(attached(kind(e.to), L.nodes[e.to], last(d)), `${e.id} end ${d}`).toBe(true);
+          expect(attached(kind(e.from), L.nodes[e.from], first(d), dir), `${e.id} start ${d}`).toBe(true);
+          expect(attached(kind(e.to), L.nodes[e.to], last(d), dir), `${e.id} end ${d}`).toBe(true);
         }
       });
     });
