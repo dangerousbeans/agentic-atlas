@@ -3,7 +3,6 @@ import { validateCatalog, type Family, type Pattern } from './schema';
 export interface Catalog {
   families: Family[]; patterns: Pattern[]; bySlug: Map<string, Pattern>;
   family(slug: string): Family; patternsOf(familySlug: string): Pattern[];
-  neighbors(slug: string): { prev?: Pattern; next?: Pattern };
 }
 
 export function buildCatalog(familiesIn: Family[], patternsIn: Pattern[]): Catalog {
@@ -18,10 +17,6 @@ export function buildCatalog(familiesIn: Family[], patternsIn: Pattern[]): Catal
     families, patterns, bySlug,
     family(slug) { const f = famMap.get(slug); if (!f) throw new Error(`unknown family ${slug}`); return f; },
     patternsOf,
-    neighbors(slug) {
-      const p = bySlug.get(slug)!; const list = patternsOf(p.family); const i = list.findIndex(x => x.slug === slug);
-      return { prev: list[i - 1], next: list[i + 1] };
-    },
   };
 }
 

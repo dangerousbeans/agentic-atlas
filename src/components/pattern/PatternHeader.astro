@@ -1,19 +1,19 @@
 ---
-import Badges from './Badges.astro';
 import { href } from '../../lib/url';
 import type { Pattern, Family } from '../../lib/schema';
 interface Props { pattern: Pattern; family: Family }
 const { pattern: p, family: f } = Astro.props;
 ---
 <header class="pattern-header">
-  <a class="chip" href={href(`/families/${f.slug}/`)} data-pagefind-filter="family">{f.name}</a>
-  <h1 data-pagefind-meta="title">{p.name}</h1>
+  <a class="eyebrow fam" href={href(`/families/${f.slug}/`)} data-pagefind-filter="family">{f.name}</a>
+  <h1 class="display" data-pagefind-meta="title">{p.name}</h1>
   {p.aliases.length > 0 && <p class="aliases">Also known as {p.aliases.join(' · ')}</p>}
   <p class="summary">{p.summary}</p>
-  <Badges badges={p.badges} />
 </header>
 <style>
-  .chip { display: inline-block; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; text-decoration: none; color: var(--family-accent); border: 1px solid var(--line-strong); padding: 6px 12px; border-radius: 0; font-weight: 600; margin-top: 40px; }
-  .aliases { color: var(--text-3); font-size: 14px; margin: -6px 0 10px; }
-  .summary { font: 400 clamp(1.15rem, 2.2vw, 1.4rem)/1.5 var(--font-ui); color: var(--text-2); max-width: 46rem; margin: 0; }
+  .fam { text-decoration: none; width: fit-content; }
+  .fam:hover { color: var(--text); }
+  h1 { font-size: clamp(1.7rem, 2.6vw, 2.4rem); margin: 0.3em 0 0.25em; overflow-wrap: break-word; }
+  .aliases { color: var(--text-3); font: 400 12px/1.5 var(--font-mono); letter-spacing: .02em; margin: 0 0 14px; }
+  .summary { font: 400 clamp(1.05rem, 1.6vw, 1.2rem)/1.55 var(--font-ui); color: var(--text-2); max-width: 36rem; margin: 0; }
 </style>

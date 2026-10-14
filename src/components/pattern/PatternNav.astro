@@ -1,0 +1,36 @@
+---
+import { href } from '../../lib/url';
+import type { Pattern } from '../../lib/schema';
+interface Props { index: number; total: number; prev?: Pattern; next?: Pattern; slugs: string[] }
+const { index, total, prev, next, slugs } = Astro.props;
+// Without JS, "random" is the next pattern, or the previous one on the last page.
+const fallback = next ?? prev;
+const to = (p: Pattern) => href(`/patterns/${p.slug}/`);
+const left = 'M10 3 5 8l5 5';
+const right = 'm6 3 5 5-5 5';
+---
+<nav class="pattern-nav" aria-label="Pattern navigation" data-pattern-nav data-current={slugs[index]}>
+  <a class="back" href={href('/#atlas')}><span aria-hidden="true">←</span> Atlas</a>
+  <div class="pn-right">
+    <span class="pos mono">{index + 1} of {total}</span>
+    <span class="pn-btns">
+      {prev
+        ? <a class="btn btn-sm btn-icon" data-nav="prev" rel="prev" href={to(prev)} aria-label={`Previous: ${prev.name}`} title={`Previous: ${prev.name}`}><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d={left} fill="none" stroke="currentColor" stroke-width="1.6" /></svg></a>
+        : <a class="btn btn-sm btn-icon" data-nav="prev" role="link" aria-disabled="true" aria-label="Previous (this is the first pattern)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d={left} fill="none" stroke="currentColor" stroke-width="1.6" /></svg></a>}
+      {next
+        ? <a class="btn btn-sm btn-icon" data-nav="next" rel="next" href={to(next)} aria-label={`Next: ${next.name}`} title={`Next: ${next.name}`}><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d={right} fill="none" stroke="currentColor" stroke-width="1.6" /></svg></a>
+        : <a class="btn btn-sm btn-icon" data-nav="next" role="link" aria-disabled="true" aria-label="Next (this is the last pattern)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d={right} fill="none" stroke="currentColor" stroke-width="1.6" /></svg></a>}
+      {fallback && <a class="btn btn-sm btn-icon" data-nav="random" href={to(fallback)} aria-label="Random pattern" title="Random pattern (r)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M1.5 4.5h2.6c2.7 0 3.6 7 6.3 7h2.1M1.5 11.5h2.6c1 0 1.6-1 2.2-2M10.4 4.5h2.1M11.5 2.5l2 2-2 2M11.5 9.5l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.4" /></svg></a>}
+    </span>
+  </div>
+  <script type="application/json" data-slugs set:html={JSON.stringify(slugs)} />
+</nav>
+<script>import './page-keys.ts';</script>
+<style>
+  .pattern-nav { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 14px; }
+  .back { font: 500 13px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); text-decoration: none; display: inline-flex; gap: 8px; min-height: 44px; align-items: center; }
+  .back:hover { color: var(--text); }
+  .pn-right { display: flex; align-items: center; gap: 16px; }
+  .pos { font-size: 13px; color: var(--text-2); letter-spacing: .04em; white-space: nowrap; }
+  .pn-btns { display: flex; gap: 6px; }
+</style>
