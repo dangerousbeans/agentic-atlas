@@ -1,0 +1,45 @@
+---
+import type { DiagramSpec } from '../../lib/diagram/types';
+import { layoutDiagram } from '../../lib/diagram/layout';
+import { compileDiagram } from '../../lib/diagram/compile';
+import DiagramSvg from './DiagramSvg.astro';
+import './diagram.css';
+interface Props { uid: string; spec: DiagramSpec; title: string; compact?: boolean }
+const { uid, spec, title, compact = false } = Astro.props;
+const wide = await layoutDiagram(spec, spec.direction ?? 'RIGHT');
+const narrow = compact ? null : await layoutDiagram(spec, 'DOWN');
+const timelines = compileDiagram(spec);
+const payload = JSON.stringify({ spec, timelines }).replace(/</g, '\\u003c');
+---
+<flow-player data-uid={uid} compact={compact ? '' : undefined} class:list={['diagram', { 'diagram--compact': compact }]}>
+  <div class="diagram-stage" tabindex={compact ? undefined : 0} aria-label={compact ? undefined : `${title} diagram player. Space plays or pauses; arrow keys step.`}>
+    <DiagramSvg uid={uid} spec={spec} layout={wide} variant="wide" title={title} />
+    {narrow && <DiagramSvg uid={uid} spec={spec} layout={narrow} variant="narrow" title={title} />}
+  </div>
+  {!compact && (
+    <div class="fp-controls" hidden>
+      <button type="button" data-action="prev" aria-label="Previous step"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4v12M16 4L8 10l8 6z" /></svg></button>
+      <button type="button" data-action="play" aria-label="Play" aria-pressed="false"><svg class="i-play" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4l10 6-10 6z" /></svg><svg class="i-pause" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4h3v12H6zM11 4h3v12h-3z" /></svg></button>
+      <button type="button" data-action="next" aria-label="Next step"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M14 4v12M4 4l8 6-8 6z" /></svg></button>
+      <input type="range" data-scrub min="0" max="1000" step="1" value="0" aria-label="Timeline position" />
+      <span class="fp-counter" aria-hidden="true"></span>
+      <label class="fp-speed"><span class="sr-only">Playback speed</span><select data-speed><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+      {spec.scenarios.length > 1 && (
+        <label class="fp-scenario"><span class="sr-only">Scenario</span><select data-scenario>{spec.scenarios.map((s, i) => <option value={i}>{s.label}</option>)}</select></label>
+      )}
+    </div>
+    <p class="fp-caption" aria-live="polite"></p>
+    <details class="fp-steps" open>
+      <summary>All steps</summary>
+      {timelines.map((tl, si) => (
+        <div class="fp-scenario-steps" data-scenario={tl.id} data-alt={si > 0 ? '' : undefined}>
+          {timelines.length > 1 && <h4>{tl.label}</h4>}
+          <ol class="fp-captions" data-scenario={tl.id}>
+            {tl.steps.map(st => <li data-step-index={st.index}>{st.caption}{st.iteration && <span class="iter"> (round {st.iteration.n} of {st.iteration.of})</span>}</li>)}
+          </ol>
+        </div>
+      ))}
+    </details>
+  )}
+  <script type="application/json" data-diagram set:html={payload} />
+</flow-player>

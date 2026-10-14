@@ -1,0 +1,21 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Diagram from '../../components/diagram/Diagram.astro';
+import { getCatalog } from '../../lib/catalog';
+import type { DiagramSpec } from '../../lib/diagram/types';
+export async function getStaticPaths() {
+  const cat = await getCatalog();
+  return cat.patterns.map(p => ({ params: { slug: p.slug } }));
+}
+const cat = await getCatalog();
+const p = cat.bySlug.get(Astro.params.slug!)!;
+const fam = cat.family(p.family);
+---
+<BaseLayout title={p.name} description={p.summary} accent={fam.accent} pagefind>
+  <article class="wrap pattern">
+    <p class="eyebrow">{fam.name}</p>
+    <h1>{p.name}</h1>
+    <p class="summary">{p.summary}</p>
+    <Diagram uid={p.slug} spec={p.diagram as DiagramSpec} title={p.name} />
+  </article>
+</BaseLayout>

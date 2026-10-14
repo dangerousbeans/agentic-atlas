@@ -1,0 +1,18 @@
+---
+import type { NodeKind } from '../../lib/diagram/types';
+interface Props { kind: NodeKind; cx: number }
+const { kind, cx } = Astro.props;
+const cy = 26, r = 18;
+const hex = (R: number) => Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 6 + i * Math.PI / 3; return `${cx + R * Math.cos(a)},${cy + R * Math.sin(a)}`; }).join(' ');
+---
+{kind !== 'io' && <circle class="halo" cx={cx} cy={cy} r={34} />}
+{kind === 'llm' && <circle class="shape" cx={cx} cy={cy} r={r} />}
+{kind === 'agent' && <><circle class="shape" cx={cx} cy={cy} r={r} /><circle class="shape-inner" cx={cx} cy={cy} r={r - 6} /></>}
+{kind === 'tool' && <rect class="shape" x={cx - 16} y={cy - 16} width="32" height="32" rx="8" />}
+{kind === 'router' && <polygon class="shape" points={`${cx},${cy - 20} ${cx + 20},${cy} ${cx},${cy + 20} ${cx - 20},${cy}`} />}
+{kind === 'evaluator' && <><circle class="shape" cx={cx} cy={cy} r={r} /><path class="glyph" d={`M${cx - 7},${cy} l5,5 l9,-10`} /></>}
+{kind === 'aggregator' && <><circle class="shape" cx={cx} cy={cy} r={r} /><path class="glyph" d={`M${cx - 9},${cy - 6} h18 l-7,8 v6 h-4 v-6 z`} /></>}
+{kind === 'memory' && <><path class="shape" d={`M${cx - 17},${cy - 11} a17,6 0 0,0 34,0 a17,6 0 0,0 -34,0 v22 a17,6 0 0,0 34,0 v-22`} /><path class="glyph" d={`M${cx - 17},${cy} a17,6 0 0,0 34,0`} /></>}
+{kind === 'human' && <polygon class="shape" points={hex(19)} />}
+{kind === 'guard' && <path class="shape" d={`M${cx},${cy - 19} l15,6 v8 c0,9 -7,15 -15,19 c-8,-4 -15,-10 -15,-19 v-8 z`} />}
+{kind === 'io' && <circle class="shape io" cx={cx} cy={cy} r={8} />}

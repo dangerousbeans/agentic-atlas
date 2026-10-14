@@ -1,0 +1,42 @@
+---
+import type { DiagramSpec } from '../../lib/diagram/types';
+import type { DiagramLayout } from '../../lib/diagram/layout';
+import NodeShape from './NodeShape.astro';
+interface Props { uid: string; spec: DiagramSpec; layout: DiagramLayout; variant: 'wide' | 'narrow'; title: string }
+const { uid, spec, layout, variant, title } = Astro.props;
+const pid = `${uid}-${variant}`;
+const hiddenIds = new Set(spec.nodes.filter(n => n.hidden).map(n => n.id));
+---
+<svg class="diagram-svg" data-layout={variant} viewBox={`0 0 ${layout.width} ${layout.height}`} style={variant === 'narrow' ? `--min-w:${Math.round(layout.width * 0.8)}px` : undefined} role="img" aria-labelledby={`${pid}-t ${pid}-d`}>
+  <title id={`${pid}-t`}>{title} diagram</title>
+  <desc id={`${pid}-d`}>{spec.nodes.map(n => n.label).join(', ')}. Step captions follow the diagram.</desc>
+  <defs>
+    <marker id={`${pid}-arrow`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path class="arrow" d="M0,1 L9,5 L0,9 z" />
+    </marker>
+    <radialGradient id={`${pid}-halo`}><stop offset="0" class="halo-stop-a" /><stop offset="1" class="halo-stop-b" /></radialGradient>
+  </defs>
+  <g class="groups">
+    {Object.entries(layout.groups).map(([id, g]) => (
+      <g class="group" data-group={id}><rect x={g.x} y={g.y} width={g.w} height={g.h} rx="16" /><text x={g.x + 14} y={g.y + 20}>{g.label}</text></g>
+    ))}
+  </g>
+  <g class="edges">
+    {spec.edges.map(e => (
+      <path id={`${pid}-e-${e.id}`} class={`edge edge--${e.style ?? 'solid'}${hiddenIds.has(e.from) || hiddenIds.has(e.to) ? ' edge--pending' : ''}`} data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} marker-end={`url(#${pid}-arrow)`} />
+    ))}
+    {spec.edges.filter(e => e.label).map(e => (
+      <text class={`edge-label edge-label--${e.style ?? 'solid'}`} data-edge={e.id} x={layout.edges[e.id].mid.x} y={layout.edges[e.id].mid.y - 8} text-anchor="middle">{e.label}</text>
+    ))}
+  </g>
+  <g class="nodes">
+    {spec.nodes.map(n => { const b = layout.nodes[n.id]; return (
+      <g class="node" data-node={n.id} data-kind={n.kind} data-state={n.hidden ? 'hidden' : 'idle'} transform={`translate(${b.x},${b.y})`} style={`--halo:url(#${pid}-halo)`}>
+        <NodeShape kind={n.kind} cx={b.w / 2} />
+        <text class="label" x={b.w / 2} y={62} text-anchor="middle">{n.label}</text>
+        {n.sublabel && <text class="sublabel" x={b.w / 2} y={74} text-anchor="middle">{n.sublabel}</text>}
+      </g>
+    ); })}
+  </g>
+  <g class="tokens" aria-hidden="true"></g>
+</svg>
