@@ -10,6 +10,8 @@ Then come the rounds. In each round every debater sees what the others wrote, cr
 
 In the original method of Du et al. there is no judge: the agents converge over the rounds, and the final answer is a majority vote or the consensus. Later variants add an optional <NodeRef id="judge">judge</NodeRef>, as drawn here, which reads the final answers with their arguments and issues one <NodeRef id="out">ruling</NodeRef>. Use the judge when the answers will not converge on their own.
 
+The Consensus tab shows that judge-free form: a plain check collects each round's answers and hands every debater the others'. Du et al. run a fixed number of rounds; the build there also stops early once the answers agree and falls back to the majority. The Adversarial tab shows the concurrent Multi-Agent Debate of Liang et al.: two debaters take fixed opposite sides, and a judge decides after every round whether to stop.
+
 ## When to use
 
 - The question has a verifiable-in-principle answer, such as math, facts or logic, where independent reasoning errors differ.

@@ -14,6 +14,29 @@ related:
   confusedWith:
     - { slug: routing, difference: "Routing classifies once and dispatches to a handler that answers; with handoffs control keeps moving, and the receiving agent can hand off again mid-conversation." }
     - { slug: supervisor, difference: "A supervisor stays in charge and gets every result back; with handoffs the baton is passed on and the previous agent steps out." }
+origin:
+  by: OpenAI Solutions team
+  org: OpenAI
+  year: 2024
+  url: https://github.com/openai/swarm
+  kind: popularized
+  note: "Swarm, an experimental, educational framework released in 2024, made a handoff a tool call that passes the conversation on. The OpenAI Agents SDK replaced it, and the 2025 agent guide calls this the decentralized pattern."
+build:
+  goal: "Let a user talk directly to whichever specialist agent fits the conversation, by passing one shared message history between agents through handoff tool calls, with no manager in the middle."
+  steps:
+    - "Define each agent with its instructions, its own tools, and one handoff tool for each agent it may transfer to, such as transfer_to_billing, each taking a one-sentence goal."
+    - "Keep one message history per conversation and an active-agent pointer that starts at the triage agent, which runs with the {{prompt:triage}}."
+    - "On each user message, call the active agent with the full history."
+    - "If it calls a handoff tool, append the handoff and its goal to the history, move the pointer to the target agent, and call that agent, with the {{prompt:specialist}}, on the same history in the same turn."
+    - "If it replies without handing off, send the reply to the user; the pointer stays where it is for the next message."
+  stop: "A turn ends when the active agent replies to the user. Allow at most 3 handoffs per user message; on the cap, send a short apology and route the conversation to a human."
+  requirements:
+    - "Make the per-message handoff cap a parameter (default 3), to stop two agents passing the user back and forth."
+    - "Treat a handoff to an unknown or disallowed agent as a tool error returned to the calling agent, not a crash."
+    - "Require the goal argument; if it is empty, return a tool error asking the agent to state the user's goal."
+    - "Log every handoff with the agent it came from, the agent it went to, and the goal."
+    - "Add a test with a stub LLM where triage hands off to billing and billing hands off to refunds, which replies; assert the pointer ends at refunds and exactly two handoffs were logged."
+defaultVariantName: Pass it on
 prompts:
   - id: triage
     title: Triage agent instructions
@@ -112,3 +135,172 @@ diagram:
           events:
             - { type: activate, node: tech, status: thinking, at: [0, 0.5] }
             - { type: send, edge: tech-reply, token: { kind: result, label: reply }, at: [0.5, 1] }
+variants:
+  - id: hand-back
+    name: Hand back
+    summary: "A specialist hands the conversation back to triage when its part is done, with a summary, so triage can route whatever is left."
+    build:
+      goal: "Serve a request that spans several specialists by letting each one hand the conversation back to triage when its part is done, so triage can route the rest."
+      steps:
+        - "Give triage, which runs with the {{prompt:triage}}, one handoff tool per specialist; give every specialist, which runs with the {{prompt:specialist}}, a transfer_back_to_triage tool that takes a summary of what is done and what is left."
+        - "Keep one message history and an active-agent pointer that starts at triage; call the active agent with the full history on each user message."
+        - "When an agent calls a handoff tool, append the handoff and its argument to the history, move the pointer, and call the new agent in the same turn. An agent may send the user a message and call a handoff tool in one response: send the message, then follow the handoff."
+        - "When a specialist hands back, triage reads the summary and either hands the open part to another specialist or replies to the user."
+        - "Send whichever agent's reply ends the turn to the user."
+      stop: "A turn ends when the active agent replies to the user without calling a handoff tool; a message sent together with a hand-back does not end it. Allow at most 4 handoffs per user message, hand-backs included; on the cap, apologize and route the conversation to a human."
+      requirements:
+        - "Make the per-message handoff cap a parameter (default 4)."
+        - "Require a non-empty summary on transfer_back_to_triage; if it is empty, return a tool error asking for one."
+        - "Stop triage from handing straight back to the agent that just handed back with no new user message; return a tool error instead, to prevent ping-pong."
+        - "Log every handoff and hand-back with its from, its to and its argument."
+        - "Add a test with a stub LLM where triage hands off to billing, billing hands back saying 'refund done; crash still open', and triage hands off to tech; assert the pointer visits triage, billing, triage, tech in that order."
+    prompts:
+      - id: triage
+        title: Triage agent instructions
+        lang: markdown
+        source: |
+          You are the front desk for {{company}}. Work out what the user needs.
+          Do not try to solve the problem yourself.
+
+          Hand off with exactly one tool:
+          - transfer_to_billing: charges, invoices, plans
+          - transfer_to_tech: errors, bugs, how-to questions
+          State the user's goal in one sentence when you hand off.
+
+          When a specialist hands the conversation back, read its summary. If
+          something is still open, hand that part to the right specialist;
+          otherwise ask the user whether there is anything else.
+      - id: specialist
+        title: Specialist agent instructions
+        lang: markdown
+        source: |
+          You are the {{role}} agent for {{company}}. You now own this conversation.
+          The full history above is yours to read.
+
+          Help the user with the part that is yours. When it is done, or if the
+          rest belongs to someone else, call transfer_back_to_triage with a
+          summary: what you did, and what is still open.
+          Never ask the user to repeat something already in the history.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: User, description: "The customer, with two problems in one message: 'I was charged twice, and the app crashes on login.'" }
+        - { id: triage, kind: agent, label: Triage, description: "Front-desk agent. Routes each open part of the request to a specialist, and takes the conversation back when a specialist is done." }
+        - { id: billing, kind: agent, label: Billing, description: "Specialist for charges, invoices and plans. Fixes the double charge, then hands the conversation back to triage." }
+        - { id: tech, kind: agent, label: Tech support, description: "Specialist for errors, bugs and how-to questions. Takes the crash report that triage passes on after billing is done." }
+      edges:
+        - { id: in, from: user, to: triage, description: "The user's message lands with the triage agent.", example: "I was charged twice for March, and the app crashes whenever I log in." }
+        - { id: to-billing, from: triage, to: billing, label: handoff, description: "Triage passes the conversation to billing with the first goal.", example: "transfer_to_billing: \"User was charged twice on the March invoice and wants it fixed. They also report a login crash.\"" }
+        - { id: billing-reply, from: billing, to: user, description: "Billing answers the user directly about its part.", example: "I've refunded the duplicate $29 charge from March 3. It should reach your card in 3-5 days." }
+        - { id: back, from: billing, to: triage, style: dashed, label: hand back, description: "Billing hands the conversation back to triage with a summary of what is done and what is still open.", example: "transfer_back_to_triage: \"Duplicate March charge refunded. Still open: the app crashes on login.\"" }
+        - { id: to-tech, from: triage, to: tech, label: handoff, description: "Triage passes the open part, the crash, to tech support.", example: "transfer_to_tech: \"Billing is resolved. User reports the app crashes whenever they log in.\"" }
+        - { id: tech-reply, from: tech, to: user, description: "Tech support answers the user directly.", example: "Let's fix the crash: go to Settings > Storage > Clear cache, then log in again." }
+      scenarios:
+        - id: two-problems
+          label: '"Charged twice, and the app crashes"'
+          steps:
+            - id: arrive
+              caption: The user's two-part message lands with triage.
+              duration: 1400
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: two problems } }
+                - { type: activate, node: triage, status: thinking, at: [0.5, 1] }
+            - id: to-billing
+              caption: Triage hands the conversation to billing first; the tech route waits.
+              duration: 2200
+              events:
+                - { type: branch, node: triage, taken: to-billing, notTaken: [to-tech], at: [0, 0.4] }
+                - { type: send, edge: to-billing, token: { kind: prompt, label: baton }, at: [0.4, 1] }
+            - id: billing-talks
+              caption: Billing refunds the duplicate charge and tells the user directly.
+              duration: 2400
+              events:
+                - { type: activate, node: billing, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: billing-reply, token: { kind: result, label: refunded }, at: [0.5, 1] }
+            - id: hand-back
+              caption: In the same response, billing hands the conversation back to triage with a summary of what is still open, so the turn goes on.
+              duration: 2400
+              events:
+                - { type: send, edge: back, token: { kind: prompt, label: crash open }, at: [0, 0.6] }
+                - { type: activate, node: triage, status: thinking, at: [0.6, 1] }
+            - id: to-tech
+              caption: Triage passes the open crash report to tech support; billing is not involved again.
+              duration: 2200
+              events:
+                - { type: branch, node: triage, taken: to-tech, notTaken: [to-billing], at: [0, 0.4] }
+                - { type: send, edge: to-tech, token: { kind: prompt, label: baton }, at: [0.4, 1] }
+            - id: tech-talks
+              caption: Tech support walks the user through a fix, and the turn ends with it holding the conversation.
+              duration: 2400
+              events:
+                - { type: activate, node: tech, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: tech-reply, token: { kind: result, label: fix }, at: [0.5, 1] }
+  - id: active-agent-memory
+    name: Remembers active agent
+    summary: "The system stores which agent was last active, so the user's next message goes straight to that agent and skips triage."
+    build:
+      goal: "Keep a multi-turn conversation with the specialist the user was last talking to, by storing the active agent per conversation and starting each new message there instead of at triage."
+      steps:
+        - "Keep a store keyed by conversation id that holds the active agent's name; a new conversation starts at triage, which runs with the {{prompt:triage}}."
+        - "On each user message, load the active agent from the store and call it with the full history."
+        - "When an agent calls a handoff tool, write the target agent to the store first, then call the target, with the {{prompt:specialist}}, on the same history in the same turn."
+        - "Send the reply that ends the turn to the user; the stored agent stays active for the next message."
+        - "Have specialists hand back to triage when the user changes topic, which writes triage to the store."
+      stop: "A turn ends when the active agent replies. Allow at most 3 handoffs per message; on the cap, reply with an apology and route to a human."
+      requirements:
+        - "Persist the store so a restart does not send every user back to triage."
+        - "If the stored agent no longer exists, fall back to triage and log it."
+        - "Reset the active agent to triage after a configurable idle time (default 30 minutes)."
+        - "Write the store before calling the new agent, so a crash mid-turn resumes with the right agent."
+        - "Add a test with a stub LLM: on message 1 triage hands off to billing; on message 2 assert triage is never called and billing is called first."
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: User, pos: { x: 0, y: 0 }, description: "The customer, who sends a follow-up message after billing has already helped them." }
+        - { id: triage, kind: agent, label: Triage, pos: { x: 200, y: -100 }, description: "Front-desk agent. Only sees a conversation when no agent is active yet, or when a specialist hands it back." }
+        - { id: billing, kind: agent, label: Billing, pos: { x: 440, y: 0 }, description: "Specialist for charges, invoices and plans. Once active, it gets the user's follow-up messages directly." }
+        - { id: tech, kind: agent, label: Tech support, pos: { x: 440, y: -200 }, description: "Specialist for errors, bugs and how-to questions; not needed in this conversation." }
+        - { id: active, kind: memory, label: Active agent, pos: { x: 200, y: 110 }, description: "A small store per conversation holding the name of the agent that last held it, such as billing." }
+      edges:
+        - { id: in, from: user, to: triage, description: "With no active agent stored, the first message goes to triage.", example: "I was charged twice for my March invoice." }
+        - { id: to-billing, from: triage, to: billing, label: handoff, description: "Triage passes the conversation to billing.", example: "transfer_to_billing: \"User says they were charged twice on the March invoice.\"" }
+        - { id: to-tech, from: triage, to: tech, label: handoff, description: "The route triage would use for a technical problem.", example: "transfer_to_tech: \"User reports the app crashes on login.\"" }
+        - { id: record, from: billing, to: active, label: record, description: "The handoff writes billing to the store as the active agent before billing runs.", example: "conversation 7f3a: active_agent = billing" }
+        - { id: billing-reply, from: billing, to: user, description: "Billing answers the user directly.", example: "I can see two charges of $29 on March 3. I've refunded one; it arrives in 3-5 days." }
+        - { id: next, from: user, to: active, label: next message, description: "The user's next message is routed by the store, not by triage.", example: "Thanks. Can you also send me the corrected March invoice?" }
+        - { id: resume, from: active, to: billing, label: resume, description: "The store names billing, so billing is called first, with the full history.", example: "active_agent = billing: calling billing with 4 messages of history." }
+      scenarios:
+        - id: follow-up
+          label: A follow-up goes straight to billing
+          steps:
+            - id: first
+              caption: The first message has no active agent stored, so triage takes it and hands off to billing.
+              duration: 2600
+              events:
+                - { type: send, edge: in, token: { kind: prompt, label: charged twice }, at: [0, 0.35] }
+                - { type: branch, node: triage, taken: to-billing, notTaken: [to-tech], at: [0.35, 0.5] }
+                - { type: send, edge: to-billing, token: { kind: prompt, label: baton }, at: [0.5, 1] }
+            - id: record
+              caption: The handoff records billing as the active agent for this conversation.
+              duration: 1800
+              events:
+                - { type: send, edge: record, token: { kind: result, label: billing }, at: [0, 0.7] }
+                - { type: write, node: active, at: [0.6, 1] }
+            - id: reply
+              caption: Billing refunds the duplicate charge and replies to the user.
+              duration: 2200
+              events:
+                - { type: activate, node: billing, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: billing-reply, token: { kind: result, label: refunded }, at: [0.5, 1] }
+            - id: follow-up
+              caption: The user's next message skips triage. The store says billing is active, so billing picks it up with the full history.
+              duration: 3000
+              events:
+                - { type: branch, node: user, taken: next, notTaken: [in], at: [0, 0.2] }
+                - { type: send, edge: next, token: { kind: prompt, label: invoice? }, at: [0.2, 0.5] }
+                - { type: read, node: active, at: [0.45, 0.6] }
+                - { type: send, edge: resume, token: { kind: prompt, label: resume }, at: [0.6, 1] }
+            - id: answer
+              caption: Billing answers the follow-up without the user repeating anything.
+              duration: 2200
+              events:
+                - { type: activate, node: billing, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: billing-reply, token: { kind: result, label: invoice }, at: [0.5, 1] }

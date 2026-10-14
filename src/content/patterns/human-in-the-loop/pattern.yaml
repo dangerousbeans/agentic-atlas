@@ -12,6 +12,30 @@ sources:
 related:
   composesWith: [guardrails, supervisor]
   confusedWith: []
+origin:
+  by: OpenAI and LangChain
+  org: OpenAI; LangChain
+  year: 2025
+  url: https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf
+  kind: popularized
+  uncertain: true
+  note: "No single inventor: human oversight of automated decisions long predates LLM agents. OpenAI's 2025 guide ('Plan for human intervention') and LangGraph's interrupts made the approve, edit or reject pause standard for agents."
+build:
+  goal: "Pause an agent before any high-risk tool call so a person can approve, edit or reject it, then resume the run from exactly where it stopped."
+  steps:
+    - "When the agent proposes a tool call, classify it with the {{prompt:risk}}: high if it is irreversible, moves money, messages people outside the company or changes production data; otherwise low. Rules may mark some tools as always high."
+    - "Run low-risk calls at once and return the result to the agent."
+    - "For a high-risk call, save the run's state to durable storage, then send the reviewer the {{prompt:approval}} with the tool, the arguments, the rationale and the effect."
+    - "Wait for a reply of approve, edit (with changed arguments) or reject (with a reason). Nothing runs while the run waits."
+    - "On approve, run the call as proposed; on edit, run it with the edited arguments; on reject, return the reason to the agent as the tool result so it replans."
+  stop: "The run ends when the agent finishes its task. A pending approval expires after 24 hours (configurable); on expiry, treat it as a rejection with the reason 'no reviewer response' and tell the requester."
+  requirements:
+    - "Persist the paused state so a restart or a deploy cannot lose a pending approval, and resume each run exactly once."
+    - "If the risk classifier's reply is not valid JSON, retry once, then treat the call as high risk."
+    - "Validate edited arguments against the tool's schema before running them; if they fail, send the edit back to the reviewer."
+    - "Record who approved, edited or rejected each call, when, and the arguments that finally ran, as an audit log."
+    - "Add a test with a stub agent that proposes a $480 refund and a fake reviewer that rejects it; assert the refund tool was never called and the agent's next input contains the rejection reason."
+defaultVariantName: Approval gate
 prompts:
   - id: approval
     title: Approval request message
@@ -132,3 +156,181 @@ diagram:
           events:
             - { type: activate, node: tool, status: calling, at: [0, 0.5] }
             - { type: send, edge: result, token: { kind: result, label: status }, at: [0.5, 1] }
+variants:
+  - id: ask-human
+    name: Agent asks
+    summary: "The agent itself pauses to ask a person for information it is missing, then carries on with the answer. No risky action is involved."
+    build:
+      goal: "Let an agent pause mid-task to ask a person for information it cannot find or safely guess, and resume with the answer as if it were a tool result."
+      steps:
+        - "Give the agent an ask_human tool that takes a question and optional choices, and tell it when to use it with the {{prompt:ask}}."
+        - "When the agent calls ask_human, save the run's state to durable storage and send the question to the person through your usual channel (chat, email or a task inbox)."
+        - "When the person answers, load the saved state and return the answer to the agent as the result of the ask_human call."
+        - "Let the agent continue its loop, calling its other tools as normal."
+      stop: "The run ends when the agent finishes its task. An unanswered question expires after 24 hours (configurable); the run then ends with a status saying it is waiting on a person, and the question stays visible."
+      requirements:
+        - "Cap questions per run (default 3). On a 4th ask_human call, send nothing to the person; return a tool error telling the agent to continue on a stated assumption, and to state that assumption in its result."
+        - "Require a single, specific question with the reason it is needed; reject an empty question as a tool error."
+        - "Persist the paused state so a restart cannot lose a pending question, and resume each run exactly once."
+        - "Log every question, its answer, who answered and how long it took."
+        - "Add a test with a stub agent that calls ask_human once and then create_quote, and a fake person who answers 'Team'; assert the run paused once and create_quote received plan Team."
+    prompts:
+      - id: ask
+        title: Agent instructions for asking
+        lang: markdown
+        source: |
+          You work for {{team}}. You have tools, including ask_human.
+
+          Call ask_human only when you are missing information that you cannot
+          find with your other tools and that you must not guess, such as a
+          customer's choice, a price or a date.
+          Ask one specific question, give the choices if there are any, and say
+          in one line why you need it. Then wait for the answer.
+          Never use ask_human to get approval for work you can do yourself.
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Task, pos: { x: 0, y: 0 }, description: "The task that starts the run, such as 'Send Acme their renewal quote'." }
+        - { id: agent, kind: agent, label: Agent, pos: { x: 170, y: 0 }, description: "Works on the task with its tools, and pauses to ask a person when it is missing something it must not guess." }
+        - { id: human, kind: human, label: Account owner, pos: { x: 380, y: -150 }, description: "The person who knows the answer. Gets one specific question and replies when they can; the run waits." }
+        - { id: tool, kind: tool, label: Quotes API, pos: { x: 380, y: 100 }, description: "The tool the agent needs the answer for: it creates and sends a quote." }
+        - { id: out, kind: io, label: Done, pos: { x: 560, y: 100 }, description: "Confirmation that the task is complete, such as 'quote sent'." }
+      edges:
+        - { id: task, from: user, to: agent, description: "The task goes to the agent.", example: "Send Acme their renewal quote." }
+        - { id: ask, from: agent, to: human, label: question, description: "The agent pauses and asks for the one thing it is missing, with the choices and why it needs it.", example: "{\"tool\": \"ask_human\", \"question\": \"Which plan should Acme's renewal quote use?\", \"choices\": [\"Team\", \"Enterprise\"], \"why\": \"Their contract allows either.\"}" }
+        - { id: answer, from: human, to: agent, style: loop, label: answer, description: "The person's answer comes back as the result of the ask_human call, and the run resumes.", example: "Team, 40 seats. They are not ready for Enterprise yet." }
+        - { id: call, from: agent, to: tool, description: "With the answer, the agent makes the call it was missing information for.", example: "{\"tool\": \"create_quote\", \"arguments\": {\"customer\": \"Acme\", \"plan\": \"Team\", \"seats\": 40}}" }
+        - { id: result, from: tool, to: out, description: "The tool's result is the outcome of the run.", example: "{\"status\": \"sent\", \"quote\": \"Q-5521\", \"to\": \"billing@acme.example\"}" }
+      scenarios:
+        - id: asks
+          label: Missing a choice, asks first
+          steps:
+            - id: start
+              caption: The agent starts the task and finds it cannot tell which plan the quote should use.
+              duration: 2000
+              events:
+                - { type: send, edge: task, token: { kind: prompt, label: quote Acme }, at: [0, 0.4] }
+                - { type: activate, node: agent, status: thinking, at: [0.4, 1] }
+            - id: ask
+              caption: Instead of guessing, the agent asks the account owner one question, and the run pauses.
+              duration: 3000
+              events:
+                - { type: branch, node: agent, taken: ask, notTaken: [call], at: [0, 0.2] }
+                - { type: send, edge: ask, token: { kind: tool-call, label: which plan? }, at: [0.2, 0.5] }
+                - { type: activate, node: human, status: waiting, at: [0.5, 1] }
+            - id: answer
+              caption: The answer comes back as the tool result, and the run resumes where it stopped.
+              duration: 2200
+              events:
+                - { type: send, edge: answer, token: { kind: result, label: Team }, at: [0, 0.6] }
+                - { type: activate, node: agent, status: thinking, at: [0.6, 1] }
+            - id: act
+              caption: The agent creates and sends the quote with the plan the person chose.
+              duration: 2400
+              events:
+                - { type: branch, node: agent, taken: call, notTaken: [ask], at: [0, 0.2] }
+                - { type: send, edge: call, token: { kind: tool-call, label: create_quote }, at: [0.2, 0.5] }
+                - { type: activate, node: tool, status: calling, at: [0.5, 0.7] }
+                - { type: send, edge: result, token: { kind: result, label: sent }, at: [0.7, 1] }
+        - id: no-question
+          label: Nothing missing, no pause
+          steps:
+            - id: start
+              caption: This time the task names the plan, so the agent has everything it needs.
+              duration: 2000
+              events:
+                - { type: send, edge: task, token: { kind: prompt, label: Team quote }, at: [0, 0.4] }
+                - { type: activate, node: agent, status: thinking, at: [0.4, 1] }
+            - id: act
+              caption: The agent goes straight to the tool, and nobody is asked anything.
+              duration: 2400
+              events:
+                - { type: branch, node: agent, taken: call, notTaken: [ask], at: [0, 0.2] }
+                - { type: send, edge: call, token: { kind: tool-call, label: create_quote }, at: [0.2, 0.5] }
+                - { type: activate, node: tool, status: calling, at: [0.5, 0.7] }
+                - { type: send, edge: result, token: { kind: result, label: sent }, at: [0.7, 1] }
+  - id: review-after
+    name: Act, then review
+    summary: "The agent acts at once against a saved checkpoint; a person reviews afterwards, and a rejection restores the saved state."
+    build:
+      goal: "Let an agent make reversible changes without waiting, by saving a checkpoint before each change and letting a person review afterwards and roll it back."
+      steps:
+        - "Allow this mode only for tools whose effects can be undone; send irreversible calls through an approval gate instead."
+        - "Before each change, save a checkpoint: the current values of every record the call will touch, with a checkpoint id."
+        - "Run the call at once, then put a review item in the reviewer's queue with the checkpoint id and a before-and-after diff."
+        - "On approve, mark the review done and keep the checkpoint until it expires."
+        - "On reject, write the saved values back through the same tool, check that each record now matches the checkpoint, and tell the agent and the requester."
+      stop: "A change is final when it is approved or its review window ends (default 24 hours), when the checkpoint is discarded. A rejection after that window must be fixed by a new change, not a rollback."
+      requirements:
+        - "Make the review window a parameter (default 24 hours)."
+        - "Before restoring a record, check it has not changed since the agent's change; if it has, do not overwrite it, and flag it for the reviewer."
+        - "Make the restore idempotent, so retrying it after a failure is safe."
+        - "Log every change, review decision and restore with the checkpoint id."
+        - "Add a test with a stub agent that reassigns 3 contacts and a fake reviewer that rejects the change; assert all 3 contacts are back with their original owner and the restore ran once."
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Task, pos: { x: 0, y: 0 }, description: "The task that starts the run, such as 'Reassign departing rep Sam's 120 contacts to Dana'." }
+        - { id: agent, kind: agent, label: Agent, pos: { x: 170, y: 0 }, description: "Plans the change, saves a checkpoint first, then makes the change at once without waiting for anyone." }
+        - { id: checkpoint, kind: memory, label: Checkpoint, pos: { x: 380, y: 0 }, description: "The values of every record before the change, kept until the review window ends, so the change can be undone." }
+        - { id: tool, kind: tool, label: CRM API, pos: { x: 570, y: 0 }, description: "The real system the agent changes; the same API writes the old values back on a rollback." }
+        - { id: human, kind: human, label: Reviewer, pos: { x: 680, y: 150 }, description: "A person who reviews the change after it has happened, and approves it or rejects it to roll it back." }
+      edges:
+        - { id: task, from: user, to: agent, description: "The task goes to the agent.", example: "Sam is leaving. Reassign Sam's 120 contacts to Dana." }
+        - { id: save, from: agent, to: checkpoint, label: snapshot, description: "Before anything changes, the agent saves the current values of everything the change will touch.", example: "checkpoint cp-311: 120 contacts, owner = Sam (ids 4001 to 4120)" }
+        - { id: act, from: checkpoint, to: tool, label: apply, description: "Once the snapshot is saved, the change is applied at once; on a rollback, the same path writes the saved values back.", example: "{\"tool\": \"bulk_update\", \"arguments\": {\"ids\": \"4001-4120\", \"owner\": \"Dana\"}}   (on rollback: owner = Sam, from cp-311)" }
+        - { id: review, from: tool, to: human, label: review, description: "The change is already live; the reviewer gets the before-and-after diff and the checkpoint id after the fact.", example: "Review cp-311: 120 contacts moved from Sam to Dana (bulk_update ok). Approve or reject within 24 hours." }
+        - { id: reject, from: human, to: checkpoint, style: dashed, label: reject, description: "A rejection, with a reason, goes back to the checkpoint, whose saved values are then written back.", example: "{\"kind\": \"reject\", \"checkpoint\": \"cp-311\", \"reason\": \"The 12 enterprise accounts go to Priya, not Dana.\"}" }
+      scenarios:
+        - id: rolled-back
+          label: Rejected, then rolled back
+          steps:
+            - id: snapshot
+              caption: The agent saves a checkpoint of the 120 contacts before touching them.
+              duration: 2400
+              events:
+                - { type: send, edge: task, token: { kind: prompt, label: reassign }, at: [0, 0.35] }
+                - { type: activate, node: agent, status: thinking, at: [0.35, 0.55] }
+                - { type: send, edge: save, token: { kind: result, label: snapshot }, at: [0.55, 0.9] }
+                - { type: write, node: checkpoint, at: [0.85, 1] }
+            - id: act
+              caption: The change runs at once. Nobody waits for approval.
+              duration: 2200
+              events:
+                - { type: send, edge: act, token: { kind: tool-call, label: bulk_update }, at: [0, 0.4] }
+                - { type: activate, node: tool, status: calling, at: [0.4, 1] }
+            - id: review
+              caption: The reviewer sees the diff afterwards and spots that the enterprise accounts should have gone to someone else.
+              duration: 2600
+              events:
+                - { type: send, edge: review, token: { kind: result, label: diff }, at: [0, 0.4] }
+                - { type: activate, node: human, status: waiting, at: [0.4, 1] }
+            - id: rollback
+              caption: The reviewer rejects it, and the saved values are written back. The contacts belong to Sam again.
+              duration: 3000
+              events:
+                - { type: send, edge: reject, token: { kind: feedback, label: reject }, at: [0, 0.35] }
+                - { type: read, node: checkpoint, at: [0.3, 0.45] }
+                - { type: send, edge: act, token: { kind: tool-call, label: restore }, at: [0.45, 0.8] }
+                - { type: activate, node: tool, status: calling, at: [0.8, 1] }
+        - id: approved
+          label: Approved after the fact
+          steps:
+            - id: snapshot
+              caption: The agent saves a checkpoint of the contacts before touching them.
+              duration: 2400
+              events:
+                - { type: send, edge: task, token: { kind: prompt, label: reassign }, at: [0, 0.35] }
+                - { type: activate, node: agent, status: thinking, at: [0.35, 0.55] }
+                - { type: send, edge: save, token: { kind: result, label: snapshot }, at: [0.55, 0.9] }
+                - { type: write, node: checkpoint, at: [0.85, 1] }
+            - id: act
+              caption: The change runs at once, and the work carries on without waiting.
+              duration: 2200
+              events:
+                - { type: send, edge: act, token: { kind: tool-call, label: bulk_update }, at: [0, 0.4] }
+                - { type: activate, node: tool, status: calling, at: [0.4, 1] }
+            - id: approve
+              caption: The reviewer checks the diff later and approves it; the checkpoint is kept until the window ends.
+              duration: 2400
+              events:
+                - { type: send, edge: review, token: { kind: result, label: diff }, at: [0, 0.4] }
+                - { type: activate, node: human, status: done, at: [0.4, 1] }

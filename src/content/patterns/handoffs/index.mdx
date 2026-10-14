@@ -10,6 +10,8 @@ The <NodeRef id="user">user</NodeRef> first reaches the <NodeRef id="triage">tri
 
 Notice what is absent: no manager sits in the middle. The agent holding the baton is the only one active, and the others wait. Because the history travels with the baton, the user never repeats themselves. This is the decentralized style described in OpenAI's agent guide and demonstrated in its Swarm example, now succeeded by the Agents SDK.
 
+Two variants extend the baton. With a hand-back, a specialist returns the conversation to triage with a summary when its part is done, so one message can be served by several specialists in turn. With active-agent memory, the system stores who last held the conversation, so the user's next message goes straight back to that agent instead of through triage.
+
 ## When to use
 
 - The right specialist only becomes clear during the conversation.
