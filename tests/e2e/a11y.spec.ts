@@ -3,8 +3,10 @@ import AxeBuilder from '@axe-core/playwright';
 
 const WCAG = ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'];
 
-const pages: { name: string; path: string; status?: number }[] = [
+const pages: { name: string; path: string; status?: number; width?: number }[] = [
   { name: 'home', path: '/' },
+  // Phones start the map zoomed out, where tile text is faded; the tile links must keep their names.
+  { name: 'home at 390px', path: '/', width: 390 },
   { name: 'families index', path: '/families/' },
   { name: 'family page', path: '/families/workflows/' },
   { name: 'pattern: evaluator-optimizer', path: '/patterns/evaluator-optimizer/' },
@@ -22,8 +24,9 @@ async function settle(page: Page) {
   await page.waitForTimeout(500);
 }
 
-for (const { name, path, status = 200 } of pages) {
+for (const { name, path, status = 200, width } of pages) {
   test(`axe: ${name} (${path})`, async ({ page }) => {
+    if (width) await page.setViewportSize({ width, height: 860 });
     const res = await page.goto(path);
     expect(res?.status()).toBe(status);
     await settle(page);
