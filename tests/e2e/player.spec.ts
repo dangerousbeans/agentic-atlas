@@ -1,4 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { parse } from 'yaml';
+import { KIND_LABEL } from '../../src/lib/diagram/kinds';
+import type { NodeKind } from '../../src/lib/diagram/types';
 const url = '/patterns/evaluator-optimizer/';
 const fpOf = (page: Page) => page.locator('flow-player').first();
 const node = (page: Page, id: string) => page.locator(`svg[data-layout="wide"] g.node[data-node="${id}"]`);
@@ -173,12 +177,16 @@ test('scenario tabs control labelled panels', async ({ page }) => {
   await expect(panel).toHaveAttribute('aria-labelledby', (await tab.getAttribute('id'))!);
 });
 
-test('kind fallback text appears when a node has no description', async ({ page }) => {
+// Every node now has a YAML description; the kind fallback itself is unit-tested in tests/unit/kinds.test.ts.
+test('node tooltip shows the pattern-specific description and kind chip', async ({ page }) => {
+  const yaml = parse(readFileSync('src/content/patterns/orchestrator-workers/pattern.yaml', 'utf8'));
+  const spec = yaml.diagram.nodes.find((n: { id: string }) => n.id === 'orchestrator') as { kind: NodeKind; description: string };
+  expect(spec.description).toBeTruthy();
   await page.goto('/patterns/orchestrator-workers/');
-  const n = page.locator('svg[data-layout="wide"] g.node[data-kind="llm"]').first();
-  await n.hover();
-  await expect(tip(page)).toContainText('A single LLM call with a specific prompt.');
-  await expect(tip(page)).toContainText('LLM call');
+  await node(page, 'orchestrator').hover();
+  await expect(tip(page)).toBeVisible();
+  await expect(tip(page).locator('.fp-tip-d')).toHaveText(spec.description);
+  await expect(tip(page).locator('.fp-tip-k')).toHaveText(KIND_LABEL[spec.kind]);
 });
 
 test('focusing a node by keyboard shows the tooltip', async ({ page }) => {

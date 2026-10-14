@@ -244,9 +244,10 @@ test.describe('atlas map', () => {
 test('without JS the map is a plain list of 21 tile links', async ({ browser }) => {
   const ctx = await browser.newContext({ javaScriptEnabled: false });
   const page = await ctx.newPage();
-  await page.goto('/');
-  await expect(page.locator('.atlas-map')).not.toHaveAttribute('data-enhanced', '');
+  const res = await page.goto('/');
+  expect(res?.status()).toBe(200);
   await expect(tiles(page)).toHaveCount(21);
+  await expect(page.locator('.atlas-map')).not.toHaveAttribute('data-enhanced', '');
   for (const t of await tiles(page).all()) await expect(t).toBeVisible();
   await expect(page.locator('.hero-stage flow-player')).toHaveCount(1);
   await ctx.close();
