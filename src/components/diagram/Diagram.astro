@@ -6,14 +6,21 @@ import DiagramSvg from './DiagramSvg.astro';
 import './diagram.css';
 interface Props { uid: string; spec: DiagramSpec; title: string; compact?: boolean }
 const { uid, spec, title, compact = false } = Astro.props;
-const wide = await layoutDiagram(spec, spec.direction ?? 'RIGHT');
-const narrow = compact ? null : await layoutDiagram(spec, 'DOWN');
+const wide = await layoutDiagram(spec, spec.direction ?? 'RIGHT', compact ? 'compact' : 'wide');
+// Phones: top-to-bottom, unless the left-to-right layout is clearly narrower (wide hubs and fan-outs).
+let narrow = null;
+if (!compact) {
+  const down = await layoutDiagram(spec, 'DOWN', 'narrow');
+  const right = await layoutDiagram(spec, 'RIGHT', 'narrow');
+  narrow = right.width < down.width * 0.8 ? right : down;
+  if (import.meta.env.DEV || process.env.DIAGRAM_DEBUG) console.log(`[diagram] ${uid} narrow down=${down.width} right=${right.width}`);
+}
 const timelines = compileDiagram(spec);
 const payload = JSON.stringify({ spec, timelines }).replace(/</g, '\\u003c');
 ---
 <flow-player data-uid={uid} compact={compact ? '' : undefined} class:list={['diagram', { 'diagram--compact': compact }]}>
   <div class="diagram-stage" tabindex={compact ? undefined : 0} role={compact ? undefined : 'group'} aria-label={compact ? undefined : `${title} diagram player. Space plays or pauses; arrow keys step.`}>
-    <DiagramSvg uid={uid} spec={spec} layout={wide} variant="wide" title={title} />
+    <DiagramSvg uid={uid} spec={spec} layout={wide} variant="wide" title={title} compact={compact} />
     {narrow && <DiagramSvg uid={uid} spec={spec} layout={narrow} variant="narrow" title={title} />}
   </div>
   {!compact && (

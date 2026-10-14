@@ -24,18 +24,26 @@ export function cubicPath(s: Pt, c1: Pt, c2: Pt, e: Pt): string {
 }
 
 export function loopArc(from: Box, to: Box, direction: 'RIGHT' | 'DOWN') {
-  if (direction === 'RIGHT') {
-    const s = { x: from.x + from.w / 2, y: from.y };
-    const e = { x: to.x + to.w / 2, y: to.y };
-    const lift = 48 + Math.abs(s.x - e.x) * 0.15;
-    const top = Math.min(s.y, e.y) - lift;
-    return { s, c1: { x: s.x, y: top }, c2: { x: e.x, y: top }, e };
+  return boxArc(from, to, direction === 'RIGHT' ? 'top' : 'right');
+}
+
+/** Arc between two boxes that leaves and enters through the same side of each and bulges out past both;
+ *  `extra` pushes the bulge further out. */
+export function boxArc(from: Box, to: Box, side: 'top' | 'bottom' | 'left' | 'right', extra = 0) {
+  if (side === 'top' || side === 'bottom') {
+    const lift = 48 + extra + Math.abs(from.x + from.w / 2 - (to.x + to.w / 2)) * 0.15;
+    const top = side === 'top';
+    const s = { x: from.x + from.w / 2, y: top ? from.y : from.y + from.h };
+    const e = { x: to.x + to.w / 2, y: top ? to.y : to.y + to.h };
+    const v = top ? Math.min(s.y, e.y) - lift : Math.max(s.y, e.y) + lift;
+    return { s, c1: { x: s.x, y: v }, c2: { x: e.x, y: v }, e };
   }
-  const s = { x: from.x + from.w, y: from.y + from.h / 2 };
-  const e = { x: to.x + to.w, y: to.y + to.h / 2 };
-  const push = 48 + Math.abs(s.y - e.y) * 0.15;
-  const right = Math.max(s.x, e.x) + push;
-  return { s, c1: { x: right, y: s.y }, c2: { x: right, y: e.y }, e };
+  const push = 48 + extra + Math.abs(from.y + from.h / 2 - (to.y + to.h / 2)) * 0.15;
+  const right = side === 'right';
+  const s = { x: right ? from.x + from.w : from.x, y: from.y + from.h / 2 };
+  const e = { x: right ? to.x + to.w : to.x, y: to.y + to.h / 2 };
+  const u = right ? Math.max(s.x, e.x) + push : Math.min(s.x, e.x) - push;
+  return { s, c1: { x: u, y: s.y }, c2: { x: u, y: e.y }, e };
 }
 
 export function borderPoint(box: Box, toward: Pt): Pt {

@@ -5,10 +5,17 @@ flow-player { display: block; --accent: var(--family-accent); }
 .diagram-svg[data-layout="narrow"] { display: none; }
 @container (max-width: 640px) {
   .diagram-svg[data-layout="wide"] { display: none; }
-  .diagram-svg[data-layout="narrow"] { display: block; max-height: none; min-width: var(--min-w, 0); }
+  .diagram-svg[data-layout="narrow"] { display: block; max-height: none; min-width: var(--min-w, 0); max-width: var(--max-w, none); margin-inline: auto; }
+  /* compact thumbnails only have the wide layout, drawn without text so it reads at card size */
+  .diagram--compact .diagram-svg[data-layout="wide"] { display: block; }
 }
+/* scroll affordance when a narrow diagram is wider than the stage (set by flow-player) */
+.diagram-stage { --more-l: none; --more-r: none; background: var(--more-l), var(--more-r), radial-gradient(ellipse at 50% 40%, color-mix(in oklab, var(--accent) 7%, var(--bg-1)) 0%, var(--bg) 75%); scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--accent) 50%, transparent) transparent; }
+.diagram-stage[data-more-left] { --more-l: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 18'%3E%3Cpath d='M8 2L2 9l6 7' fill='none' stroke='%23C9CDE0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") left 6px center / 10px 18px no-repeat, linear-gradient(to right, color-mix(in oklab, var(--accent) 26%, transparent), transparent) left / 44px 100% no-repeat; }
+.diagram-stage[data-more-right] { --more-r: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 18'%3E%3Cpath d='M2 2l6 7-6 7' fill='none' stroke='%23C9CDE0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") right 6px center / 10px 18px no-repeat, linear-gradient(to left, color-mix(in oklab, var(--accent) 26%, transparent), transparent) right / 44px 100% no-repeat; }
 .diagram--compact .diagram-stage { padding: 6px; border-radius: 12px; }
 .diagram--compact .diagram-svg { max-height: 180px; }
+.diagram--compact .token text { display: none; }
 
 .halo-stop-a { stop-color: var(--accent); stop-opacity: 0.55; }
 .halo-stop-b { stop-color: var(--accent); stop-opacity: 0; }

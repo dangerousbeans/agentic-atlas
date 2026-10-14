@@ -64,6 +64,22 @@ class FlowPlayer extends HTMLElement {
       const ro = new ResizeObserver(([entry]) => { view.active = entry.contentRect.width > 0; if (view.active) this.render(); });
       ro.observe(view.svg); this.observers.push(ro);
     }
+    // When the diagram is wider than the stage (big fan-outs on phones), start scrolled to the middle, where the
+    // hub is, and let CSS show an edge fade on whichever side has more to see.
+    const stage = this.querySelector<HTMLElement>('.diagram-stage');
+    if (stage && !this.compact) {
+      let centred = false;
+      const sync = () => {
+        const max = stage.scrollWidth - stage.clientWidth;
+        if (max > 1 && !centred) { stage.scrollLeft = max / 2; centred = true; }
+        if (max <= 1) centred = false;
+        stage.toggleAttribute('data-more-left', max > 1 && stage.scrollLeft > 2);
+        stage.toggleAttribute('data-more-right', max > 1 && stage.scrollLeft < max - 2);
+      };
+      stage.addEventListener('scroll', sync, { passive: true });
+      const ro = new ResizeObserver(sync);
+      ro.observe(stage); this.observers.push(ro);
+    }
     const io = new IntersectionObserver(([e]) => {
       this.visible = e.isIntersecting;
       if (this.visible && !this.userControl && !this.reduced && !this.playing) this.setPlaying(true);
