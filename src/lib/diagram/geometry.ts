@@ -64,3 +64,18 @@ export function offsetPolyline(pts: Pt[], d: number): Pt[] {
   const nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
   return pts.map(q => ({ x: q.x + nx * d + 0, y: q.y + ny * d + 0 }));
 }
+
+/** Offset a polyline sideways by d (positive = left of travel in screen coords, i.e. normal (-dy, dx)),
+ *  using miter joins so every segment, not just the first, moves by exactly d. */
+export function offsetPath(pts: Pt[], d: number): Pt[] {
+  const q = pts.filter((v, i) => i === 0 || v.x !== pts[i - 1].x || v.y !== pts[i - 1].y);
+  if (q.length < 2) return pts.map(v => ({ ...v }));
+  const norms = q.slice(1).map((b, i) => { const a = q[i], len = dist(a, b) || 1; return { x: -(b.y - a.y) / len, y: (b.x - a.x) / len }; });
+  return q.map((v, i) => {
+    const n1 = norms[Math.max(0, i - 1)], n2 = norms[Math.min(norms.length - 1, i)];
+    const dot = n1.x * n2.x + n1.y * n2.y;
+    if (dot < -0.9) return { x: v.x + n1.x * d, y: v.y + n1.y * d };
+    const k = d / (1 + dot);
+    return { x: v.x + (n1.x + n2.x) * k, y: v.y + (n1.y + n2.y) * k };
+  });
+}
