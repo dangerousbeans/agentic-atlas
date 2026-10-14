@@ -3,4 +3,4 @@ name: "Safety & Oversight"
 rank: 7
 accent: "#E9D8A6"
 description: Checks and human approval points wrapped around any of the other patterns.
-order: [human-in-the-loop, guardrails, permission-policies, sandboxed-execution, dual-llm]
+order: [human-in-the-loop, guardrails, permission-policies, sandboxed-execution, dual-llm, llm-as-judge]
