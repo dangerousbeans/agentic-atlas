@@ -12,7 +12,8 @@
   --font-ui: 'Inter Tight Variable', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
   --max: 1160px; --radius: 12px;
-  --family-accent: #F5B14C;
+  --brand: #F5B14C;
+  --family-accent: #F5B14C; /* default; pages override inline from the family YAML */
   color-scheme: dark;
 }
 *, *::before, *::after { box-sizing: border-box; }
