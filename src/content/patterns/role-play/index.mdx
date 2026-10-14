@@ -1,0 +1,36 @@
+## Problem
+
+A single prompt like "develop a trading bot for the stock market" is too vague for a model to finish in one go, and a human who breaks it into steps has to keep prompting, reading and re-prompting for an hour. You want the model to do both jobs: decide the next step and carry it out. But one model that plans and executes in the same breath tends to skip steps, lose the thread or wander off the task.
+
+## How it works
+
+Role-play splits the two jobs between two agents and makes them talk. First a <NodeRef id="specifier">task specifier</NodeRef> turns the rough <NodeRef id="idea">idea</NodeRef> into something concrete: "build a Python bot that reads Reddit sentiment on five tickers and places paper trades when sentiment flips."
+
+Each agent then gets an inception prompt that fixes both roles and the task. The <NodeRef id="aiuser">AI user</NodeRef> plays the stock trader. It knows what the bot should do, and it gives exactly one instruction at a time, in the form `Instruction: … Input: …`. The <NodeRef id="aiassistant">AI assistant</NodeRef> plays the Python programmer. It answers each instruction with `Solution: …` and ends with "Next request." Your code passes each message across as the other agent's next user turn, so each agent has its own history and the two simply alternate.
+
+There is no manager. The AI user is both the planner and the judge: when it thinks the bot is complete, it sends `<CAMEL_TASK_DONE>` instead of another instruction, and the transcript goes to the <NodeRef id="out">result</NodeRef>.
+
+The inception prompts do the heavy lifting. "Never forget you are a Stock Trader and I am a Python Programmer. Never flip roles!" sounds blunt, but without it the pair soon drifts: the assistant starts giving instructions, or both agents just thank each other.
+
+## When to use
+
+- A task needs many small steps and you want them driven with no human prompting in between.
+- Two clear, complementary perspectives exist: a domain expert who knows what is needed and a practitioner who knows how to build it.
+- You want to generate realistic instruction-and-solution dialogue as training or evaluation data, which is what CAMEL was first used for.
+
+## When to avoid
+
+- The task mostly needs tools, tests or verification. Two agents chatting does not check that the code runs; add an executor or a test step.
+- More than two roles are needed. Use a group chat or an SOP-driven team instead.
+- Cost and latency matter. Every round is two model calls over two growing histories, and the conversation can run for dozens of rounds.
+
+## Trade-offs
+
+Role-play buys autonomy cheaply: two prompts and a loop, with no orchestration logic. In exchange, the AI user is a model judging its own team's progress, so "done" means the instructor is satisfied, not that the work is verified. Splitting the roles keeps each agent focused, but neither one sees the whole picture the way a single planner would.
+
+## Failure modes
+
+- **Role flipping:** the assistant starts instructing, or the user starts solving. Check each reply's prefix, and resend the role rules when it is wrong.
+- **Instruction repeating:** the AI user asks for the same thing again and again. Detect repeated messages and stop the run.
+- **Flake replies:** the assistant says "I will do that" without giving a solution. Require a concrete `Solution:` body.
+- **Infinite politeness:** both agents thank each other and wrap up without finishing. Cap the rounds and return the transcript with a status saying it did not finish.

@@ -1,0 +1,199 @@
+slug: blackboard
+name: Blackboard
+family: multi-agent
+aliases: [Blackboard architecture, Shared workspace, bMAS]
+summary: Specialists read and write one shared board; each round a control unit picks who acts next, until a critic finds a solution on the board.
+badges: { autonomy: high, cost: high, latency: high }
+sources:
+  - title: "Exploring Advanced LLM Multi-Agent Systems Based on Blackboard Architecture (Han & Zhang, 2025)"
+    url: https://arxiv.org/abs/2507.01701
+  - title: "The Hearsay-II Speech-Understanding System: Integrating Knowledge to Resolve Uncertainty (Erman et al., 1980)"
+    url: https://doi.org/10.1145/356810.356816
+related:
+  composesWith: [hierarchical-memory, human-in-the-loop]
+  confusedWith:
+    - { slug: group-chat, difference: "A group chat is an append-only transcript where one agent speaks per turn; a blackboard is a workspace of partial results that several specialists can add to, revise or clear in the same round." }
+    - { slug: supervisor, difference: "A supervisor assigns each task and every result comes back to it; on a blackboard the control unit only decides who acts, and all results go to the shared board." }
+origin:
+  by: Lee D. Erman et al.
+  org: Carnegie-Mellon University (Hearsay-II)
+  year: 1980
+  url: https://doi.org/10.1145/356810.356816
+  kind: introduced
+  uncertain: true
+  note: "Hearsay-II (CMU, c. 1971-76) was the first blackboard system, and Newell (1962) supplied the metaphor; this 1980 survey is its standard reference. Han & Zhang (CAS, 2025) adapted it to LLM agents."
+build:
+  goal: "Solve an open-ended problem by letting a control model pick, each round, which specialist agents read a shared blackboard and add to it, until a critic judges that the board holds a solution."
+  steps:
+    - "Define each specialist with a name and a one-line capability, and include the critic in that list. Create the blackboard as a set of entries with ids (id, author, round, content), and post the problem as entry 1."
+    - "Each round, call the control model with the {{prompt:control}}, passing the specialist list and the board. Parse its JSON reply into a list of one to three names to activate."
+    - "Call each selected specialist with the {{prompt:expert}} and the whole board. Parse its JSON reply: add a new entry, or revise or retract an existing one by id, with a reason. Specialists selected in the same round can run in parallel."
+    - "When the control model selects the critic, call it with the {{prompt:critic}}. If it judges the problem solved, return its solution; otherwise add its objection to the board for the next round."
+    - "After each round, run a cleaning step (or a cleaner specialist) that removes superseded, retracted or redundant entries, so the board stays a current picture rather than a log. Never remove the problem entry."
+  stop: "Stop when the critic judges the problem solved, or after 8 rounds (bMAS used 4; allow more for problems that need several lines of evidence). On the cap, return the board and the critic's latest best_candidate with a status of unsolved. If the control model selects no one twice in a row, run the critic."
+  requirements:
+    - "Specialists never message each other; every contribution goes through the board, tagged with its author and round."
+    - "Validate the control model's selection against the specialist list, and drop unknown names rather than failing the round."
+    - "Cap the rounds with a parameter (default 8)."
+    - "Log each round: who was selected, why, and every add, revise or retract with its reason and token count."
+    - "Add a stub-LLM test: control selects [logs, db], then [net], then [critic]; each specialist adds one entry, the cleaner removes nothing, the critic replies solved. Assert 3 rounds ran, the board holds 4 entries before the critic, and the critic's solution is returned."
+prompts:
+  - id: control
+    title: Control unit prompt
+    lang: markdown
+    source: |
+      You are the control unit of a team of specialists who work on a shared blackboard.
+
+      <specialists>
+      {{specialists}}
+      </specialists>
+
+      <blackboard>
+      {{board}}
+      </blackboard>
+
+      Decide which specialists should act next, based on what is on the board and
+      what is still missing. Choose the critic when the board may already hold a solution.
+      Respond in JSON: {"activate": ["<name>", ...], "why": "one sentence"}
+      Activate between one and three specialists.
+  - id: expert
+    title: Specialist prompt
+    lang: markdown
+    source: |
+      You are the {{name}}: {{capability}}.
+      You work with other specialists through a shared blackboard. You cannot talk
+      to them directly; anything you write goes on the board for all to read.
+
+      <blackboard>
+      {{board}}
+      </blackboard>
+
+      Move the problem forward from your expertise. Either add one entry (a finding,
+      or a hypothesis with its evidence), or revise or retract an existing entry by id
+      when the evidence shows it is wrong or superseded.
+      Do not repeat what is already on the board. Keep it under 120 words.
+      Respond in JSON, one of:
+      {"add": "..."}
+      {"revise": <entry id>, "content": "...", "reason": "..."}
+      {"retract": <entry id>, "reason": "..."}
+  - id: critic
+    title: Critic prompt
+    lang: markdown
+    source: |
+      You are the critic. Decide whether the blackboard holds a complete,
+      well-supported solution to the problem.
+
+      <blackboard>
+      {{board}}
+      </blackboard>
+
+      Respond in JSON:
+      {"solved": true|false,
+       "best_candidate": "the best answer the board supports so far, citing entry ids",
+       "solution": "the solution, assembled from the board, if solved",
+       "objection": "what is missing or unsupported, if not solved"}
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Problem, description: "An open problem with no known path, such as 'Why do the nightly ETL jobs fail about one night in five?'." }
+    - { id: board, kind: memory, label: Blackboard, description: "The shared workspace of current findings, hypotheses and objections. Entries can be added, revised or removed, and every agent reads all of it." }
+    - { id: control, kind: router, label: Control unit, description: "Reads the board each round and picks which specialists act next. It never adds findings itself." }
+    - { id: logs, kind: agent, label: Log analyst, description: "Searches the job and scheduler logs for patterns, such as when and where the failures happen." }
+    - { id: db, kind: agent, label: DB expert, description: "Checks the database side: locks, slow queries and connection limits around the failure times." }
+    - { id: net, kind: agent, label: Network expert, description: "Checks the network side: link saturation, DNS and other jobs competing for bandwidth." }
+    - { id: critic, kind: evaluator, label: Critic, description: "Judges whether the board holds a complete, supported answer (bMAS calls this agent the decider). If not, it posts what is missing." }
+    - { id: out, kind: io, label: Diagnosis, description: "The root cause and fix, assembled by the critic from the entries on the board." }
+  edges:
+    - { id: post, from: user, to: board, description: "The problem is posted as the board's first entry.", example: "Problem: nightly ETL fails about 1 night in 5 with 'connection reset'. No code changes in a month." }
+    - { id: state, from: board, to: control, style: dashed, label: board, description: "The control unit reads the whole board before every round.", example: "[problem] ETL fails 1 in 5... [logs] all failures at 02:00-02:10... [db] no locks or slow queries then." }
+    - { id: go-logs, from: control, to: logs, description: "The control unit activates the log analyst, which is called with the whole board.", example: '{"activate": ["logs", "db"], "why": "Nothing is known yet; start with when it fails and the database."}' }
+    - { id: go-db, from: control, to: db, description: "The control unit activates the database expert.", example: '{"activate": ["logs", "db"], "why": "Nothing is known yet; start with when it fails and the database."}' }
+    - { id: go-net, from: control, to: net, description: "The control unit activates the network expert.", example: '{"activate": ["net"], "why": "Failures cluster at 02:00 and the DB is clean; check the network at that time."}' }
+    - { id: go-critic, from: control, to: critic, description: "When the board may hold an answer, the control unit calls the critic.", example: '{"activate": ["critic"], "why": "A cause with evidence is on the board."}' }
+    - { id: w-logs, from: logs, to: board, label: post, description: "The log analyst posts its finding to the board, where everyone can build on it.", example: "[logs] Every failure is between 02:00 and 02:10; all are 'connection reset' on the extract step." }
+    - { id: w-db, from: db, to: board, description: "The database expert posts its finding to the board.", example: "[db] No locks, slow queries or connection-limit hits between 01:50 and 02:20 on failure nights." }
+    - { id: w-net, from: net, to: board, description: "The network expert posts its finding to the board.", example: "[net] The backup job saturates the 1 Gbps link from 02:00 to 02:15 on the nights it runs a full backup." }
+    - { id: object, from: critic, to: board, style: dashed, label: not yet, description: "If the board does not yet hold a supported answer, the critic posts what is missing.", example: '{"solved": false, "objection": "The 02:00 timing is known, but nothing explains why only some nights fail."}' }
+    - { id: solved, from: critic, to: out, label: solved, description: "When the board holds a supported answer, the critic assembles it and the run ends.", example: '{"solved": true, "solution": "Full backups saturate the link at 02:00; move the ETL to 03:00 or rate-limit the backup."}' }
+  scenarios:
+    - id: two-rounds
+      label: Two rounds, then solved
+      steps:
+        - id: start
+          caption: The problem is posted to the blackboard.
+          duration: 1200
+          events:
+            - { type: send, edge: post, token: { kind: prompt, label: problem } }
+            - { type: write, node: board, at: [0.7, 1] }
+        - id: round-1
+          caption: The control unit reads the board and activates the log analyst and the DB expert; both post findings.
+          duration: 3400
+          events:
+            - { type: read, node: board, at: [0, 0.15] }
+            - { type: send, edge: state, token: { kind: prompt, label: board }, at: [0, 0.2] }
+            - { type: activate, node: control, status: thinking, at: [0.2, 0.35] }
+            - { type: send, edge: go-logs, token: { kind: prompt, label: activate }, at: [0.35, 0.5] }
+            - { type: send, edge: go-db, token: { kind: prompt, label: activate }, at: [0.35, 0.5] }
+            - { type: activate, node: logs, status: thinking, at: [0.5, 0.7] }
+            - { type: activate, node: db, status: thinking, at: [0.5, 0.7] }
+            - { type: send, edge: w-logs, token: { kind: result, label: "02:00 only" }, at: [0.7, 0.95] }
+            - { type: send, edge: w-db, token: { kind: result, label: DB clean }, at: [0.7, 0.95] }
+            - { type: write, node: board, at: [0.9, 1] }
+        - id: round-2
+          caption: With the timing known and the DB ruled out, the control unit activates the network expert, who finds the backup.
+          duration: 3000
+          events:
+            - { type: send, edge: state, token: { kind: prompt, label: board }, at: [0, 0.2] }
+            - { type: activate, node: control, status: thinking, at: [0.2, 0.35] }
+            - { type: branch, node: control, taken: go-net, notTaken: [go-logs, go-db, go-critic], at: [0.35, 0.5] }
+            - { type: activate, node: net, status: thinking, at: [0.5, 0.7] }
+            - { type: send, edge: w-net, token: { kind: result, label: backup 02:00 }, at: [0.7, 0.95] }
+            - { type: write, node: board, at: [0.9, 1] }
+        - id: solve
+          caption: The control unit calls the critic, which finds a supported cause on the board and returns the diagnosis.
+          duration: 3000
+          events:
+            - { type: send, edge: state, token: { kind: prompt, label: board }, at: [0, 0.2] }
+            - { type: branch, node: control, taken: go-critic, notTaken: [go-logs, go-db, go-net], at: [0.2, 0.35] }
+            - { type: activate, node: critic, status: thinking, at: [0.35, 0.6] }
+            - { type: branch, node: critic, taken: solved, notTaken: [object], at: [0.6, 0.7] }
+            - { type: send, edge: solved, token: { kind: result, label: diagnosis }, at: [0.7, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
+    - id: critic-objects
+      label: The critic objects
+      steps:
+        - id: start
+          caption: The problem is posted, and the log analyst finds that every failure is at 02:00.
+          duration: 2800
+          events:
+            - { type: send, edge: post, token: { kind: prompt, label: problem }, at: [0, 0.25] }
+            - { type: branch, node: control, taken: go-logs, notTaken: [go-db, go-net, go-critic], at: [0.3, 0.45] }
+            - { type: activate, node: logs, status: thinking, at: [0.45, 0.65] }
+            - { type: send, edge: w-logs, token: { kind: result, label: "02:00 only" }, at: [0.65, 0.9] }
+            - { type: write, node: board, at: [0.85, 1] }
+        - id: too-early
+          caption: The control unit calls the critic too early; it posts that nothing explains why only some nights fail.
+          duration: 3000
+          events:
+            - { type: branch, node: control, taken: go-critic, notTaken: [go-logs, go-db, go-net], at: [0, 0.2] }
+            - { type: activate, node: critic, status: thinking, at: [0.2, 0.45] }
+            - { type: branch, node: critic, taken: object, notTaken: [solved], at: [0.45, 0.55] }
+            - { type: send, edge: object, token: { kind: feedback, label: not yet }, at: [0.55, 0.9] }
+            - { type: write, node: board, at: [0.85, 1] }
+        - id: answer
+          caption: Reading the objection, the control unit activates the network expert, whose finding answers it.
+          duration: 3000
+          events:
+            - { type: read, node: board, at: [0, 0.15] }
+            - { type: branch, node: control, taken: go-net, notTaken: [go-logs, go-db, go-critic], at: [0.15, 0.3] }
+            - { type: activate, node: net, status: thinking, at: [0.3, 0.6] }
+            - { type: send, edge: w-net, token: { kind: result, label: full backups }, at: [0.6, 0.9] }
+            - { type: write, node: board, at: [0.85, 1] }
+        - id: solve
+          caption: This time the critic finds a supported cause and returns the diagnosis.
+          duration: 2600
+          events:
+            - { type: branch, node: control, taken: go-critic, notTaken: [go-logs, go-db, go-net], at: [0, 0.2] }
+            - { type: activate, node: critic, status: thinking, at: [0.2, 0.45] }
+            - { type: branch, node: critic, taken: solved, notTaken: [object], at: [0.45, 0.55] }
+            - { type: send, edge: solved, token: { kind: result, label: diagnosis }, at: [0.55, 0.9] }
+            - { type: activate, node: out, status: done, at: [0.85, 1] }
