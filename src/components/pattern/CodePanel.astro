@@ -52,6 +52,7 @@ const { uid, code, prompts } = Astro.props;
   }
 </script>
 <style>
+  .tabs[hidden] { display: none; }
   .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
   .tabs button { background: none; border: 0; color: var(--text-2); font: 500 14px var(--font-ui); padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
   .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--family-accent); }

@@ -9,11 +9,12 @@ const { id } = Astro.props;
     if (el.dataset.bound) return; el.dataset.bound = '1';
     el.addEventListener('mouseenter', () => send(el.dataset.noderef!));
     el.addEventListener('focus', () => send(el.dataset.noderef!));
-    el.addEventListener('mouseleave', () => send(null));
+    el.addEventListener('mouseleave', () => { if (document.activeElement !== el) send(null); });
     el.addEventListener('blur', () => send(null));
   });
 </script>
 <style>
   .noderef { color: var(--text); border-bottom: 1px dashed var(--family-accent); cursor: help; }
-  .noderef:hover, .noderef:focus { color: var(--family-accent); outline: none; }
+  .noderef:hover, .noderef:focus { color: var(--family-accent); }
+  .noderef:focus-visible { outline: 2px solid var(--family-accent); outline-offset: 3px; border-radius: 2px; }
 </style>

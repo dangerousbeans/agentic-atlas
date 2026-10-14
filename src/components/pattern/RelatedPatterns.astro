@@ -18,7 +18,7 @@ const confused = p.related.confusedWith.map(c => ({ ...c, p: catalog.bySlug.get(
   <h2>Related patterns</h2>
   {composes.length === 0 && confused.length === 0 && <p class="muted">This pattern is a building block that most other patterns use.</p>}
   {composes.length > 0 && <p class="muted">Composes well with:</p>}
-  <ul class="related">{composes.map(r => <li><a href={href(`/patterns/${r.slug}/`)}>{r.name}</a><span> {r.summary}</span></li>)}</ul>
+  {composes.length > 0 && <ul class="related">{composes.map(r => <li><a href={href(`/patterns/${r.slug}/`)}>{r.name}</a><span> {r.summary}</span></li>)}</ul>}
 </section>
 <style>
   .callout { border: 1px solid var(--line); border-left: 3px solid var(--family-accent); border-radius: 10px; padding: 16px 20px; margin: 32px 0; background: var(--bg-1); }
