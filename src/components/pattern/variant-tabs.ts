@@ -9,7 +9,8 @@ const PREFIX = '#variant-';
 /** The variant id a hash selects, if it names one of `ids`. */
 export function variantFromHash(hash: string, ids: string[]): string | undefined {
   if (!hash.startsWith(PREFIX)) return undefined;
-  const id = decodeURIComponent(hash.slice(PREFIX.length));
+  let id: string;
+  try { id = decodeURIComponent(hash.slice(PREFIX.length)); } catch { return undefined; } // a malformed %-escape
   return ids.includes(id) ? id : undefined;
 }
 
@@ -51,11 +52,16 @@ function init() {
     select(ids[j], true);
     tabs[j].focus();
   });
-  addEventListener('hashchange', () => { const id = variantFromHash(location.hash, ids); if (id) select(id, false); });
+  // Any other hash (empty, unknown, or another anchor on the page) shows the default variant.
+  addEventListener('hashchange', () => select(variantFromHash(location.hash, ids) ?? ids[0], false));
 
   list.hidden = false;
   root.setAttribute('data-variants-enhanced', '');
-  select(variantFromHash(location.hash, ids) ?? ids[0], false);
+  const fromHash = variantFromHash(location.hash, ids);
+  select(fromHash ?? ids[0], false);
+  // `#variant-<id>` is also the id of that variant's no-JS heading. The browser may already have scrolled to it
+  // before this ran; once enhanced, the heading is hidden and the page starts at the top with that tab selected.
+  if (fromHash) scrollTo(0, 0);
 }
 
 if (typeof document !== 'undefined') init();

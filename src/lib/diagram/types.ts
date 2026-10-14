@@ -21,4 +21,3 @@ export type DiagramEvent =
 export interface Step { id: string; caption: string; duration?: number; events: DiagramEvent[]; repeat?: number }
 export interface Scenario { id: string; label: string; steps: Step[] }
 export interface DiagramSpec { direction?: 'RIGHT' | 'DOWN'; groups?: DiagramGroup[]; nodes: DiagramNode[]; edges: DiagramEdge[]; scenarios: Scenario[] }
-export interface PromptBlock { id: string; title: string; lang: 'python' | 'markdown' | 'text'; source: string }

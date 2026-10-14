@@ -9,4 +9,5 @@ describe('variantFromHash', () => {
     expect(variantFromHash('#main', ids)).toBeUndefined();
     expect(variantFromHash('', ids)).toBeUndefined();
   });
+  it('returns undefined for a malformed %-escape instead of throwing', () => expect(variantFromHash('#variant-%E0', ids)).toBeUndefined());
 });

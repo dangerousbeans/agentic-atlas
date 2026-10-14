@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { diagramIssues, validateCatalog, patternSchema, familySchema, type Pattern, type Family } from '../../src/lib/schema';
-import type { DiagramSpec, PromptBlock } from '../../src/lib/diagram/types';
+import type { DiagramSpec } from '../../src/lib/diagram/types';
+import type { Prompt } from '../../src/lib/schema';
 
-const prompts: PromptBlock[] = [{ id: 'gen', title: 'Generator prompt', lang: 'markdown', source: 'Write {{task}}.\n' }];
+const prompts: Prompt[] = [{ id: 'gen', title: 'Generator prompt', lang: 'markdown', source: 'Write {{task}}.\n' }];
 const base = (): DiagramSpec => ({
   nodes: [
     { id: 'in', description: 'A fixture node.', kind: 'io', label: 'Task' },
@@ -87,6 +88,17 @@ describe('build, origin and variants', () => {
     const v = { ...variant(), prompts: [{ id: 'critic', title: 'Critic', lang: 'markdown', source: 'x' }] };
     expect(messages(parse({ build, variants: [v] }))).toMatch(/variant "self": build step references unknown prompt "gen"/);
   });
+  it('checks prompt references in every build field, not just steps', () => {
+    expect(messages(parse({ build: { ...build, goal: 'Run the {{prompt:nope}} until it passes.' } }))).toMatch(/build goal references unknown prompt "nope"/);
+    expect(messages(parse({ build: { ...build, stop: 'Stop when the {{prompt:gone}} says so.' } }))).toMatch(/build stop references unknown prompt "gone"/);
+    expect(messages(parse({ build: { ...build, requirements: [...build.requirements, 'Log the {{prompt:x}} output.'] } }))).toMatch(/build requirement references unknown prompt "x"/);
+  });
+  it('allows only http(s) origin and source urls', () => {
+    expect(parse({ origin: { ...origin, url: 'javascript:alert(1)' } }).success).toBe(false);
+    expect(parse({ sources: [{ title: 't', url: 'data:text/html,hi' }] }).success).toBe(false);
+    expect(parse({ origin: { ...origin, url: 'http://example.com/paper' } }).success).toBe(true);
+  });
+  it('rejects python prompts (the brief stays language-neutral)', () => expect(parse({ prompts: [{ id: 'gen', title: 'G', lang: 'python', source: 'x' }] }).success).toBe(false));
   it('rejects an origin kind outside introduced | popularized', () => expect(parse({ origin: { ...origin, kind: 'coined' } }).success).toBe(false));
   it('requires a note when the origin is uncertain', () => {
     expect(messages(parse({ origin: { ...origin, uncertain: true } }))).toMatch(/note is required/);

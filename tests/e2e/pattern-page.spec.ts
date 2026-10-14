@@ -43,6 +43,18 @@ test.describe('copy button', () => {
   });
 });
 
+test('copy falls back to selecting the brief when the clipboard is unavailable', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => Promise.reject(new Error('denied')) } }));
+  await page.goto(url);
+  const btn = page.locator('[data-copy]:visible');
+  await btn.click();
+  await expect(btn).toHaveText('Selected');
+  await expect(page.locator('[data-copy-status]')).toHaveText(/Ctrl\+C/);
+  const selected = await page.evaluate(() => getSelection()!.toString());
+  // (Selection.toString() drops the brief's trailing newline)
+  expect(selected.trim()).toBe((await page.locator('.build-md:visible').textContent())!.trim());
+});
+
 test.describe('variants', () => {
   const visiblePlayers = (page: import('@playwright/test').Page) => page.locator('flow-player:not([compact]):visible');
   test('tabs swap the diagram, build, prompts, stats and origin, and set the hash', async ({ page }) => {
@@ -52,14 +64,14 @@ test.describe('variants', () => {
     await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
     await expect(visiblePlayers(page)).toHaveCount(1);
     await expect(visiblePlayers(page)).toHaveAttribute('data-uid', 'evaluator-optimizer');
-    await expect(page.locator('.origin:visible')).toContainText('Popularized by Erik Schluntz and Barry Zhang (2024)');
+    await expect(page.locator('.origin:visible')).toContainText('Popularized by Schluntz & Zhang (2024) · Anthropic');
 
     await tabs.nth(1).click();
     await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
     expect(new URL(page.url()).hash).toBe('#variant-self-critique');
     await expect(visiblePlayers(page)).toHaveAttribute('data-uid', 'evaluator-optimizer--self-critique');
     await expect(page.locator('.build-md:visible')).toContainText('(Same model variant)');
-    await expect(page.locator('.origin:visible')).toContainText('Introduced by Aman Madaan et al. (2023)');
+    await expect(page.locator('.origin:visible')).toContainText('Introduced by Madaan et al. (2023)');
     const val = (label: string) => page.locator('.spec-row:visible').filter({ has: page.locator('dt', { hasText: new RegExp(`^${label}$`) }) }).locator('dd .v');
     await expect(val('Scenarios')).toHaveText('1');
     await page.getByRole('tab', { name: 'Prompts' }).click();
@@ -84,12 +96,38 @@ test.describe('variants', () => {
     await expect(visiblePlayers(page)).toHaveAttribute('data-playing', 'true');
     await expect(page.locator('flow-player[data-uid="evaluator-optimizer"]')).toHaveAttribute('data-suspended', '');
     await expect(page.locator('flow-player[data-uid="evaluator-optimizer"]')).toHaveAttribute('data-playing', 'false');
-    await expect(page.locator('.origin:visible')).toContainText('Introduced by Zhibin Gou et al. (2023)');
+    await expect(page.locator('.origin:visible')).toContainText('Introduced by Gou et al. (2023)');
   });
 
-  test('an unknown hash falls back to the default variant', async ({ page }) => {
+  test('an unknown or malformed hash falls back to the default variant without errors', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', e => errors.push(e.message));
     await page.goto(`${url}#variant-nope`);
     await expect(page.getByRole('tab', { name: 'Separate judge' })).toHaveAttribute('aria-selected', 'true');
+    await page.goto(`${url}#variant-%E0`);
+    await page.reload();
+    await expect(page.getByRole('tab', { name: 'Separate judge' })).toHaveAttribute('aria-selected', 'true');
+    expect(errors).toEqual([]);
+  });
+
+  test('a hashchange to a variant selects it; to an empty or other hash resets to the default', async ({ page }) => {
+    await page.goto(url);
+    await page.evaluate(() => { location.hash = '#variant-self-critique'; });
+    await expect(page.getByRole('tab', { name: 'Same model' })).toHaveAttribute('aria-selected', 'true');
+    await page.evaluate(() => { location.hash = '#main'; });
+    await expect(page.getByRole('tab', { name: 'Separate judge' })).toHaveAttribute('aria-selected', 'true');
+    await page.evaluate(() => { location.hash = '#variant-tool-checked'; });
+    await expect(page.getByRole('tab', { name: 'Tool-checked' })).toHaveAttribute('aria-selected', 'true');
+    await page.evaluate(() => { location.hash = ''; });
+    await expect(page.getByRole('tab', { name: 'Separate judge' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('a deep link starts at the top of the page, with the tab selected', async ({ page }) => {
+    await page.goto(`${url}#variant-tool-checked`);
+    await page.waitForLoadState('load');
+    await expect(page.getByRole('tab', { name: 'Tool-checked' })).toHaveAttribute('aria-selected', 'true');
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => scrollY)).toBe(0);
   });
 
   test('pages without variants have no variant tabs', async ({ page }) => {
@@ -145,6 +183,13 @@ test.describe('no JS', () => {
     await expect(page.locator('dl.spec:visible')).toHaveCount(3);
     await expect(page.locator('.origin:visible')).toHaveCount(3);
     await expect(page.locator('.origin-for').first()).toHaveText('Separate judge:');
+  });
+  test('#variant-<id> scrolls to that variant\'s heading', async ({ page }) => {
+    await page.goto(`${url}#variant-tool-checked`);
+    const h = page.locator('#variant-tool-checked');
+    await expect(h).toHaveText('Tool-checked');
+    await expect(h).toBeInViewport();
+    expect(await page.locator('[id^="variant-"]').count()).toBe(3);
   });
   test('prompt code blocks are keyboard-focusable without JS', async ({ page }) => {
     await page.goto(url);

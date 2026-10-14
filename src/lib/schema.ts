@@ -40,7 +40,10 @@ export const diagramSchema = z.object({
   })).min(1),
 });
 
-export const promptSchema = z.object({ id, title: z.string().min(1), lang: z.enum(['python', 'markdown', 'text']), source: z.string().min(1) });
+/** Content links render as hrefs: only http(s), never javascript: or data:. */
+const httpUrl = () => z.url({ protocol: /^https?$/ });
+
+export const promptSchema = z.object({ id, title: z.string().min(1), lang: z.enum(['markdown', 'text']), source: z.string().min(1) });
 
 /** The copy-paste "Build it with your AI" brief (expansion addendum §1). Steps may cite prompts as {{prompt:<id>}}. */
 export const buildSchema = z.object({
@@ -55,7 +58,7 @@ export const originSchema = z.object({
   by: z.string().min(2).max(80),
   org: z.string().min(2).max(120).optional(),
   year: z.number().int().min(1950).max(2100),
-  url: z.url(),
+  url: httpUrl(),
   kind: z.enum(['introduced', 'popularized']),
   note: z.string().min(10).max(400).optional(),
   uncertain: z.boolean().optional(),
@@ -135,7 +138,7 @@ export const patternSchema = z.object({
   aliases: z.array(z.string()).default([]),
   summary: z.string().min(10).max(160),
   badges: z.object({ autonomy: level, cost: level, latency: level }),
-  sources: z.array(z.object({ title: z.string().min(1), url: z.url() })).min(1),
+  sources: z.array(z.object({ title: z.string().min(1), url: httpUrl() })).min(1),
   related: z.object({
     composesWith: z.array(id).default([]),
     confusedWith: z.array(z.object({ slug: id, difference: z.string().min(10) })).default([]),
@@ -150,11 +153,13 @@ export const patternSchema = z.object({
 }).superRefine((p, ctx) => {
   const issue = (message: string, path: (string | number)[]) => ctx.addIssue({ code: 'custom', message: `[${p.slug}] ${message}`, path });
   for (const msg of diagramIssues(p.diagram as DiagramSpec)) issue(msg, ['diagram']);
-  const promptIssues = (build: { steps: string[] } | undefined, prompts: { id: string }[], where: string, path: (string | number)[]) => {
+  // composeBuildPrompt expands {{prompt:<id>}} in every build field, so every field is checked.
+  const promptIssues = (build: { goal: string; steps: string[]; stop: string; requirements: string[] } | undefined, prompts: { id: string }[], where: string, path: (string | number)[]) => {
     if (!build) return;
     const ids = new Set(prompts.map(x => x.id));
-    for (const st of build.steps) for (const [, ref] of st.matchAll(PROMPT_REF_ALL))
-      if (!ids.has(ref)) issue(`${where}build step references unknown prompt "${ref}"`, path);
+    const fields: [string, string[]][] = [['goal', [build.goal]], ['step', build.steps], ['stop', [build.stop]], ['requirement', build.requirements]];
+    for (const [field, texts] of fields) for (const t of texts) for (const [, ref] of t.matchAll(PROMPT_REF_ALL))
+      if (!ids.has(ref)) issue(`${where}build ${field} references unknown prompt "${ref}"`, path);
   };
   promptIssues(p.build, p.prompts, '', ['build']);
   const seen = new Set<string>();

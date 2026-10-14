@@ -29,6 +29,3 @@ export function resolveVariants(p: Pattern): ResolvedVariant[] {
     diagram: v.diagram as DiagramSpec, build: v.build ?? p.build, prompts: v.prompts ?? p.prompts, origin: v.origin ?? p.origin,
   }))];
 }
-
-/** The URL hash that deep-links a variant tab. */
-export const variantHash = (id: string) => `#variant-${id}`;

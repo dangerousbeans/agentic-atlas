@@ -56,7 +56,7 @@ const ld = origins.length ? { '@context': 'https://schema.org', '@type': 'TechAr
         )}
         {variants.map(v => (
           <section class="variant-pane" id={`vpanel-${v.id}`} data-variant-pane={v.id} data-for-variants={v.id} data-on={v.isDefault ? '' : undefined}>
-            {multi && <h2 class="variant-h"><span class="mark" aria-hidden="true"></span>{v.isDefault ? `${v.name} (default)` : v.name}</h2>}
+            {multi && <h2 class="variant-h" id={`variant-${v.id}`}><span class="mark" aria-hidden="true"></span>{v.isDefault ? `${v.name} (default)` : v.name}</h2>}
             {v.summary && <p class="variant-summary">{v.summary}</p>}
             <Diagram uid={uidOf(v)} spec={v.diagram} title={v.isDefault ? p.name : `${p.name}: ${v.name}`} />
           </section>

@@ -1,6 +1,6 @@
 ---
 import { href } from '../../lib/url';
-import { originLine } from '../../lib/origin';
+import { originLine, shortBy } from '../../lib/origin';
 import type { Pattern, Family, Origin } from '../../lib/schema';
 /** `origins`: one entry per distinct origin, with the variants it applies to (shown and hidden by variant-tabs.ts). */
 interface Props { pattern: Pattern; family: Family; origins: { origin: Origin; ids: string[]; names: string[]; isDefault: boolean }[] }
@@ -20,7 +20,7 @@ const multi = origins.length > 1;
           {multi && <span class="origin-for">{names.join(', ')}: </span>}
           <span class="origin-lead">{o.lead}</span>{' '}
           {o.by
-            ? <a href={o.url} rel="noopener">{o.by} ({o.year}){o.org && <> · {o.org}</>}<span aria-hidden="true"> ↗</span></a>
+            ? <a href={o.url} rel="noopener" title={o.org ? `${o.by} · ${origin.org}` : o.by}>{shortBy(o.by)} ({o.year}){o.org && <> · {o.org}</>}<span aria-hidden="true"> ↗</span></a>
             : <a href={o.url} rel="noopener">source<span aria-hidden="true"> ↗</span></a>}
         </p>
         {o.note && <p class="origin-note">{o.note}</p>}

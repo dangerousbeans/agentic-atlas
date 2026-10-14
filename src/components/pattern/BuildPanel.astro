@@ -35,7 +35,7 @@ const isOn = (vs: ResolvedVariant[]) => (vs.some(v => v.isDefault) ? '' : undefi
           <p class="hint">Paste this into Claude Code, Cursor, ChatGPT or any AI coding assistant.</p>
           <button type="button" class="btn btn-sm copy" data-copy hidden>Copy</button>
         </div>
-        <pre class="build-md"><code>{composeBuildPrompt(p, v)}</code></pre>
+        <pre class="build-md" data-pagefind-ignore><code>{composeBuildPrompt(p, v)}</code></pre>
       </div>
     ))}
     <p class="sr-only" role="status" aria-live="polite" data-copy-status></p>
