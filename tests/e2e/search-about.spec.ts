@@ -61,3 +61,14 @@ test('family page is filterable by family', async ({ page }) => {
   await dialog.getByRole('searchbox').fill('loops');
   await expect(dialog.locator('.results .fam').first()).toHaveText('Agent Loops', { timeout: 5000 });
 });
+
+test('Enter right after typing opens the result for the current query', async ({ page }) => {
+  await page.goto('/');
+  await page.keyboard.press('ControlOrMeta+k');
+  const box = page.getByRole('dialog', { name: 'Search patterns' }).getByRole('searchbox');
+  await box.fill('critique');
+  await expect(page.locator('.results a').first()).toBeVisible({ timeout: 5000 });
+  await box.fill('debate');
+  await box.press('Enter');
+  await page.waitForURL(/debate/, { timeout: 5000 });
+});
