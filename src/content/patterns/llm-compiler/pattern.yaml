@@ -13,6 +13,30 @@ related:
   composesWith: [react]
   confusedWith:
     - { slug: rewoo, difference: "ReWOO runs its planned calls in sequence; LLMCompiler plans a dependency graph, fires independent calls in parallel, and lets a joiner trigger a replan." }
+origin:
+  by: Sehoon Kim et al.
+  org: UC Berkeley, ICSI, LBNL
+  year: 2023
+  url: https://arxiv.org/abs/2312.04511
+  kind: introduced
+  note: "An LLM Compiler for Parallel Function Calling (ICML 2024)."
+build:
+  goal: "Answer a question by having a planner emit a dependency graph of tool calls, running every call whose inputs are ready in parallel, and letting a joiner answer or ask for a replan."
+  steps:
+    - "Call the planner model with the {{prompt:planner}}, passing the question, the tool descriptions and, on a replan, the joiner's reason."
+    - "Parse each numbered line into a task (id, tool, arguments) and collect the $N references in its arguments as its dependencies; stop parsing at end_of_plan."
+    - "Run a scheduler in plain code: start every task whose dependencies all have results, concurrently, with each $N replaced by task N's result."
+    - "As each task finishes, store its result or its error under its id and start any task that has just become ready, until every task has finished or been skipped."
+    - "Call the joiner model with the {{prompt:joiner}}, passing the question and every task result, and parse its JSON reply."
+    - "If the reply has answer, return it. If it has replan, go back to the planner with the reason and the results so far, so it plans only what is missing."
+  stop: "Stop when the joiner returns an answer, or after 2 replans. On the cap, return the best partial results with the joiner's last reason and a status saying the question was not fully answered."
+  requirements:
+    - "Make the replan cap (default 2), the tasks per plan (default 10) and the concurrent tool calls (default 5) parameters, and give every task a timeout (default 30 seconds)."
+    - "Reject a plan in which a $N points to a missing or later task, or the dependencies form a cycle; retry the planner once with the error, then stop."
+    - "When a task errors, store the error as its result, skip every task that depends on it, and let the joiner see both."
+    - "If the joiner's reply is not valid JSON, retry it once, then treat it as a replan with the raw reply as the reason."
+    - "Add a test with a stub planner returning 3 tasks where task 3 uses $1, and fake 100 ms tools; assert tasks 1 and 2 overlap, task 3 starts after task 1 ends, and task 3 received task 1's result."
+defaultVariantName: Joiner with replan
 prompts:
   - id: planner
     title: Planner prompt
@@ -214,3 +238,147 @@ diagram:
           events:
             - { type: branch, node: joiner, taken: replan, notTaken: [finish], at: [0, 0.4] }
             - { type: send, edge: replan, token: { kind: feedback, label: flights failed }, at: [0.4, 1] }
+variants:
+  - id: native-parallel-calls
+    name: Native parallel calls
+    summary: "No planner, scheduler or joiner: one model asks for several independent tool calls in a single turn, and a dependent call has to wait for the next turn."
+    origin:
+      by: OpenAI
+      org: OpenAI
+      year: 2023
+      url: https://developers.openai.com/api/docs/guides/function-calling
+      kind: popularized
+      note: "Parallel function calling, in which a model may return several tool calls in one turn for the runtime to run together. Most model APIs with tool use now offer the same."
+    build:
+      goal: "Answer a question with one tool-using model that may request several tool calls per turn, running each turn's calls concurrently and feeding all their results back in the next turn."
+      steps:
+        - "Send the question to the model with the {{prompt:system}} and the tool definitions, with multiple tool calls per turn enabled."
+        - "If the reply contains tool calls, run all of them concurrently, each with a timeout, and wait for every one to finish."
+        - "Append the model's turn and one result message per call, matched to its call id, to the conversation; send an error as that call's result instead of dropping it."
+        - "Call the model again with the whole conversation; it may request further calls that need the earlier results."
+        - "When a reply contains no tool calls, return its text as the answer."
+      stop: "Stop when the model replies without tool calls, or after 5 turns. On the cap, return the last reply and the tool results gathered so far, with a status saying the turn budget ran out."
+      requirements:
+        - "Make the turn cap (default 5), the calls per turn (default 8) and the per-call timeout (default 30 seconds) parameters."
+        - "Run one turn's calls concurrently, but never start a call from the next turn until every result of the current turn has been returned to the model."
+        - "If a tool call's arguments are not valid JSON for its schema, return the validation error as that call's result and let the model correct it."
+        - "Log each turn with its calls, their start and end times, and their results."
+        - "Add a test with a stub model that requests flights and weather in turn 1, hotel in turn 2, then answers; assert 3 model calls and that flights and weather overlapped."
+    prompts:
+      - id: system
+        title: System prompt
+        lang: markdown
+        source: |
+          You can call tools. When you need several pieces of information that
+          do not depend on each other, request all of those tool calls in the
+          same turn so they run together. Wait for a result only when a later
+          call needs it as an argument.
+
+          When you have everything you need, answer without calling a tool.
+    diagram:
+      nodes:
+        - id: user
+          kind: io
+          label: Question
+          description: "The request to fulfil, such as 'Plan a weekend in Lisbon'."
+        - id: model
+          kind: llm
+          label: Model
+          sublabel: parallel calls
+          description: "One tool-using model: it asks for every independent call in one turn, then reads all the results in the next."
+        - id: t1
+          kind: tool
+          label: Flights
+          description: "Flight search, requested in the first turn because it needs no other result."
+        - id: t2
+          kind: tool
+          label: Weather
+          description: "Weather forecast, requested in the same first turn, so it runs alongside flights."
+        - id: t3
+          kind: tool
+          label: Hotel
+          description: "Hotel booking, which needs the arrival date, so the model can only request it in its second turn."
+        - id: out
+          kind: io
+          label: Answer
+          description: "The itinerary, written once the model's reply asks for no more tool calls."
+      edges:
+        - id: ask
+          from: user
+          to: model
+          description: "The question goes to the model with the tool definitions."
+          example: "Question: Plan a weekend in Lisbon."
+        - id: call1
+          from: model
+          to: t1
+          description: "One of two tool calls the model returns in its first turn."
+          example: "{\"id\": \"call_1\", \"name\": \"flights\", \"arguments\": {\"to\": \"Lisbon\"}}"
+        - id: call2
+          from: model
+          to: t2
+          description: "The second call in the same turn; the runtime runs both at once."
+          example: "{\"id\": \"call_2\", \"name\": \"weather\", \"arguments\": {\"city\": \"Lisbon\"}}"
+        - id: res1
+          from: t1
+          to: model
+          style: dashed
+          description: "The flights result returns to the model as a message matched to call_1."
+          example: "call_1: Arrive Lisbon Fri 14 Mar, 10:40; return Sun 16 Mar."
+        - id: res2
+          from: t2
+          to: model
+          style: dashed
+          description: "The weather result returns alongside it, matched to call_2."
+          example: "call_2: Sat sunny 22C, Sun partly cloudy 19C."
+        - id: call3
+          from: model
+          to: t3
+          label: next turn
+          description: "Only after reading the flight result can the model request the hotel, a whole turn later."
+          example: "{\"id\": \"call_3\", \"name\": \"hotel\", \"arguments\": {\"city\": \"Lisbon\", \"date\": \"Fri 14 Mar\"}}"
+        - id: res3
+          from: t3
+          to: model
+          style: dashed
+          description: "The hotel result returns, and the model now has everything it needs."
+          example: "call_3: Hotel Alfama booked, 2 nights from Fri 14 Mar."
+        - id: answer
+          from: model
+          to: out
+          description: "A reply with no tool calls is the answer."
+          example: "Fly in Friday morning, stay at Hotel Alfama, and plan outdoor sights for sunny Saturday."
+      scenarios:
+        - id: weekend-trip
+          label: '"Plan a weekend in Lisbon"'
+          steps:
+            - id: ask
+              caption: The question reaches the model with the tool definitions.
+              duration: 1000
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: Lisbon trip } }
+            - id: turn-1
+              caption: In one turn the model asks for flights and weather, and the runtime runs both at once.
+              duration: 3000
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: call1, token: { kind: tool-call, label: flights }, at: [0.3, 0.55] }
+                - { type: send, edge: call2, token: { kind: tool-call, label: weather }, at: [0.3, 0.55] }
+                - { type: activate, node: t1, status: calling, at: [0.55, 0.8] }
+                - { type: activate, node: t2, status: calling, at: [0.55, 0.75] }
+                - { type: send, edge: res2, token: { kind: result, label: sunny 22C }, at: [0.75, 1] }
+                - { type: send, edge: res1, token: { kind: result, label: arrive Fri }, at: [0.8, 1] }
+            - id: turn-2
+              caption: The hotel needs the arrival date, so the model can only ask for it in its next turn.
+              duration: 3000
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: call3, token: { kind: tool-call, label: hotel }, at: [0.3, 0.55] }
+                - { type: activate, node: t3, status: calling, at: [0.55, 0.8] }
+                - { type: send, edge: res3, token: { kind: result, label: booked }, at: [0.8, 1] }
+            - id: answer
+              caption: With every result in hand, the model replies without a tool call, and that reply is the answer.
+              duration: 2200
+              events:
+                - { type: activate, node: model, status: thinking, at: [0, 0.4] }
+                - { type: send, edge: answer, token: { kind: result, label: itinerary }, at: [0.4, 0.9] }
+                - { type: activate, node: out, status: done, at: [0.85, 1] }

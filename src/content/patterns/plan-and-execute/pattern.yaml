@@ -14,6 +14,30 @@ related:
   confusedWith:
     - { slug: orchestrator-workers, difference: "Orchestrator-Workers hands subtasks to plain LLM workers once and synthesizes; Plan-and-Execute keeps an explicit, persistent plan that a replanner revises after every step." }
     - { slug: react, difference: "ReAct chooses one action at a time with no written plan; Plan-and-Execute writes the whole plan first, then lets a replanner adjust it as results arrive." }
+origin:
+  by: LangChain team
+  org: LangChain
+  year: 2024
+  url: https://www.langchain.com/blog/planning-agents
+  kind: popularized
+  note: "The LangChain post (2024-02-13) says its planner-executor-replanner agent is based loosely on Plan-and-Solve prompting (Lei Wang et al., 2023: see the Plan-and-Solve tab) and on Yohei Nakajima's BabyAGI."
+build:
+  goal: "Turn an open-ended goal into a written step list, run the steps one at a time with a tool-using executor, and revise the remaining steps after each result until the goal is answered."
+  steps:
+    - "Call the planner model once with the {{prompt:planner}}, passing the goal and the tool names, and parse its numbered list into a plan: an ordered list of step strings."
+    - "Pop the first step and hand it, with the goal, to the executor: a small tool-using agent loop that sees only that step and returns a short result string."
+    - "Append the step and its result to past_steps, a list of (step, result) pairs."
+    - "Call the replanner model with the {{prompt:replanner}}, passing the goal, the remaining plan and all of past_steps, and parse its JSON reply."
+    - "If the reply has final_answer, return it. If it has remaining_steps, replace the plan with them and go back to the executor step."
+  stop: "Stop when the replanner returns final_answer, or after 10 executed steps. On the cap, return past_steps and the unfinished plan with a status saying the goal was not reached."
+  requirements:
+    - "Make the step cap (default 10), the plan length cap (default 7) and the executor's own tool-call cap per step (default 5) parameters."
+    - "If the planner's list or the replanner's JSON cannot be parsed, retry that call once with the parse error appended, then stop with a failed status."
+    - "When a tool errors or the executor hits its cap, record the error text as that step's result so the replanner can route around it; do not abort the run."
+    - "Let the planner, executor and replanner use separately configured models, so a cheaper model can execute the steps."
+    - "Log the plan before and after every replan, next to the step result that caused the change."
+    - "Add a test with a stub LLM whose planner returns 3 steps and whose replanner returns 1 remaining step, then a final_answer; assert the executor ran 2 steps and the final_answer is returned."
+defaultVariantName: With replanner
 prompts:
   - id: planner
     title: Planner prompt
@@ -167,3 +191,306 @@ diagram:
             - { type: send, edge: report, token: { kind: result, label: finding }, at: [0.56, 0.68] }
             - { type: branch, node: replanner, taken: finish, notTaken: [revise], at: [0.68, 0.78] }
             - { type: send, edge: finish, token: { kind: result, label: brief }, at: [0.78, 1] }
+variants:
+  - id: single-pass
+    name: Plan-and-Solve
+    summary: "No tools and no replanner: one model call writes a plan and then works through it, and a short second call extracts the answer."
+    origin:
+      by: Lei Wang et al.
+      org: Singapore Management University et al.
+      year: 2023
+      url: https://arxiv.org/abs/2305.04091
+      kind: introduced
+      note: "Plan-and-Solve prompting (ACL 2023): a zero-shot prompt that asks the model to devise a plan and then carry it out step by step, before an answer-extraction prompt reads off the result."
+    build:
+      goal: "Answer a multi-step reasoning question by having one model call write a plan and carry it out in the same reply, then reading the final answer off that reasoning."
+      steps:
+        - "Call the model with the {{prompt:plan-and-solve}}, passing the question; the reply is reasoning text that states a plan and then works through each step."
+        - "Call the model again with the {{prompt:extract}}, passing the question and that reasoning text, to get the bare final answer."
+        - "Validate the answer against the expected format (a number, a date, one option letter) and return it together with the reasoning."
+      stop: "Stop after the extraction call; there is no loop. If the extracted answer fails format validation twice, return the reasoning text with a status saying no answer could be extracted."
+      requirements:
+        - "Use no tools: every fact the plan needs must be in the question, so route questions that need lookups to the tool-using pattern instead."
+        - "Cap the reasoning reply length (default 1,000 tokens) and treat a truncated reply as a failed attempt."
+        - "If the extracted answer does not match the expected format, retry the extraction call once with the format error appended."
+        - "Keep the reasoning text alongside the answer so a wrong answer can be traced to the step that went wrong."
+        - "Add a test with a stub LLM that returns a two-step plan with a worked result, then '960' from extraction; assert exactly two model calls and that the answer is 960."
+    prompts:
+      - id: plan-and-solve
+        title: Plan-and-Solve prompt
+        lang: markdown
+        source: |
+          Q: {{question}}
+
+          A: Let's first understand the problem, extract the relevant variables
+          and their values, and devise a plan. Then, let's carry out the plan,
+          calculate the intermediate values (paying attention to calculation
+          and common sense), solve the problem step by step, and show the answer.
+      - id: extract
+        title: Answer extraction prompt
+        lang: markdown
+        source: |
+          Q: {{question}}
+
+          {{reasoning}}
+
+          Therefore, the answer (a single {{answer_format}}) is:
+    diagram:
+      nodes:
+        - id: user
+          kind: io
+          label: Question
+          description: "A word problem whose facts are all given, such as 'A cafe sells 120 coffees a day at $4; how much in 2 days?'."
+        - id: planner
+          kind: llm
+          label: Plan
+          sublabel: first half
+          description: "The first half of one model reply: it pulls out the variables and writes a short numbered plan."
+        - id: solver
+          kind: llm
+          label: Solve
+          sublabel: same reply
+          description: "The second half of the same reply: it works through each planned step, showing the intermediate values."
+        - id: extractor
+          kind: llm
+          label: Extract
+          description: "A short second call that reads the reasoning and returns only the final answer, in the expected format."
+        - id: out
+          kind: io
+          label: Answer
+          description: "The bare answer, such as 960, returned with the reasoning that produced it."
+      edges:
+        - id: ask
+          from: user
+          to: planner
+          description: "The question goes in with the Plan-and-Solve trigger sentence appended."
+          example: "Q: A cafe sells 120 coffees a day at $4 each. How much does it take in over 2 days? A: Let's first understand the problem..."
+        - id: plan
+          from: planner
+          to: solver
+          label: plan
+          description: "The plan is written into the same reply, so the solving half follows it step by step."
+          example: "Variables: 120 coffees/day, $4 each, 2 days. Plan: 1. Daily takings. 2. Multiply by the days."
+        - id: work
+          from: solver
+          to: extractor
+          label: reasoning
+          description: "The full reasoning text, plan and worked steps together, goes to the extraction call."
+          example: "Step 1: 120 x $4 = $480 a day. Step 2: $480 x 2 = $960. The answer is $960."
+        - id: answer
+          from: extractor
+          to: out
+          description: "The extracted answer leaves in the expected format, with no reasoning around it."
+          example: "960 (dollars)"
+      scenarios:
+        - id: word-problem
+          label: A two-step word problem
+          steps:
+            - id: ask
+              caption: The question arrives with the instruction to plan first, then solve.
+              duration: 1000
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question } }
+            - id: plan
+              caption: The model pulls out the variables and writes a two-step plan before calculating anything.
+              duration: 2400
+              events:
+                - { type: activate, node: planner, status: thinking, at: [0, 0.6] }
+                - { type: send, edge: plan, token: { kind: tokens, label: 2 steps }, at: [0.6, 1] }
+            - id: solve
+              caption: In the same reply it carries out each step, showing the intermediate values.
+              duration: 2400
+              events:
+                - { type: activate, node: solver, status: thinking, at: [0, 0.6] }
+                - { type: send, edge: work, token: { kind: tokens, label: reasoning }, at: [0.6, 1] }
+            - id: extract
+              caption: A second, short call reads off the final answer.
+              duration: 2000
+              events:
+                - { type: activate, node: extractor, status: thinking, at: [0, 0.4] }
+                - { type: send, edge: answer, token: { kind: result, label: "960" }, at: [0.4, 0.9] }
+                - { type: activate, node: out, status: done, at: [0.85, 1] }
+  - id: as-needed
+    name: As-needed (ADaPT)
+    summary: "No upfront plan: the executor tries the task directly, and only a step that fails is handed to the planner to split into sub-steps, recursively."
+    origin:
+      by: Archiki Prasad et al.
+      org: UNC Chapel Hill, Allen Institute for AI
+      year: 2023
+      url: https://arxiv.org/abs/2311.05772
+      kind: introduced
+      note: "ADaPT (NAACL 2024 Findings): As-needed Decomposition and Planning, which decomposes a task only when the executor cannot complete it."
+    build:
+      goal: "Complete a task by trying it directly with a tool-using executor, and decompose only the parts that fail into sub-steps, recursively, up to a depth limit."
+      steps:
+        - "Hand the task to the executor with the {{prompt:executor}}; it works with its tools and must end by reporting success with a result, or failure with a reason."
+        - "If the executor reports success, return its result for this task."
+        - "If it reports failure and the depth limit is not reached, call the planner with the {{prompt:decompose}}, passing the task and the failure reason, and parse its JSON into sub_steps plus a logic of and or or."
+        - "Run each sub-step through this same procedure, one level deeper. With and, stop at the first sub-step that fails; with or, stop at the first that succeeds."
+        - "Combine the sub-step results into the result for the parent task and return it upwards."
+      stop: "Stop when the top-level task succeeds, or when a task fails at the depth limit (default 3). On failure, return the tree of attempted sub-steps with each one's result or reason."
+      requirements:
+        - "Make the depth limit (default 3), the sub-steps per decomposition (default 4) and the executor's tool calls per attempt (default 8) parameters."
+        - "Require the executor to end with an explicit success or failure line; treat a missing or unparseable verdict as failure with the raw reply as the reason."
+        - "If the planner's JSON cannot be parsed, retry once with the parse error appended, then report the task as failed."
+        - "Pass a tool error to the executor as an observation; only the executor's final verdict decides whether a task failed."
+        - "Add a test with a stub LLM whose executor fails the top task, then succeeds on both of 2 and-sub-steps; assert one planner call, three executor calls and a success result."
+    prompts:
+      - id: executor
+        title: Executor prompt
+        lang: markdown
+        source: |
+          Complete the task below using the tools. Work step by step.
+
+          <task>{{task}}</task>
+          <tools>{{tool_descriptions}}</tools>
+
+          When you finish, end with exactly one line:
+          SUCCESS: <the result>
+          or, if you cannot complete the task as a whole,
+          FAILURE: <what blocked you>
+      - id: decompose
+        title: Decompose-on-failure prompt
+        lang: markdown
+        source: |
+          An executor tried this task and could not complete it.
+
+          <task>{{task}}</task>
+          <failure>{{reason}}</failure>
+
+          Split the task into 2 to {{max_sub_steps}} smaller sub-steps that avoid
+          the blocker. Say whether all of them must succeed (and) or any one
+          is enough (or).
+
+          Respond in JSON:
+          {"logic": "and" | "or", "sub_steps": ["...", "..."]}
+    diagram:
+      nodes:
+        - id: user
+          kind: io
+          label: Task
+          description: "The whole task, tried directly first, such as 'Write a one-page brief on competitor Acme'."
+        - id: executor
+          kind: agent
+          label: Executor
+          description: "A tool-using agent that attempts the task or sub-step it is given and ends with SUCCESS or FAILURE."
+        - id: tool
+          kind: tool
+          label: Tools
+          description: "The tools the executor uses, such as web search and a page reader."
+        - id: planner
+          kind: llm
+          label: Planner
+          sublabel: on failure only
+          description: "Called only when an attempt fails: splits that one task into smaller sub-steps, marked and or or."
+        - id: plan
+          kind: memory
+          label: Sub-steps
+          description: "The sub-steps for the failed task, run one at a time; each may itself be split if it fails."
+        - id: out
+          kind: io
+          label: Result
+          description: "The finished brief, assembled from whichever attempts succeeded."
+      edges:
+        - id: task
+          from: user
+          to: executor
+          description: "The whole task goes straight to the executor, with no plan written first."
+          example: "Write a one-page brief on competitor Acme: products, pricing and recent news."
+        - id: call
+          from: executor
+          to: tool
+          description: "A tool call the executor makes while attempting its task."
+          example: "web_search(query=\"Acme pricing\")"
+        - id: observe
+          from: tool
+          to: executor
+          style: dashed
+          description: "The tool's output returns to the executor."
+          example: "No public pricing page found; Acme says 'contact sales'."
+        - id: fail
+          from: executor
+          to: planner
+          label: FAILURE
+          description: "Only a failed attempt reaches the planner, together with the executor's reason."
+          example: "FAILURE: Acme publishes no pricing, so the pricing section cannot be written."
+        - id: split
+          from: planner
+          to: plan
+          label: sub-steps
+          description: "The planner's sub-steps for the failed task are stored, with the and/or logic that combines them."
+          example: "{\"logic\": \"and\", \"sub_steps\": [\"Estimate Acme pricing from reseller listings\", \"Write the brief, marking pricing as estimated\"]}"
+        - id: next
+          from: plan
+          to: executor
+          style: loop
+          label: next sub-step
+          description: "Each sub-step goes back to the same executor, one level deeper, and is split again only if it fails."
+          example: "Estimate Acme pricing from reseller listings."
+        - id: done
+          from: executor
+          to: out
+          label: SUCCESS
+          description: "When the attempt that completes the task succeeds, its result is returned."
+          example: "SUCCESS: Acme brief, one page; pricing estimated at $20 to $60 a seat from two resellers."
+      scenarios:
+        - id: decompose-once
+          label: Fails, splits, then succeeds
+          steps:
+            - id: start
+              caption: The whole task goes straight to the executor, with no plan written first.
+              duration: 1000
+              events:
+                - { type: send, edge: task, token: { kind: prompt, label: brief } }
+            - id: attempt
+              caption: The executor searches but finds no public pricing, so it reports failure.
+              duration: 3200
+              events:
+                - { type: send, edge: call, token: { kind: tool-call }, at: [0, 0.25] }
+                - { type: activate, node: tool, status: calling, at: [0.25, 0.4] }
+                - { type: send, edge: observe, token: { kind: result, label: no pricing }, at: [0.4, 0.6] }
+                - { type: branch, node: executor, taken: fail, notTaken: [done], at: [0.6, 0.7] }
+                - { type: send, edge: fail, token: { kind: feedback, label: FAILURE }, at: [0.7, 1] }
+            - id: split
+              caption: Only now does the planner act, splitting the failed task into two sub-steps that avoid the blocker.
+              duration: 2400
+              events:
+                - { type: activate, node: planner, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: split, token: { kind: tokens, label: 2 sub-steps }, at: [0.5, 0.85] }
+                - { type: write, node: plan, at: [0.85, 1] }
+            - id: sub-step
+              caption: The executor runs each sub-step with its tools, and each one succeeds without further splitting.
+              duration: 3200
+              repeat: 2
+              events:
+                - { type: read, node: plan, at: [0, 0.1] }
+                - { type: send, edge: next, token: { kind: prompt, label: sub-step }, at: [0.1, 0.35] }
+                - { type: send, edge: call, token: { kind: tool-call }, at: [0.35, 0.55] }
+                - { type: activate, node: tool, status: calling, at: [0.55, 0.7] }
+                - { type: send, edge: observe, token: { kind: result }, at: [0.7, 0.9] }
+                - { type: activate, node: executor, status: done, at: [0.9, 1] }
+            - id: finish
+              caption: Both sub-steps succeeded, so the task they replaced has succeeded and the brief is returned.
+              duration: 2000
+              events:
+                - { type: branch, node: executor, taken: done, notTaken: [fail], at: [0, 0.3] }
+                - { type: send, edge: done, token: { kind: result, label: brief }, at: [0.3, 0.9] }
+                - { type: activate, node: out, status: done, at: [0.85, 1] }
+        - id: direct
+          label: Succeeds directly
+          steps:
+            - id: start
+              caption: The whole task goes straight to the executor.
+              duration: 1000
+              events:
+                - { type: send, edge: task, token: { kind: prompt, label: brief } }
+            - id: attempt
+              caption: The executor completes the task with its tools, so the planner is never called.
+              duration: 3200
+              events:
+                - { type: send, edge: call, token: { kind: tool-call }, at: [0, 0.25] }
+                - { type: activate, node: tool, status: calling, at: [0.25, 0.4] }
+                - { type: send, edge: observe, token: { kind: result }, at: [0.4, 0.6] }
+                - { type: branch, node: executor, taken: done, notTaken: [fail], at: [0.6, 0.7] }
+                - { type: send, edge: done, token: { kind: result, label: brief }, at: [0.7, 1] }
+                - { type: activate, node: out, status: done, at: [0.9, 1] }
