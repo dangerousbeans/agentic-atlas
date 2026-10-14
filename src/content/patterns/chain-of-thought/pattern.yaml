@@ -1,7 +1,7 @@
 slug: chain-of-thought
 name: Chain-of-Thought
 family: reasoning-prompting
-aliases: [CoT, Step-by-step reasoning, Zero-shot CoT, Extended thinking]
+aliases: [CoT, Step-by-step reasoning, Zero-shot CoT]
 summary: The model writes out its intermediate reasoning steps before the final answer, all inside one call.
 badges: { autonomy: low, cost: low, latency: medium }
 sources:
@@ -65,7 +65,7 @@ prompts:
       the solution reaches. If it reaches none, reply "Answer: unknown".
 diagram:
   groups:
-    - { id: one-call, label: One model call, children: [s1, s2, s3] }
+    - { id: one-call, label: Same reply, children: [s1, s2, s3] }
   nodes:
     - id: question
       kind: io
@@ -74,7 +74,7 @@ diagram:
     - id: model
       kind: llm
       label: Model
-      description: "One model, prompted to show its working. Everything to its right is text it writes in the same reply."
+      description: "The one model call starts here, prompted to show its working. The steps after it are text it writes in that same reply."
     - id: s1
       kind: llm
       label: Step 1

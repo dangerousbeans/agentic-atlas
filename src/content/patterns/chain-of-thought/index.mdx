@@ -22,6 +22,7 @@ Wei et al. introduced the idea in 2022 with worked examples (few-shot). Kojima e
 
 - The question is a single lookup or a classification. Extra steps add tokens and latency and do not help.
 - Latency is critical. The reasoning can be many times longer than the answer.
+- The model is small. The original paper found the steps help only at large scale, and can hurt smaller models.
 - You are already using a reasoning model. It thinks before it answers anyway, and asking it to write its steps again mostly duplicates that work.
 
 ## Trade-offs
