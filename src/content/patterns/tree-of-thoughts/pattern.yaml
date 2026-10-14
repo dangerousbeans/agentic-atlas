@@ -1,0 +1,140 @@
+slug: tree-of-thoughts
+name: Tree of Thoughts
+family: planning-search
+aliases: [ToT, Deliberate search]
+summary: Generate several candidate thoughts at each step, score them, expand the promising branches and backtrack at dead ends.
+badges: { autonomy: medium, cost: high, latency: high }
+sources:
+  - title: "Tree of Thoughts: Deliberate Problem Solving with Large Language Models (Yao et al., 2023)"
+    url: https://arxiv.org/abs/2305.10601
+related:
+  composesWith: [reflexion]
+  confusedWith:
+    - { slug: react, difference: "ReAct commits to one line of thought and acts on it; Tree of Thoughts holds several candidate lines at once, scores them, and abandons the ones that look hopeless." }
+code:
+  - id: tot
+    title: tree_of_thoughts.py
+    lang: python
+    source: |
+      def tree_of_thoughts(state, depth=0, max_depth=3, breadth=3):
+          if is_solved(state):
+              return state
+          if depth == max_depth:
+              return None
+          scored = [(rate(t), t) for t in propose(state, n=breadth)]   # sure/maybe/impossible
+          for score, thought in sorted(scored, reverse=True):
+              if score == IMPOSSIBLE:
+                  continue                         # prune: never expand a dead end
+              answer = tree_of_thoughts(thought, depth + 1)
+              if answer:
+                  return answer
+          return None                              # dead end: the caller backtracks
+prompts:
+  - id: propose
+    title: Thought proposal prompt
+    lang: markdown
+    source: |
+      Problem: {{problem}}
+
+      Progress so far:
+      {{state}}
+
+      Propose {{breadth}} different next steps. Each must be a single, concrete
+      move that follows from the progress above, and they must not duplicate
+      each other. Label them A, B, C.
+  - id: value
+    title: Thought evaluation prompt
+    lang: markdown
+    source: |
+      Problem: {{problem}}
+
+      Candidate progress:
+      {{thought}}
+
+      Can this candidate still lead to a full solution? Check it carefully
+      against the problem's constraints.
+
+      Answer with exactly one word: sure, maybe or impossible.
+      Then give one sentence of reasoning.
+diagram:
+  nodes:
+    - { id: problem, kind: io, label: Problem }
+    - { id: t1, kind: llm, label: Thought 1 }
+    - { id: t2, kind: llm, label: Thought 2 }
+    - { id: t3, kind: llm, label: Thought 3 }
+    - { id: t2a, kind: llm, label: Thought 2a, hidden: true }
+    - { id: t2b, kind: llm, label: Thought 2b, hidden: true }
+    - { id: evaluator, kind: evaluator, label: Evaluator }
+    - { id: out, kind: io, label: Solution }
+  edges:
+    - { id: p1, from: problem, to: t1 }
+    - { id: p2, from: problem, to: t2 }
+    - { id: p3, from: problem, to: t3 }
+    - { id: g1, from: t2, to: t2a, label: expand }
+    - { id: g2, from: t2, to: t2b, label: expand }
+    - { id: s1, from: t1, to: evaluator, style: dashed }
+    - { id: s2, from: t2, to: evaluator, style: dashed }
+    - { id: s3, from: t3, to: evaluator, style: dashed }
+    - { id: s4, from: t2a, to: evaluator, style: dashed }
+    - { id: s5, from: t2b, to: evaluator, style: dashed }
+    - { id: solved, from: t2b, to: out, label: solved }
+  scenarios:
+    - id: game-of-24
+      label: '"Make 24 from 4, 9, 10, 13"'
+      steps:
+        - id: propose
+          caption: The model proposes three different first moves instead of committing to one.
+          duration: 2400
+          codeRef: { block: tot, lines: "6" }
+          events:
+            - { type: send, edge: p1, token: { kind: prompt, label: 4+9=13 }, at: [0, 0.6] }
+            - { type: send, edge: p2, token: { kind: prompt, label: 10-4=6 }, at: [0.15, 0.75] }
+            - { type: send, edge: p3, token: { kind: prompt, label: 13*4=52 }, at: [0.3, 0.9] }
+        - id: score
+          caption: "The evaluator rates each candidate: thoughts 1 and 3 look impossible, thought 2 looks sure."
+          duration: 3000
+          codeRef: { block: tot, lines: "6" }
+          events:
+            - { type: send, edge: s1, token: { kind: feedback, label: impossible }, at: [0, 0.5] }
+            - { type: send, edge: s2, token: { kind: feedback, label: sure }, at: [0.2, 0.7] }
+            - { type: send, edge: s3, token: { kind: feedback, label: impossible }, at: [0.4, 0.9] }
+            - { type: activate, node: evaluator, status: thinking, at: [0.1, 1] }
+        - id: prune
+          caption: The impossible branches are pruned and never expanded.
+          duration: 1800
+          codeRef: { block: tot, lines: "7-9" }
+          events:
+            - { type: branch, node: problem, taken: p2, notTaken: [p1, p3], at: [0, 0.25] }
+            - { type: activate, node: t1, status: error, at: [0.25, 0.6] }
+            - { type: activate, node: t3, status: error, at: [0.4, 0.8] }
+        - id: expand
+          caption: The search expands the one promising branch into two follow-up thoughts.
+          duration: 2400
+          codeRef: { block: tot, lines: "10" }
+          events:
+            - { type: activate, node: t2, status: thinking, at: [0, 0.3] }
+            - { type: appear, node: t2a, at: [0.3, 0.45] }
+            - { type: appear, node: t2b, at: [0.4, 0.55] }
+            - { type: send, edge: g1, token: { kind: prompt, label: 6+9=15 }, at: [0.5, 1] }
+            - { type: send, edge: g2, token: { kind: prompt, label: 13-9=4 }, at: [0.5, 1] }
+        - id: score-children
+          caption: "The follow-ups are rated in turn: 2a cannot reach 24, but 2b can."
+          duration: 2600
+          codeRef: { block: tot, lines: "6" }
+          events:
+            - { type: send, edge: s4, token: { kind: feedback, label: impossible }, at: [0, 0.5] }
+            - { type: send, edge: s5, token: { kind: feedback, label: sure }, at: [0.3, 0.8] }
+        - id: backtrack
+          caption: Thought 2a is a dead end, so the search backs up and follows 2b instead.
+          duration: 2200
+          codeRef: { block: tot, lines: "12" }
+          events:
+            - { type: branch, node: t2, taken: g2, notTaken: [g1], at: [0, 0.4] }
+            - { type: activate, node: t2a, status: error, at: [0.4, 1] }
+        - id: solved
+          caption: The last step, 6 times 4, makes 24, and the finished path is returned.
+          duration: 2200
+          codeRef: { block: tot, lines: "2-3" }
+          events:
+            - { type: activate, node: t2b, status: thinking, at: [0, 0.4] }
+            - { type: send, edge: solved, token: { kind: result, label: 6*4=24 }, at: [0.4, 1] }

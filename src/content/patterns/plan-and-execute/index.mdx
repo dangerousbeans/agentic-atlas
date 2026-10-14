@@ -1,0 +1,34 @@
+## Problem
+
+A ReAct agent decides one step at a time, which makes long tasks wander. By step eight it may have forgotten the original structure of the job, or spent ten turns on a side issue. Every turn also calls the biggest model, even when the step is as simple as "fetch this page". You want the foresight of a plan without losing the ability to adapt when the world disagrees with it.
+
+## How it works
+
+The <NodeRef id="planner">planner</NodeRef> reads the <NodeRef id="user">goal</NodeRef> once and writes a numbered list of steps, for example "find the competitor's pricing page", "summarize their positioning" and "compare against ours". The list is stored as an explicit <NodeRef id="plan">plan</NodeRef> that your code, and you, can inspect.
+
+The <NodeRef id="executor">executor</NodeRef> takes the next step and carries it out, usually as a small agent with <NodeRef id="tool">tools</NodeRef> of its own. It sees only the step, not the whole strategy, so it can be a cheaper model. Its result goes to the <NodeRef id="replanner">replanner</NodeRef>, which is the distinctive part. The replanner looks at the goal, the remaining plan and what has been learned, then either rewrites the remaining steps or declares the work done and sends the <NodeRef id="out">answer</NodeRef>.
+
+The loop in the diagram is that revise edge. Without it, this would be a fixed pipeline. With it, a surprise in step one, such as the competitor having no public pricing, changes steps two and three before they run.
+
+## When to use
+
+- The task is long and multi-step, and the broad shape is predictable even if the details are not.
+- You want a visible plan for debugging, approval or progress reporting.
+- Steps are cheap and focused enough that a smaller model can execute them.
+
+## When to avoid
+
+- The task is short. Planning overhead exceeds the savings.
+- The next step is unknowable until you see results. ReAct fits that better.
+- Steps depend on each other so tightly that every plan would be rewritten each turn.
+
+## Trade-offs
+
+You pay for an extra model call after every step, but you gain a plan that is easy to read, log and interrupt. Strong models can plan and weaker, cheaper ones can execute. Replanning every time is the safest policy and the most expensive. Some systems replan only when a step fails.
+
+## Failure modes
+
+- **Over-planning:** twelve steps for a three-step job. Ask for the fewest steps.
+- **Stale plan:** results contradict the plan and nobody updates it. This is the job of the replanner, so do not skip it.
+- **Repeated work:** the replanner re-adds a completed step. Show it the full history and say not to repeat steps.
+- **Executor drift:** a step is too vague, and the executor wanders. Make steps self-contained.

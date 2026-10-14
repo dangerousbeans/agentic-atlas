@@ -1,0 +1,130 @@
+slug: plan-and-execute
+name: Plan-and-Execute
+family: planning-search
+aliases: [Plan-and-Solve, Planner-executor, Planning]
+summary: A planner writes a step list, an executor runs each step, and a replanner revises the remaining steps.
+badges: { autonomy: high, cost: high, latency: high }
+sources:
+  - title: "Plan-and-Solve Prompting: Improving Zero-Shot Chain-of-Thought Reasoning by Large Language Models (Wang et al., 2023)"
+    url: https://arxiv.org/abs/2305.04091
+  - title: Plan-and-Execute Agents (LangChain, 2024)
+    url: https://www.langchain.com/blog/planning-agents
+related:
+  composesWith: [react, reflexion]
+  confusedWith:
+    - { slug: orchestrator-workers, difference: "Orchestrator-Workers hands subtasks to plain LLM workers once and synthesizes; Plan-and-Execute keeps an explicit, persistent plan that a replanner revises after every step." }
+    - { slug: react, difference: "ReAct chooses one action at a time with no written plan; Plan-and-Execute writes the whole plan first, then lets a replanner adjust it as results arrive." }
+code:
+  - id: plan-execute
+    title: plan_and_execute.py
+    lang: python
+    source: |
+      def plan_and_execute(goal, tools, max_replans=5):
+          plan = llm(PLANNER_PROMPT, goal=goal).steps
+          past_steps = []
+          for _ in range(max_replans):
+              step = plan[0]
+              result = executor_agent(step, tools)     # a small ReAct loop
+              past_steps.append((step, result))
+              decision = llm(REPLAN_PROMPT, goal=goal, plan=plan, past=past_steps)
+              if decision.final_answer:
+                  return decision.final_answer
+              plan = decision.remaining_steps          # revised, not just popped
+          return best_effort(past_steps)
+prompts:
+  - id: planner
+    title: Planner prompt
+    lang: markdown
+    source: |
+      For the goal below, write a step-by-step plan. Each step must be a
+      self-contained task that one worker with {{tool_names}} can complete.
+      Use as few steps as possible. Do not add a step that only restates
+      the goal.
+
+      <goal>{{goal}}</goal>
+
+      Respond as a numbered list. The last step should produce the final answer.
+  - id: replanner
+    title: Replanner prompt
+    lang: markdown
+    source: |
+      Goal: {{goal}}
+
+      Current plan:
+      {{plan}}
+
+      Steps already completed, with results:
+      {{past_steps}}
+
+      Update the plan. Remove steps that are done or no longer needed, and
+      add or change steps if the results require it. Do not repeat a
+      completed step.
+
+      If you can already answer the goal, respond with:
+      {"final_answer": "..."}
+      Otherwise respond with:
+      {"remaining_steps": ["...", "..."]}
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Goal }
+    - { id: planner, kind: llm, label: Planner }
+    - { id: plan, kind: memory, label: Plan }
+    - { id: executor, kind: agent, label: Executor }
+    - { id: tool, kind: tool, label: Tools }
+    - { id: replanner, kind: llm, label: Replanner }
+    - { id: out, kind: io, label: Answer }
+  edges:
+    - { id: goal, from: user, to: planner }
+    - { id: draft, from: planner, to: plan, label: steps }
+    - { id: next, from: plan, to: executor, label: next step }
+    - { id: call, from: executor, to: tool }
+    - { id: observe, from: tool, to: executor, style: dashed }
+    - { id: report, from: executor, to: replanner, label: result }
+    - { id: revise, from: replanner, to: plan, style: loop, label: revise }
+    - { id: finish, from: replanner, to: out, label: done }
+  scenarios:
+    - id: competitor-brief
+      label: '"Write a brief on a competitor"'
+      steps:
+        - id: start
+          caption: The goal reaches the planner before any tool is touched.
+          duration: 1000
+          codeRef: { block: plan-execute, lines: "1" }
+          events:
+            - { type: send, edge: goal, token: { kind: prompt, label: brief goal } }
+        - id: plan
+          caption: The planner writes a three-step plan and stores it as an explicit, inspectable list.
+          duration: 2600
+          codeRef: { block: plan-execute, lines: "2" }
+          events:
+            - { type: activate, node: planner, status: thinking, at: [0, 0.4] }
+            - { type: send, edge: draft, token: { kind: tokens, label: 3 steps }, at: [0.4, 0.8] }
+            - { type: write, node: plan, at: [0.8, 1] }
+        - id: run-step
+          caption: The executor does the next step with its tools, and the replanner revises what remains.
+          duration: 4400
+          repeat: 2
+          codeRef: { block: plan-execute, lines: "5-11" }
+          events:
+            - { type: read, node: plan, at: [0, 0.1] }
+            - { type: send, edge: next, token: { kind: prompt, label: step }, at: [0.1, 0.22] }
+            - { type: send, edge: call, token: { kind: tool-call }, at: [0.22, 0.34] }
+            - { type: activate, node: tool, status: calling, at: [0.34, 0.44] }
+            - { type: send, edge: observe, token: { kind: result }, at: [0.44, 0.56] }
+            - { type: send, edge: report, token: { kind: result, label: finding }, at: [0.56, 0.68] }
+            - { type: branch, node: replanner, taken: revise, notTaken: [finish], at: [0.68, 0.78] }
+            - { type: send, edge: revise, token: { kind: feedback, label: new plan }, at: [0.78, 0.9] }
+            - { type: write, node: plan, at: [0.9, 1] }
+        - id: last-step
+          caption: After the final step the replanner sees the goal is met and returns the answer instead of a new plan.
+          duration: 4400
+          codeRef: { block: plan-execute, lines: "5-10" }
+          events:
+            - { type: read, node: plan, at: [0, 0.1] }
+            - { type: send, edge: next, token: { kind: prompt, label: step }, at: [0.1, 0.22] }
+            - { type: send, edge: call, token: { kind: tool-call }, at: [0.22, 0.34] }
+            - { type: activate, node: tool, status: calling, at: [0.34, 0.44] }
+            - { type: send, edge: observe, token: { kind: result }, at: [0.44, 0.56] }
+            - { type: send, edge: report, token: { kind: result, label: finding }, at: [0.56, 0.68] }
+            - { type: branch, node: replanner, taken: finish, notTaken: [revise], at: [0.68, 0.78] }
+            - { type: send, edge: finish, token: { kind: result, label: brief }, at: [0.78, 1] }

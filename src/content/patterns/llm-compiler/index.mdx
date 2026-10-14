@@ -1,0 +1,36 @@
+## Problem
+
+Many questions need several lookups, and most of them do not depend on each other. Checking flights, weather and hotel prices for a weekend trip are three separate calls. A ReAct agent or ReWOO runs them one after another, so the wall-clock time is the sum of all tool latencies, even though most of the waiting could overlap.
+
+## How it works
+
+LLMCompiler borrows its idea from compilers and operating systems. The <NodeRef id="planner">planner</NodeRef> reads the <NodeRef id="user">question</NodeRef> and produces not a list but a dependency graph (a DAG): each task names the tool it calls and which earlier tasks it needs. In the diagram, flights, weather and hotel are three tasks, and the hotel task needs the arrival date from flights, written as `$1` in its arguments.
+
+The <NodeRef id="scheduler">scheduler</NodeRef> is plain code, not a model. It repeatedly fires every task whose dependencies are resolved. Here, <NodeRef id="t1">flights</NodeRef> and <NodeRef id="t2">weather</NodeRef> start together. The <NodeRef id="t3">hotel</NodeRef> task waits, then fires the moment flights return and its argument can be filled in.
+
+When everything has finished, the <NodeRef id="joiner">joiner</NodeRef> decides. If the results answer the question, it sends the <NodeRef id="out">answer</NodeRef>. If something failed or turned out to be missing, it sends the planner back to produce a revised graph that accounts for what was learned. The authors also describe streaming the plan so tasks can begin before the planner has finished writing.
+
+In the paper's evaluations, this parallelism reduced latency substantially compared with sequential ReAct-style execution.
+
+## When to use
+
+- A question needs several tool calls, and at least some are independent.
+- Tool latency dominates, as with web APIs, databases or search.
+- You can describe tool inputs well enough for a planner to wire the dependencies correctly.
+
+## When to avoid
+
+- The next step depends on interpreting the previous result, such as "open the best match". The graph cannot be drawn upfront. Use ReAct.
+- There is only one call, or a strict chain with no parallelism. The machinery adds nothing.
+- Your tools are rate-limited, so firing them together backfires.
+
+## Trade-offs
+
+You trade planning difficulty for speed. The planner must get dependencies right: a missed dependency runs a task with a missing argument, and an invented one removes parallelism. The joiner adds one more model call, and replanning costs another full planning pass, but it gives you a recovery path that ReWOO lacks.
+
+## Failure modes
+
+- **Missed dependency:** a task starts before its input exists. Validate the graph and check that every `$n` refers to an earlier task.
+- **Over-serialization:** the planner chains independent tasks out of habit. Tell it explicitly that independent tasks run concurrently.
+- **Replan loops:** the joiner keeps asking for another pass. Cap the replans.
+- **Partial failure:** one task errors and poisons its dependents. Pass the error to the joiner so it can decide.

@@ -1,0 +1,170 @@
+slug: llm-compiler
+name: LLMCompiler
+family: planning-search
+aliases: [Parallel function calling, Task-DAG planner]
+summary: The planner streams a dependency graph (DAG) of tool calls; independent ones run in parallel; a joiner either answers or triggers a replan.
+badges: { autonomy: medium, cost: medium, latency: low }
+sources:
+  - title: "An LLM Compiler for Parallel Function Calling (Kim et al., 2023)"
+    url: https://arxiv.org/abs/2312.04511
+  - title: Plan-and-Execute Agents (LangChain, 2024)
+    url: https://www.langchain.com/blog/planning-agents
+related:
+  composesWith: [react]
+  confusedWith:
+    - { slug: rewoo, difference: "ReWOO runs its planned calls in sequence; LLMCompiler plans a dependency graph, fires independent calls in parallel, and lets a joiner trigger a replan." }
+code:
+  - id: compiler
+    title: llm_compiler.py
+    lang: python
+    source: |
+      def llm_compiler(question, tools, max_replans=2):
+          context = []
+          for _ in range(max_replans + 1):
+              dag = llm(PLANNER_PROMPT, question=question, context=context)  # tasks + deps
+              results = {}
+              while dag.pending():
+                  ready = dag.ready(results)       # tasks whose dependencies are resolved
+                  results |= parallel(tools[t.tool](**t.resolve(results)) for t in ready)
+              verdict = llm(JOINER_PROMPT, question=question, results=results)
+              if verdict.answer:
+                  return verdict.answer
+              context.append((dag, results, verdict.reason))   # replan with what we learned
+          return best_effort(context)
+prompts:
+  - id: planner
+    title: Planner prompt
+    lang: markdown
+    source: |
+      Break the question into tool calls and list them as a dependency graph.
+      Give every task a number. If a task needs the output of an earlier task,
+      write its number as $1, $2 and so on in the arguments. Tasks that do not
+      reference each other will run at the same time, so do not add a
+      dependency unless it is really needed.
+
+      Tools:
+      {{tool_descriptions}}
+
+      Format:
+      1. tool_name(arguments)
+      2. tool_name(arguments)
+      3. tool_name(arguments using $1)
+      end_of_plan
+
+      {{#if context}}
+      An earlier plan did not answer the question:
+      {{context}}
+      Plan only what is still missing.
+      {{/if}}
+
+      Question: {{question}}
+  - id: joiner
+    title: Joiner prompt
+    lang: markdown
+    source: |
+      Decide whether the results below answer the question.
+
+      Question: {{question}}
+      Results: {{results}}
+
+      Respond in JSON, either
+      {"answer": "..."}
+      or, if something is missing or a task failed,
+      {"replan": true, "reason": "what is missing and why"}
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Question }
+    - { id: planner, kind: llm, label: Planner }
+    - { id: scheduler, kind: router, label: Scheduler }
+    - { id: t1, kind: tool, label: Flights }
+    - { id: t2, kind: tool, label: Weather }
+    - { id: t3, kind: tool, label: Hotel }
+    - { id: joiner, kind: aggregator, label: Joiner }
+    - { id: out, kind: io, label: Answer }
+  edges:
+    - { id: ask, from: user, to: planner }
+    - { id: dag, from: planner, to: scheduler, label: task DAG }
+    - { id: run1, from: scheduler, to: t1 }
+    - { id: run2, from: scheduler, to: t2 }
+    - { id: dep, from: t1, to: t3, style: dashed, label: "$1 = date" }
+    - { id: res1, from: t1, to: joiner }
+    - { id: res2, from: t2, to: joiner }
+    - { id: res3, from: t3, to: joiner }
+    - { id: finish, from: joiner, to: out, label: answer }
+    - { id: replan, from: joiner, to: planner, style: loop, label: replan }
+  scenarios:
+    - id: weekend-trip
+      label: '"Plan a weekend in Lisbon"'
+      steps:
+        - id: ask
+          caption: The question reaches the planner.
+          duration: 1000
+          codeRef: { block: compiler, lines: "1-2" }
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: Lisbon trip } }
+        - id: plan
+          caption: "The planner emits a graph of tasks: flights and weather are independent, but the hotel needs the arrival date from flights."
+          duration: 2800
+          codeRef: { block: compiler, lines: "3-4" }
+          events:
+            - { type: activate, node: planner, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: dag, token: { kind: tokens, label: 3 tasks }, at: [0.5, 1] }
+        - id: fan-out
+          caption: The scheduler fires every task whose dependencies are met, so flights and weather start at the same moment while the hotel task waits.
+          duration: 2200
+          codeRef: { block: compiler, lines: "6-8" }
+          events:
+            - { type: activate, node: scheduler, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: run1, token: { kind: tool-call, label: flights }, at: [0.3, 0.7] }
+            - { type: send, edge: run2, token: { kind: tool-call, label: weather }, at: [0.3, 0.7] }
+            - { type: activate, node: t3, status: waiting, at: [0.3, 1] }
+        - id: parallel-run
+          caption: Weather returns first; flights return a moment later. Both ran concurrently, not one after the other.
+          duration: 2600
+          codeRef: { block: compiler, lines: "8" }
+          events:
+            - { type: activate, node: t1, status: calling, at: [0, 0.6] }
+            - { type: activate, node: t2, status: calling, at: [0, 0.4] }
+            - { type: send, edge: res2, token: { kind: result, label: sunny 22C }, at: [0.4, 0.7] }
+            - { type: send, edge: res1, token: { kind: result, label: arrive Fri }, at: [0.6, 0.9] }
+        - id: release-t3
+          caption: The flight result unblocks the hotel task. Its argument is filled in from task 1, and it fires.
+          duration: 2600
+          codeRef: { block: compiler, lines: "7-8" }
+          events:
+            - { type: send, edge: dep, token: { kind: result, label: Fri }, at: [0, 0.35] }
+            - { type: activate, node: t3, status: calling, at: [0.35, 0.65] }
+            - { type: send, edge: res3, token: { kind: result, label: hotel booked }, at: [0.65, 1] }
+        - id: join
+          caption: The joiner sees all three results are present and answers; it could instead have sent the planner back.
+          duration: 2600
+          codeRef: { block: compiler, lines: "9-11" }
+          events:
+            - { type: branch, node: joiner, taken: finish, notTaken: [replan], at: [0, 0.4] }
+            - { type: send, edge: finish, token: { kind: result, label: itinerary }, at: [0.4, 1] }
+    - id: joiner-replans
+      label: A result is missing, so the joiner replans
+      steps:
+        - id: ask
+          caption: The question reaches the planner.
+          duration: 1000
+          codeRef: { block: compiler, lines: "1-2" }
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: Lisbon trip } }
+        - id: plan-and-run
+          caption: The scheduler runs the first graph, but the flights tool returns an error.
+          duration: 3200
+          codeRef: { block: compiler, lines: "3-8" }
+          events:
+            - { type: send, edge: dag, token: { kind: tokens, label: 3 tasks }, at: [0, 0.2] }
+            - { type: send, edge: run1, token: { kind: tool-call, label: flights }, at: [0.2, 0.45] }
+            - { type: send, edge: run2, token: { kind: tool-call, label: weather }, at: [0.2, 0.45] }
+            - { type: activate, node: t1, status: error, at: [0.45, 0.7] }
+            - { type: send, edge: res1, token: { kind: result, label: no data }, at: [0.7, 1] }
+        - id: join
+          caption: The joiner sees the gap and sends a replan request back to the planner.
+          duration: 2400
+          codeRef: { block: compiler, lines: "9-12" }
+          events:
+            - { type: branch, node: joiner, taken: replan, notTaken: [finish], at: [0, 0.4] }
+            - { type: send, edge: replan, token: { kind: feedback, label: flights failed }, at: [0.4, 1] }
