@@ -10,6 +10,8 @@ The <NodeRef id="executor">executor</NodeRef> takes the next step and carries it
 
 The loop in the diagram is that revise edge. Without it, this would be a fixed pipeline. With it, a surprise in step one, such as the competitor having no public pricing, changes steps two and three before they run.
 
+Two variants sit at either end of this design. Plan-and-Solve, the prompting technique the pattern grew from, drops the tools and the replanner: one model call writes a plan and works through it. As-needed decomposition (ADaPT) drops the upfront plan instead: the executor tries the whole task first, and the planner splits only the parts that fail.
+
 ## When to use
 
 - The task is long and multi-step, and the broad shape is predictable even if the details are not.

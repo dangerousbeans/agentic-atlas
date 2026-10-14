@@ -11,6 +11,30 @@ related:
   composesWith: [reflexion]
   confusedWith:
     - { slug: react, difference: "ReAct commits to one line of thought and acts on it; Tree of Thoughts holds several candidate lines at once, scores them, and abandons the ones that look hopeless." }
+origin:
+  by: Shunyu Yao et al.
+  org: Princeton University, Google DeepMind
+  year: 2023
+  url: https://arxiv.org/abs/2305.10601
+  kind: introduced
+  note: "NeurIPS 2023. Jieyi Long's 'Large Language Model Guided Tree-of-Thought' (https://arxiv.org/abs/2305.08291) appeared concurrently, the same month."
+build:
+  goal: "Solve a problem by depth-first search over partial solutions: propose several next thoughts, rate each, expand the most promising, and backtrack when a branch dead-ends."
+  steps:
+    - "Represent a state as the problem plus the list of thoughts taken so far; push the empty state onto a stack."
+    - "Pop the top state. If a deterministic check says it solves the problem, return its thoughts as the solution."
+    - "If the state is below the depth limit, call the model with the {{prompt:propose}}, passing the problem and the state, and parse up to breadth distinct candidate thoughts."
+    - "Rate each candidate with the {{prompt:value}} and read the first word as sure, maybe or impossible."
+    - "Drop the impossible candidates, and push the rest onto the stack so the best-rated is popped next (sure before maybe)."
+    - "When a state has no surviving children or is at the depth limit, do nothing more with it; popping the next state is the backtrack to its parent's next-best sibling."
+  stop: "Stop when a state passes the solution check, when the stack is empty, or after 100 model calls. If no solution is found, return the deepest state reached with a status saying the search failed."
+  requirements:
+    - "Make the breadth (default 3), the depth limit (default 3) and the total model-call budget (default 100) parameters."
+    - "If a rating reply does not start with sure, maybe or impossible, treat it as maybe: never prune a branch on a parse failure."
+    - "Drop proposed thoughts that duplicate a sibling or a state already visited, so the breadth is not wasted."
+    - "Use a deterministic solution check (here, evaluate the arithmetic) wherever the task allows, instead of asking the model."
+    - "Add a Game of 24 test with a stub LLM rating 10-4=6 sure, 4+9=13 and 13*4=52 impossible, then 6+9=15 sure, 13-9=4 maybe, and every child of 6+9=15 impossible; assert 4 proposal calls and the path 10-4=6, 13-9=4, 6*4=24."
+defaultVariantName: Depth-first
 prompts:
   - id: propose
     title: Thought proposal prompt
@@ -202,3 +226,108 @@ diagram:
           events:
             - { type: activate, node: t2b, status: thinking, at: [0, 0.4] }
             - { type: send, edge: solved, token: { kind: result, label: 6*4=24 }, at: [0.4, 1] }
+variants:
+  - id: bfs-beam
+    name: Breadth-first beam
+    summary: "Expand every state on the frontier together, rate all the children, and keep only the best b for the next level; there is no backtracking."
+    build:
+      goal: "Solve a problem by breadth-first search with a beam: at each level expand every kept state, rate every child, and keep the best few, for a fixed number of levels."
+      steps:
+        - "Start the frontier as a list holding one empty state: the problem with no thoughts taken."
+        - "For every state on the frontier, call the model with the {{prompt:propose}} and parse up to breadth candidate thoughts, giving the next level's children."
+        - "Rate every child with the {{prompt:value}}, mapping sure, maybe and impossible to scores of 20, 1 and 0.001 as the paper does, and summing over the samples if you rate more than once."
+        - "Sort the children by score and keep the top beam-width as the new frontier; dropping impossible children outright is a simplification that saves calls."
+        - "Repeat for the configured number of levels, then return the best-scoring final state that passes the solution check."
+      stop: "Stop after the last level, or earlier if the frontier is empty. If no final state passes the solution check, return the best-scoring one with a status saying it is unverified."
+      requirements:
+        - "Make the beam width (default 5), the breadth per state (default 5) and the number of levels (default 3) parameters."
+        - "Run the proposal and rating calls for one level concurrently, with a cap on calls in flight (default 8)."
+        - "If a rating reply does not start with sure, maybe or impossible, score it as maybe; never prune on a parse failure."
+        - "Deduplicate children with the same state across the whole level before rating, so the beam is not filled with copies."
+        - "Add a test with a stub LLM, beam width 2 and 3 levels; assert 5 proposal calls (1 + 2 + 2), 2 states kept after each of the first two levels, and the exact path 10-4=6, 13-9=4, 6*4=24."
+    diagram:
+      nodes:
+        - id: problem
+          kind: io
+          label: Problem
+          description: "The puzzle to solve: make 24 from 4, 9, 10 and 13 using + - * /."
+        - id: proposer
+          kind: llm
+          label: Proposer
+          sublabel: whole frontier
+          description: "Proposes several next thoughts for every state on the frontier at once, giving one whole level of children."
+        - id: evaluator
+          kind: evaluator
+          label: Evaluator
+          description: "Rates every child sure, maybe or impossible and turns the ratings into scores for ranking."
+        - id: beam
+          kind: memory
+          label: Beam
+          sublabel: top b kept
+          description: "The frontier: only the top-scoring b states of each level are kept; the rest are discarded for good."
+        - id: out
+          kind: io
+          label: Solution
+          description: "The best final state after the last level, checked to make 24."
+      edges:
+        - id: start
+          from: problem
+          to: proposer
+          description: "The starting numbers form the first, one-state frontier."
+          example: "Input: 4 9 10 13"
+        - id: children
+          from: proposer
+          to: evaluator
+          label: level
+          description: "Every proposed child of every frontier state goes to the evaluator together."
+          example: "10-4=6 (left: 6 9 13); 4+9=13 (left: 10 13 13); 13*4=52 (left: 9 10 52); 13-9=4 (left: 4 4 10) ..."
+        - id: keep
+          from: evaluator
+          to: beam
+          label: top b
+          description: "The children are ranked by score and only the best b are kept as the new frontier."
+          example: "Keep: 10-4=6 (sure), 13-9=4 (sure). Drop: 13*4=52 (impossible), 4+9=13 (maybe, ranked lower)."
+        - id: next
+          from: beam
+          to: proposer
+          style: loop
+          label: next level
+          description: "Every state in the beam is expanded at the next level, side by side."
+          example: "Frontier: [10-4=6 (left: 6 9 13), 13-9=4 (left: 4 4 10)]"
+        - id: finish
+          from: beam
+          to: out
+          label: best
+          description: "After the last level, the best-scoring state that passes the check is returned."
+          example: "10-4=6; 13-9=4; 6*4=24"
+      scenarios:
+        - id: game-of-24
+          label: '"Make 24 from 4, 9, 10, 13"'
+          steps:
+            - id: start
+              caption: The starting numbers are the only state on the frontier.
+              duration: 1000
+              events:
+                - { type: send, edge: start, token: { kind: prompt, label: 4 9 10 13 } }
+            - id: level
+              caption: Every frontier state is expanded, every child is rated, and only the best b survive to the next level.
+              duration: 3600
+              repeat: 2
+              events:
+                - { type: activate, node: proposer, status: thinking, at: [0, 0.25] }
+                - { type: send, edge: children, token: { kind: tokens, label: children }, at: [0.25, 0.45] }
+                - { type: activate, node: evaluator, status: thinking, at: [0.45, 0.6] }
+                - { type: send, edge: keep, token: { kind: result, label: top b }, at: [0.6, 0.8] }
+                - { type: write, node: beam, at: [0.75, 0.85] }
+                - { type: send, edge: next, token: { kind: prompt, label: frontier }, at: [0.85, 1] }
+            - id: last-level
+              caption: At the last level a surviving state makes 24, and it is returned; no branch was ever revisited.
+              duration: 3600
+              events:
+                - { type: activate, node: proposer, status: thinking, at: [0, 0.25] }
+                - { type: send, edge: children, token: { kind: tokens, label: children }, at: [0.25, 0.45] }
+                - { type: activate, node: evaluator, status: thinking, at: [0.45, 0.6] }
+                - { type: send, edge: keep, token: { kind: result, label: top b }, at: [0.6, 0.75] }
+                - { type: write, node: beam, at: [0.72, 0.8] }
+                - { type: branch, node: beam, taken: finish, notTaken: [next], at: [0.8, 0.85] }
+                - { type: send, edge: finish, token: { kind: result, label: 6*4=24 }, at: [0.85, 1] }
