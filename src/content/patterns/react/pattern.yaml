@@ -13,6 +13,30 @@ related:
   composesWith: [augmented-llm, reflexion]
   confusedWith:
     - { slug: augmented-llm, difference: "An augmented LLM makes a bounded handful of tool calls for one request; ReAct keeps looping, choosing each next action from the last observation, until it judges the goal met." }
+origin:
+  by: Shunyu Yao et al.
+  org: Princeton University and Google Research (Brain team)
+  year: 2022
+  url: https://arxiv.org/abs/2210.03629
+  kind: introduced
+  note: "Published at ICLR 2023. The Thought, Action, Observation loop it introduced is the basis of most tool-using agents."
+build:
+  goal: "Answer a question that needs several lookups by letting one model alternate Thought, Action and Observation, choosing each next action from the last result, until it writes a Final Answer."
+  steps:
+    - "Fill the {{prompt:react-system}} with the tool descriptions and the question; this is the start of the transcript."
+    - "Call the model with the transcript, stopping generation at the text 'Observation:' so it cannot write one itself."
+    - "Parse the reply. If it contains 'Final Answer:', return the text after it. Otherwise read its Action line as tool_name[input]."
+    - "Run the named tool with that input and append 'Observation: ' plus the result to the transcript. If the tool fails or times out, append the error message as the Observation."
+    - "If the Action line does not parse or names an unknown tool, append an Observation saying so and listing the valid tool names."
+    - "Call the model again with the longer transcript and repeat."
+  stop: "Stop when the model writes a Final Answer, or after 10 turns. At the cap, append 'You must answer now.' and make one last call; return that answer flagged as having hit the turn limit."
+  requirements:
+    - "Make the turn cap (default 10) and the per-tool timeout (default 10 seconds) parameters."
+    - "Truncate each Observation to a set length (default 2,000 characters) so one large result cannot fill the context."
+    - "End the loop early with a 'stuck' status if the same Action with the same input repeats 3 times in a row."
+    - "Log the full transcript, plus each tool's latency and the token counts per turn."
+    - "Add a test with a stub LLM scripted to emit search[Eiffel Tower], search[Golden Gate], calculator[1937-1889] and then 'Final Answer: 48'; assert four model calls, three tool calls in that order, and the answer '48'."
+defaultVariantName: Transcript only
 prompts:
   - id: react-system
     title: ReAct system prompt
@@ -175,3 +199,158 @@ diagram:
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.5] }
             - { type: send, edge: finish, token: { kind: result, label: $630k }, at: [0.5, 1] }
+variants:
+  - id: notes
+    name: To-do notes
+    summary: "The agent keeps its plan and findings in an external notes file, rereading and updating it every turn, so progress survives a long run."
+    origin:
+      by: Anthropic Applied AI team
+      org: Anthropic
+      year: 2025
+      url: https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents
+      kind: popularized
+      note: "Described as structured note-taking in 'Effective context engineering for AI agents' (September 2025), a technique for long-horizon tasks."
+    build:
+      goal: "Run a long ReAct loop that keeps its plan and findings in an external notes file, so its progress survives when old turns drop out of the context."
+      steps:
+        - "Create an empty notes file for the run and give the agent one extra action, update_notes[text], which replaces the file's contents."
+        - "Before every model call, put the current notes at the top of the prompt, above the most recent turns."
+        - "Call the model with the {{prompt:react-system}}, the notes and the recent transcript, and parse its Thought and Action as in plain ReAct."
+        - "Run the action. For update_notes, save the text and return 'notes saved' as the Observation; on a tool error, return the error text as the Observation."
+        - "Keep only the last 8 turns of the transcript in the prompt; the notes carry everything older."
+        - "When the model writes a Final Answer, return it together with the final notes."
+      stop: "Stop on a Final Answer, or after 40 turns. At the cap, return the notes with a status saying the run stopped early, so a new run can resume from them."
+      requirements:
+        - "Make the turn cap (default 40), the kept-turn window (default 8) and the notes size limit (default 4,000 characters) parameters."
+        - "Reject an update_notes call over the size limit with an Observation asking for a shorter version, and keep the old notes."
+        - "Store the notes outside the process, in a file or a database row, so a crashed run can resume from them."
+        - "Log every notes revision with its turn number."
+        - "Add a test with a stub LLM that calls update_notes['[x] A [ ] B'] on turn 1; with the window set to 8, assert the turn-10 prompt contains '[x] A [ ] B' but not turn 1's transcript."
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Task, description: "A long task, such as 'Compare the refund policies of our five main competitors'." }
+        - { id: agent, kind: llm, label: Agent, description: "Reads its notes at the start of every turn, takes one action, and updates the notes as items are finished." }
+        - { id: notes, kind: memory, label: Notes file, sublabel: to-do list, description: "A to-do list with findings, kept outside the transcript and put back into the prompt on every turn." }
+        - { id: search, kind: tool, label: Search, description: "The search tool: looks up each competitor's refund policy." }
+        - { id: out, kind: io, label: Answer, description: "The Final Answer, written from the notes once every item is ticked off." }
+      edges:
+        - { id: ask, from: user, to: agent, description: "The task enters the ReAct prompt, which also tells the agent to keep its plan in the notes file.", example: "Task: Compare the refund policies of our five main competitors." }
+        - { id: act, from: agent, to: search, label: action, description: "The agent's next action, chosen from the first unticked item in its notes.", example: "Thought: Next on the list is Initech. Action: search[Initech refund policy]" }
+        - { id: obs, from: search, to: agent, style: dashed, label: observation, description: "The search result is appended to the transcript as an Observation.", example: "Observation: Initech refunds any purchase within 60 days." }
+        - { id: write, from: agent, to: notes, label: update, description: "The agent ticks off the item and records the finding with its update_notes action.", example: "Action: update_notes[TODO: [x] Acme [x] Globex [x] Initech ... Found: Initech 60 days]" }
+        - { id: read, from: notes, to: agent, style: dashed, label: notes, description: "At the start of every turn the current notes go into the prompt, so the plan stays in view after old turns are dropped.", example: "TODO: [x] Acme [x] Globex [ ] Initech [ ] Umbrella [ ] Hooli. Found: Acme 30 days, Globex 14 days." }
+        - { id: finish, from: agent, to: out, label: final, description: "When every item is ticked, the agent writes its Final Answer from the notes.", example: "Final Answer: Refund windows: Initech 60 days, Acme 30, Hooli 30, Globex 14, Umbrella none." }
+      scenarios:
+        - id: resumes-from-notes
+          label: Picks up where its notes left off
+          steps:
+            - id: start
+              caption: The long task reaches the agent.
+              duration: 1000
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: task } }
+            - id: recall
+              caption: The turn starts by reading the notes, which show two of five competitors done.
+              duration: 2000
+              events:
+                - { type: read, node: notes, at: [0, 0.4] }
+                - { type: send, edge: read, token: { kind: tokens, label: 2 of 5 done }, at: [0.4, 1] }
+            - id: turn
+              caption: The notes say Initech is next, so the agent searches for its policy.
+              duration: 3000
+              events:
+                - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
+                - { type: send, edge: act, token: { kind: tool-call, label: Initech }, at: [0.25, 0.5] }
+                - { type: activate, node: search, status: calling, at: [0.5, 0.7] }
+                - { type: send, edge: obs, token: { kind: result, label: 60 days }, at: [0.7, 1] }
+            - id: update
+              caption: The agent ticks Initech off and writes the finding to the notes.
+              duration: 2000
+              events:
+                - { type: send, edge: write, token: { kind: tokens, label: Initech 60d }, at: [0, 0.6] }
+                - { type: write, node: notes, at: [0.6, 1] }
+            - id: finish
+              caption: Two turns later every item is ticked, so the agent writes its answer from the notes.
+              duration: 2400
+              events:
+                - { type: read, node: notes, at: [0, 0.3] }
+                - { type: activate, node: agent, status: thinking, at: [0.3, 0.6] }
+                - { type: send, edge: finish, token: { kind: result, label: 5 policies }, at: [0.6, 1] }
+  - id: compaction
+    name: Context compaction
+    summary: "When the transcript nears the context limit, a summarizer compresses it and the loop continues in a fresh window that starts from the summary."
+    origin:
+      by: Anthropic Applied AI team
+      org: Anthropic
+      year: 2025
+      url: https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents
+      kind: popularized
+      note: "Described as compaction in 'Effective context engineering for AI agents' (September 2025), a technique for long-horizon tasks."
+    build:
+      goal: "Keep a ReAct loop running past the context limit by summarizing its history whenever the transcript nears the limit, then continuing from the summary in a fresh window."
+      steps:
+        - "Run the ReAct loop as usual with the {{prompt:react-system}}: call the model, run its Action, append the Observation."
+        - "Before each model call, count the transcript's tokens. Below the threshold, carry on as normal."
+        - "At or above the threshold, send the transcript, minus the last 3 turns, to a summarizer call that must keep the goal, decisions made, facts found with their sources, and the next step."
+        - "Start a new transcript: the original question, the summary under a 'Progress so far' heading, then the 3 kept turns verbatim."
+        - "Continue the loop from the new transcript, and return the Final Answer when the model writes one."
+      stop: "Stop on a Final Answer, or after 60 turns in total. If a fresh window is still over the threshold after compaction, stop with a 'context exhausted' status and return the summary."
+      requirements:
+        - "Make the threshold a fraction of the model's context window (default 0.75) and the kept-turn count (default 3) parameters."
+        - "If the summarizer call fails, retry it once; if it fails again, drop the oldest half of the turns instead and log that no summary was made."
+        - "Keep the original question verbatim in every window; never summarize it."
+        - "Log each compaction with the token counts before and after."
+        - "Add a test with a stub token counter that reports 160k of 200k tokens on turn 5; assert the summarizer is called exactly once and the turn-6 prompt contains the stub summary and not turn 1's Observation."
+    diagram:
+      nodes:
+        - { id: user, kind: io, label: Task, description: "A long investigation, such as 'Find out why checkout requests started failing last night'." }
+        - { id: agent, kind: llm, label: Agent, description: "Runs the Thought, Action, Observation loop; plain code checks the transcript size before each of its turns." }
+        - { id: tools, kind: tool, label: Tools, sublabel: "search_logs, read_file", description: "The agent's tools: log search and file reading, whose large outputs grow the transcript quickly." }
+        - { id: summarizer, kind: llm, label: Summarizer, description: "Compresses the transcript into the goal, decisions, facts found and next step when it nears the context limit." }
+        - { id: out, kind: io, label: Answer, description: "The Final Answer the agent writes once it has found the cause." }
+      edges:
+        - { id: ask, from: user, to: agent, description: "The task enters the ReAct prompt and starts the first context window.", example: "Task: Find out why checkout requests started failing last night." }
+        - { id: act, from: agent, to: tools, label: action, description: "Each turn's tool call, as in plain ReAct.", example: "Action: search_logs[service=checkout level=error since=22:00]" }
+        - { id: obs, from: tools, to: agent, style: dashed, label: observation, description: "Tool output is appended as an Observation; log searches and file reads make it grow fast.", example: "Observation: 1,204 lines: PaymentError: invalid merchant key (first at 22:14)" }
+        - { id: compact, from: agent, to: summarizer, label: history, description: "When the transcript passes the token threshold, the history, except the last few turns, goes to the summarizer instead of to the next turn.", example: "Transcript at 152k of 200k tokens: 37 turns of log searches and file reads." }
+        - { id: fresh, from: summarizer, to: agent, style: loop, label: summary, description: "The summary starts a fresh window, followed by the last few turns verbatim; the loop resumes from there.", example: "Progress so far: errors began at 22:14, after deploy 4512. Ruled out the database and the cache. Next: diff the payments config." }
+        - { id: finish, from: agent, to: out, label: final, description: "When the agent writes a Final Answer, the loop ends.", example: "Final Answer: Deploy 4512 rotated the merchant key in config but not in the vault; checkout has failed since 22:14." }
+      scenarios:
+        - id: compacts-once
+          label: Compacts once, then finishes
+          steps:
+            - id: start
+              caption: The task reaches the agent in a fresh context window.
+              duration: 1000
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: task } }
+            - id: turns
+              caption: The agent works through turn after turn; every Observation makes the transcript longer.
+              duration: 3000
+              repeat: 2
+              events:
+                - { type: activate, node: agent, status: thinking, at: [0, 0.25] }
+                - { type: send, edge: act, token: { kind: tool-call, label: search logs }, at: [0.25, 0.5] }
+                - { type: activate, node: tools, status: calling, at: [0.5, 0.7] }
+                - { type: send, edge: obs, token: { kind: result, label: log lines }, at: [0.7, 1] }
+            - id: compact
+              caption: Before the agent's next turn, a size check in plain code finds the transcript past three quarters of the window and sends it to the summarizer.
+              duration: 2600
+              events:
+                - { type: send, edge: compact, token: { kind: tokens, label: 37 turns }, at: [0, 0.55] }
+                - { type: activate, node: summarizer, status: thinking, at: [0.55, 1] }
+            - id: resume
+              caption: The summary opens a fresh window and the agent carries on from its next step.
+              duration: 3400
+              events:
+                - { type: send, edge: fresh, token: { kind: result, label: summary }, at: [0, 0.3] }
+                - { type: activate, node: agent, status: thinking, at: [0.3, 0.45] }
+                - { type: send, edge: act, token: { kind: tool-call, label: read config }, at: [0.45, 0.65] }
+                - { type: activate, node: tools, status: calling, at: [0.65, 0.8] }
+                - { type: send, edge: obs, token: { kind: result, label: key mismatch }, at: [0.8, 1] }
+            - id: finish
+              caption: The agent has found the cause and writes its final answer.
+              duration: 2000
+              events:
+                - { type: activate, node: agent, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: finish, token: { kind: result, label: root cause }, at: [0.5, 1] }

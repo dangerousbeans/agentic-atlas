@@ -8,6 +8,8 @@ Hand retrieval to an <NodeRef id="agent">agent</NodeRef> as a set of tools. On e
 
 Whatever comes back is appended to the agent's context and the loop runs again. A question like "Did our refund policy change after the March incident?" might hit the vector database for the policy, find that the chunks predate March, then query the web or an incident log with a sharper question. When the agent judges the context sufficient, it writes the <NodeRef id="out">answer</NodeRef> with citations.
 
+Two narrower designs appear as tabs. Interleaved retrieval (IRCoT) uses a single index and searches again after every sentence of reasoning. Adaptive-RAG classifies each question's complexity first and runs no retrieval, one retrieval or a multi-step loop to match.
+
 ## When to use
 
 - Questions span several knowledge sources with different strengths.
