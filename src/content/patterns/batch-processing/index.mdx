@@ -1,0 +1,35 @@
+## Problem
+
+Some jobs are not one hard request but thousands of easy ones: classify 10,000 support tickets into 12 categories, extract fields from every contract in an archive, grade an evaluation set. A simple loop that calls the model one item at a time would take all night. Fire them all at once and the provider answers with a wall of 429 rate-limit errors, half the items fail, and the script crashes with no record of which ones finished.
+
+## How it works
+
+The default tab shows a **throttled fan-out** that you run yourself. The tickets wait in a <NodeRef id="jobs">queue</NodeRef>. A <NodeRef id="limiter">rate limiter</NodeRef> keeps two token buckets, one for requests per minute and one for tokens per minute, set just below the account's limits, and releases a ticket only when both have room. A pool of concurrent workers (<NodeRef id="w1">worker 1</NodeRef>, <NodeRef id="w2">worker 2</NodeRef>, <NodeRef id="w3">worker 3</NodeRef> here, often dozens in practice) each take the next ticket, call the model, and send its label to the <NodeRef id="results">results</NodeRef>.
+
+When the provider still pushes back, as with worker 2's 429 in the example, the ticket goes back through the limiter after an exponential backoff, and the whole pool pauses briefly so the other workers do not hit the same wall. Every result is written to disk under its ticket id as soon as it arrives, so the order in which tickets finish does not matter, and a restarted run can skip what is already done.
+
+If nobody needs the answers for a few hours, there is a simpler and cheaper option: the **provider batch** tab. Most providers accept a whole file of requests as one asynchronous job, run it when they have spare capacity, and charge about half the normal price. Anthropic's documentation says most batches finish within an hour, with a 24-hour limit. You submit, poll, download, and resubmit the few requests that errored.
+
+## When to use
+
+- You have many independent items: classification, extraction, tagging, summarizing, evaluation runs.
+- Nobody is waiting on any single item. Use the provider batch when results can take hours; use the throttled fan-out when they are needed in minutes.
+- Cost or rate limits, not model quality, are the bottleneck.
+
+## When to avoid
+
+- Items depend on each other, so one result feeds the next. Use a chain or an agent instead.
+- A person is waiting for each answer. Serve those requests directly.
+- There are only a handful of items; a plain loop is easier to read and debug.
+
+## Trade-offs
+
+The throttled fan-out is as fast as your rate limits allow, but you own the limiter, the retries and the bookkeeping, and you pay full price. The provider batch halves the cost and removes the rate-limit handling, but you give up control of timing: results arrive when the provider is done, and a busy period can push a batch towards its deadline. Both trade per-item latency for throughput, and both need results matched by id rather than by order.
+
+## Failure modes
+
+- **Retry storm:** every worker retries at once and keeps tripping the limit. Back off with jitter and pause the whole pool on a 429.
+- **Lost progress:** the script crashes at item 6,000 and starts over, paying twice. Write results incrementally and skip done items on restart.
+- **Mismatched results:** results are matched to items by position and one failure shifts every label by one. Always carry and match an id.
+- **Silent failures:** a few hundred items error and nobody notices. Report succeeded and failed counts and keep an errors file.
+- **Duplicate batches:** a restarted script submits the same batch again. Save batch ids as soon as they are created.
