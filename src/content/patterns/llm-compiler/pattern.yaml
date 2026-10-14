@@ -103,7 +103,7 @@ diagram:
           events:
             - { type: send, edge: ask, token: { kind: prompt, label: Lisbon trip } }
         - id: plan
-          caption: "The planner emits a graph of tasks: flights and weather are independent, but the hotel needs the arrival date from flights."
+          caption: The planner emits a task graph in which flights and weather are independent but the hotel needs the arrival date from flights.
           duration: 2800
           codeRef: { block: compiler, lines: "3-4" }
           events:
@@ -119,24 +119,26 @@ diagram:
             - { type: send, edge: run2, token: { kind: tool-call, label: weather }, at: [0.3, 0.7] }
             - { type: activate, node: t3, status: waiting, at: [0.3, 1] }
         - id: parallel-run
-          caption: Weather returns first; flights return a moment later. Both ran concurrently, not one after the other.
+          caption: Weather returns first and flights a moment later, because the two ran concurrently.
           duration: 2600
           codeRef: { block: compiler, lines: "8" }
           events:
             - { type: activate, node: t1, status: calling, at: [0, 0.6] }
             - { type: activate, node: t2, status: calling, at: [0, 0.4] }
+            - { type: activate, node: t3, status: waiting, at: [0, 1] }
             - { type: send, edge: res2, token: { kind: result, label: sunny 22C }, at: [0.4, 0.7] }
             - { type: send, edge: res1, token: { kind: result, label: arrive Fri }, at: [0.6, 0.9] }
         - id: release-t3
-          caption: The flight result unblocks the hotel task. Its argument is filled in from task 1, and it fires.
+          caption: The flight result unblocks the hotel task, whose argument is filled in from task 1.
           duration: 2600
           codeRef: { block: compiler, lines: "7-8" }
           events:
+            - { type: activate, node: t3, status: waiting, at: [0, 0.35] }
             - { type: send, edge: dep, token: { kind: result, label: Fri }, at: [0, 0.35] }
             - { type: activate, node: t3, status: calling, at: [0.35, 0.65] }
             - { type: send, edge: res3, token: { kind: result, label: hotel booked }, at: [0.65, 1] }
         - id: join
-          caption: The joiner sees all three results are present and answers; it could instead have sent the planner back.
+          caption: The joiner sees all three results are present and answers instead of sending the planner back.
           duration: 2600
           codeRef: { block: compiler, lines: "9-11" }
           events:

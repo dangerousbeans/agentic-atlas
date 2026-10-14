@@ -6,9 +6,9 @@ A bare language model only knows what was in its training data and can only emit
 
 The <NodeRef id="llm">LLM</NodeRef> receives the <NodeRef id="user">question</NodeRef> together with a list of capabilities it may use. Anthropic calls this the augmented LLM: a model enhanced with retrieval, tools and memory, where the model itself generates its search queries, selects its tools and decides what to retain.
 
-When a question needs facts, the model emits a structured call to the <NodeRef id="retrieval">retrieval</NodeRef> tool and receives matching passages. When it needs exact numbers, it calls the <NodeRef id="calculator">calculator</NodeRef>. Each result is appended to the conversation, and the model is called again. It can call several tools in a row, or none. Once a reply contains no tool calls, that reply is the <NodeRef id="out">answer</NodeRef>. Anything worth keeping, such as the customer's plan, is written to <NodeRef id="memory">memory</NodeRef> for next time.
+When a question needs facts, the model emits a structured call to the <NodeRef id="retrieval">retrieval</NodeRef> tool and receives matching passages. When it needs exact numbers, it calls the <NodeRef id="calculator">calculator</NodeRef>. Each result is appended to the conversation, and the model is called again. It can call several tools in a row, or none. Once a reply contains no tool calls, that reply is the <NodeRef id="out">answer</NodeRef>. Anything worth keeping, such as the customer's plan, is written to <NodeRef id="memory">memory</NodeRef> through a save_note tool call, so it is available next time.
 
-Your code only executes the tools the model asks for and feeds back what they return. The model never runs anything itself.
+Your code only executes the tools the model asks for, including save_note, and feeds back what they return. The model never runs anything itself.
 
 ## When to use
 

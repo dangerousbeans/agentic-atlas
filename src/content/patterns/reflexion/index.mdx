@@ -10,7 +10,7 @@ The <NodeRef id="actor">actor</NodeRef> attempts the <NodeRef id="input">task</N
 
 On the next trial, the stored lessons are placed in the actor's prompt, so the new attempt starts from what the last one learned. The loop repeats until the tests pass or a trial budget runs out, and the passing code goes to the <NodeRef id="out">solution</NodeRef>.
 
-The difference from a plain retry is the memory. Lessons persist across trials, and in longer-running systems across whole tasks.
+The difference from a plain retry is the memory: lessons persist from one trial to the next within the task.
 
 ## When to use
 

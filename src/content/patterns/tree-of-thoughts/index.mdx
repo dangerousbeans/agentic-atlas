@@ -8,7 +8,9 @@ Tree of Thoughts, from Yao et al., treats reasoning as search over a tree whose 
 
 From the <NodeRef id="problem">problem</NodeRef>, the model proposes several candidate thoughts: <NodeRef id="t1">Thought 1</NodeRef>, <NodeRef id="t2">Thought 2</NodeRef> and <NodeRef id="t3">Thought 3</NodeRef>. The <NodeRef id="evaluator">evaluator</NodeRef>, usually the same model under a different prompt, rates each one, for example sure, maybe or impossible. Hopeless branches are pruned and never expanded, which is why thoughts 1 and 3 turn red in the diagram.
 
-The search then expands the promising branch, here producing <NodeRef id="t2a">Thought 2a</NodeRef> and <NodeRef id="t2b">Thought 2b</NodeRef>. These get rated too. If a branch turns out to be a dead end, as 2a does, the search backtracks to its parent and tries a sibling. The path through 2b reaches the <NodeRef id="out">solution</NodeRef>.
+The search then expands the promising branch, here producing <NodeRef id="t2a">Thought 2a</NodeRef> and <NodeRef id="t2b">Thought 2b</NodeRef>. These get rated too, and both look possible, so the search tries 2a first. Nothing it proposes from there works, so the call for 2a returns nothing and the search backtracks to the parent and tries 2b. The path through 2b reaches the <NodeRef id="out">solution</NodeRef>.
+
+Pruning and backtracking are different. Pruning discards a candidate the evaluator already rates impossible, before spending anything on it. Backtracking happens after a branch looked fine and then failed.
 
 The paper explores breadth-first and depth-first variants. The pseudocode uses depth-first, with backtracking falling out of the recursion.
 

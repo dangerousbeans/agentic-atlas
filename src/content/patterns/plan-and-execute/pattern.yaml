@@ -89,7 +89,7 @@ diagram:
         - id: start
           caption: The goal reaches the planner before any tool is touched.
           duration: 1000
-          codeRef: { block: plan-execute, lines: "1" }
+          codeRef: { block: plan-execute, lines: "1-2" }
           events:
             - { type: send, edge: goal, token: { kind: prompt, label: brief goal } }
         - id: plan

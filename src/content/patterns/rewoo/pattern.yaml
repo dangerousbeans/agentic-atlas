@@ -111,7 +111,7 @@ diagram:
             - { type: send, edge: log-calc, token: { kind: result, label: "#E3" }, at: [0.6, 0.85] }
             - { type: write, node: evidence, at: [0.85, 1] }
         - id: solve
-          caption: The solver reads the plan and all the evidence once and writes the answer; the planner is never revisited.
+          caption: The solver reads the plan and all the evidence once and writes the answer, and the planner is never revisited.
           duration: 2800
           codeRef: { block: rewoo, lines: "7" }
           events:

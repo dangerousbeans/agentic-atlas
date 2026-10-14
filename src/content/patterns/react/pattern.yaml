@@ -78,7 +78,7 @@ diagram:
           events:
             - { type: send, edge: ask, token: { kind: prompt, label: "years apart?" } }
         - id: turn-1
-          caption: Thought, then Action. The agent decides it needs the Eiffel Tower's date and searches for it.
+          caption: The agent thinks it needs the Eiffel Tower's date and acts by searching for it.
           duration: 3000
           codeRef: { block: react, lines: "3-9" }
           events:
@@ -87,7 +87,7 @@ diagram:
             - { type: activate, node: search, status: calling, at: [0.5, 0.7] }
             - { type: send, edge: obs-search, token: { kind: result, label: "1889" }, at: [0.7, 1] }
         - id: turn-2
-          caption: The observation shapes the next Thought. One date is known, so it searches for the other.
+          caption: With one date observed, the next thought is to search for the other.
           duration: 3000
           codeRef: { block: react, lines: "3-9" }
           events:
@@ -107,7 +107,7 @@ diagram:
         - id: finish
           caption: The agent decides it has enough information, writes its final answer and the loop ends.
           duration: 2000
-          codeRef: { block: react, lines: "5-7" }
+          codeRef: { block: react, lines: "6-7" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.5] }
             - { type: send, edge: finish, token: { kind: result, label: 48 years }, at: [0.5, 1] }
@@ -150,7 +150,7 @@ diagram:
         - id: finish
           caption: The agent reports the answer.
           duration: 2000
-          codeRef: { block: react, lines: "5-7" }
+          codeRef: { block: react, lines: "6-7" }
           events:
             - { type: activate, node: agent, status: thinking, at: [0, 0.5] }
             - { type: send, edge: finish, token: { kind: result, label: $630k }, at: [0.5, 1] }
