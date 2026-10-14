@@ -6,7 +6,10 @@ import CodePanel from '../../components/pattern/CodePanel.astro';
 import NodeRef from '../../components/pattern/NodeRef.astro';
 import RelatedPatterns from '../../components/pattern/RelatedPatterns.astro';
 import Sources from '../../components/pattern/Sources.astro';
-import PrevNext from '../../components/pattern/PrevNext.astro';
+import PatternNav from '../../components/pattern/PatternNav.astro';
+import SpecTable from '../../components/pattern/SpecTable.astro';
+import Frame from '../../components/site/Frame.astro';
+import { patternStats } from '../../lib/pattern-stats';
 import { getCatalog } from '../../lib/catalog';
 import { getEntry, render } from 'astro:content';
 import type { DiagramSpec, CodeBlock } from '../../lib/diagram/types';
@@ -20,26 +23,45 @@ const fam = cat.family(p.family);
 const prose = await getEntry('patternProse', p.slug);
 if (!prose) throw new Error(`Missing index.mdx for pattern ${p.slug}`);
 const { Content } = await render(prose);
-const { prev, next } = cat.neighbors(p.slug);
+const index = cat.patterns.findIndex(x => x.slug === p.slug);
+const prev = cat.patterns[index - 1];
+const next = cat.patterns[index + 1];
+const slugs = cat.patterns.map(x => x.slug);
+const stats = patternStats(p.diagram as DiagramSpec);
 ---
 <BaseLayout title={p.name} description={p.summary} pagefind>
   <article class="wrap pattern">
-    <PatternHeader pattern={p} family={fam} />
-    <Diagram uid={p.slug} spec={p.diagram as DiagramSpec} title={p.name} />
+    <PatternNav index={index} total={cat.patterns.length} prev={prev} next={next} slugs={slugs} />
+    <div class="instrument">
+      <div class="stage">
+        <Frame><Diagram uid={p.slug} spec={p.diagram as DiagramSpec} title={p.name} /></Frame>
+        <p class="legend mono" aria-label="Keyboard shortcuts"><span><kbd>←</kbd> <kbd>→</kbd> neighbours</span><span><kbd>r</kbd> random</span><span><kbd>esc</kbd> atlas</span></p>
+      </div>
+      <div class="info">
+        <PatternHeader pattern={p} family={fam} />
+        <SpecTable stats={stats} badges={p.badges} />
+      </div>
+    </div>
     <div class="body">
       <div class="prose"><Content components={{ NodeRef }} /></div>
       <div class="side"><CodePanel uid={p.slug} code={p.code as CodeBlock[]} prompts={p.prompts as CodeBlock[]} /></div>
     </div>
     <RelatedPatterns pattern={p} catalog={cat} />
     <Sources sources={p.sources} />
-    <PrevNext prev={prev} next={next} />
   </article>
 </BaseLayout>
 <style>
-  .body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 48px; align-items: start; margin-top: 16px; }
+  .instrument { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: clamp(28px, 3.5vw, 48px); align-items: start; margin-top: 18px; }
+  .info { padding-top: 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 14px 0 0; font-size: 12px; letter-spacing: .04em; color: var(--text-3); }
+  kbd { font: 500 11px var(--font-mono); color: var(--text-2); border: 1px solid var(--line-strong); padding: 1px 6px; }
+  .body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 48px; align-items: start; margin-top: 32px; }
   .side { position: sticky; top: 80px; padding-top: 2.4rem; max-height: calc(100vh - 100px); overflow: auto; }
   .prose { font-size: 17px; color: var(--text-2); max-width: 40rem; }
   .prose :global(strong) { color: var(--text); font-weight: 500; }
   .prose :global(li) { margin: 6px 0; }
-  @media (max-width: 960px) { .body { grid-template-columns: minmax(0, 1fr); } .side { position: static; max-height: none; overflow: visible; } }
+  @media (max-width: 960px) {
+    .instrument, .body { grid-template-columns: minmax(0, 1fr); }
+    .side { position: static; max-height: none; overflow: visible; }
+  }
 </style>
