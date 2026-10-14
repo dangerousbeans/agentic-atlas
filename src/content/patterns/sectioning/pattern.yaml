@@ -48,22 +48,22 @@ prompts:
       <tests>{{tests}}</tests>
 diagram:
   nodes:
-    - { id: user, kind: io, label: PR }
-    - { id: splitter, kind: router, label: Splitter, model: false }
-    - { id: llm1, kind: llm, label: Security }
-    - { id: llm2, kind: llm, label: Performance }
-    - { id: llm3, kind: llm, label: Tests }
-    - { id: aggregator, kind: aggregator, label: Merge }
-    - { id: out, kind: io, label: Review }
+    - { id: user, kind: io, label: PR, description: "The pull request, arriving as a single code diff to be reviewed." }
+    - { id: splitter, kind: router, label: Splitter, model: false, description: "Plain code, not a model: sends the same diff to each fixed review concern chosen in advance." }
+    - { id: llm1, kind: llm, label: Security, description: "Reviews the diff for security problems only and lists each with file, line and a one-sentence fix." }
+    - { id: llm2, kind: llm, label: Performance, description: "Reviews the same diff for performance problems only, ignoring security, style and tests." }
+    - { id: llm3, kind: llm, label: Tests, description: "Reviews the same diff for missing or weak tests only, leaving other concerns to the other reviewers." }
+    - { id: aggregator, kind: aggregator, label: Merge, description: "Combines the three independent reviews into one comment, grouped by severity and de-duplicated." }
+    - { id: out, kind: io, label: Review, description: "The single merged review comment posted on the pull request." }
   edges:
-    - { id: in, from: user, to: splitter }
-    - { id: s1, from: splitter, to: llm1 }
-    - { id: s2, from: splitter, to: llm2 }
-    - { id: s3, from: splitter, to: llm3 }
-    - { id: m1, from: llm1, to: aggregator }
-    - { id: m2, from: llm2, to: aggregator }
-    - { id: m3, from: llm3, to: aggregator }
-    - { id: done, from: aggregator, to: out }
+    - { id: in, from: user, to: splitter, description: "The pull request's diff enters the splitter.", example: "diff --git a/api/users.py b/api/users.py  @@ -12,6 +12,9 @@ def get_user(id): ..." }
+    - { id: s1, from: splitter, to: llm1, description: "The diff goes to the security reviewer with its security-only prompt.", example: "You review pull requests for security problems only. <diff>diff --git a/api/users.py ...</diff>" }
+    - { id: s2, from: splitter, to: llm2, description: "The same diff goes to the performance reviewer in parallel.", example: "You review pull requests for performance problems only. <diff>diff --git a/api/users.py ...</diff>" }
+    - { id: s3, from: splitter, to: llm3, description: "The same diff goes to the tests reviewer in parallel.", example: "You review pull requests for test coverage problems only. <diff>diff --git a/api/users.py ...</diff>" }
+    - { id: m1, from: llm1, to: aggregator, description: "The security review is sent to the merge step as soon as it finishes.", example: "api/users.py:14 SQL built with f-string; use a parameterized query. api/users.py:31 token logged in plain text; remove it." }
+    - { id: m2, from: llm2, to: aggregator, description: "The performance review is sent to the merge step when ready.", example: "api/users.py:22 query runs inside a loop (N+1); fetch all users with one IN query." }
+    - { id: m3, from: llm3, to: aggregator, description: "The tests review is sent to the merge step; it may finish last.", example: "No test issues." }
+    - { id: done, from: aggregator, to: out, description: "The merged review is delivered as the final output.", example: "Review: High: SQL injection at users.py:14. High: token logged at users.py:31. Medium: N+1 query at users.py:22. Tests: no issues." }
   scenarios:
     - id: pr-review
       label: '"Review this pull request"'
