@@ -1,0 +1,97 @@
+slug: sectioning
+name: "Parallelization: Sectioning"
+family: workflows
+aliases: [Fan-out/fan-in, Scatter-gather]
+summary: Split the work into independent subtasks, run them in parallel, then merge the results.
+badges: { autonomy: low, cost: medium, latency: low }
+sources:
+  - title: Building effective agents (Anthropic, 2024)
+    url: https://www.anthropic.com/engineering/building-effective-agents
+related:
+  composesWith: [prompt-chaining, evaluator-optimizer]
+  confusedWith:
+    - { slug: orchestrator-workers, difference: "Sectioning splits the work into fixed parts chosen in advance; an orchestrator decides the parts at run time from the input." }
+    - { slug: voting, difference: "Sectioning gives each call a different part of the work; voting gives every call the same work and compares the answers." }
+code:
+  - id: sectioning
+    title: sectioning.py
+    lang: python
+    source: |
+      def review_pull_request(diff):
+          reviews = parallel(                      # fan-out: independent calls
+              llm(SECURITY_PROMPT, diff=diff),
+              llm(PERFORMANCE_PROMPT, diff=diff),
+              llm(TESTS_PROMPT, diff=diff),
+          )
+          return merge(reviews)                    # fan-in: plain code or an LLM
+prompts:
+  - id: security
+    title: Security reviewer prompt
+    lang: markdown
+    source: |
+      You review pull requests for security problems only. Ignore style,
+      performance and tests; other reviewers cover them.
+
+      <diff>{{diff}}</diff>
+
+      List each problem with file, line and a one-sentence fix.
+      If you find none, answer "No security issues."
+  - id: merge
+    title: Merge prompt
+    lang: markdown
+    source: |
+      Combine these independent reviews of one pull request into a single
+      comment. Group findings by severity and remove duplicates.
+
+      <security>{{security}}</security>
+      <performance>{{performance}}</performance>
+      <tests>{{tests}}</tests>
+diagram:
+  nodes:
+    - { id: user, kind: io, label: PR }
+    - { id: splitter, kind: router, label: Splitter }
+    - { id: llm1, kind: llm, label: Security }
+    - { id: llm2, kind: llm, label: Performance }
+    - { id: llm3, kind: llm, label: Tests }
+    - { id: aggregator, kind: aggregator, label: Merge }
+    - { id: out, kind: io, label: Review }
+  edges:
+    - { id: in, from: user, to: splitter }
+    - { id: s1, from: splitter, to: llm1 }
+    - { id: s2, from: splitter, to: llm2 }
+    - { id: s3, from: splitter, to: llm3 }
+    - { id: m1, from: llm1, to: aggregator }
+    - { id: m2, from: llm2, to: aggregator }
+    - { id: m3, from: llm3, to: aggregator }
+    - { id: done, from: aggregator, to: out }
+  scenarios:
+    - id: pr-review
+      label: '"Review this pull request"'
+      steps:
+        - { id: arrive, caption: A pull request arrives with one diff., duration: 1000, codeRef: { block: sectioning, lines: "1" }, events: [{ type: send, edge: in, token: { kind: prompt, label: diff } }] }
+        - id: fan-out
+          caption: The same diff goes to three reviewers at once, each with a different concern.
+          duration: 1400
+          codeRef: { block: sectioning, lines: "2-5" }
+          events:
+            - { type: send, edge: s1, token: { kind: prompt, label: security } }
+            - { type: send, edge: s2, token: { kind: prompt, label: perf } }
+            - { type: send, edge: s3, token: { kind: prompt, label: tests } }
+        - id: work
+          caption: The reviewers run side by side and finish at different times.
+          duration: 3000
+          codeRef: { block: sectioning, lines: "2-5" }
+          events:
+            - { type: activate, node: llm1, status: thinking, at: [0, 0.35] }
+            - { type: activate, node: llm2, status: thinking, at: [0, 0.65] }
+            - { type: activate, node: llm3, status: thinking, at: [0, 0.9] }
+            - { type: send, edge: m1, token: { kind: result, label: 2 issues }, at: [0.35, 0.55] }
+            - { type: send, edge: m2, token: { kind: result, label: 1 issue }, at: [0.65, 0.85] }
+            - { type: send, edge: m3, token: { kind: result, label: 0 issues }, at: [0.9, 1] }
+        - id: merge
+          caption: The merge step waits for the slowest reviewer, then combines all three reports.
+          duration: 1800
+          codeRef: { block: sectioning, lines: "6" }
+          events:
+            - { type: activate, node: aggregator, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: done, token: { kind: result, label: review }, at: [0.5, 1] }

@@ -1,0 +1,34 @@
+## Problem
+
+A pull request needs a security check, a performance check and a test-coverage check. Asked to do all three in one prompt, a model tends to dwell on whichever it notices first and skim the rest. Running three separate reviews one after another gives focus, but takes three times as long even though none of them needs the others' results.
+
+## How it works
+
+The work is cut into independent parts, and each part gets its own call. A <NodeRef id="user">pull request</NodeRef> reaches the <NodeRef id="splitter">splitter</NodeRef>, which in the simplest case is just code that hands the same diff to three prompts: <NodeRef id="llm1">Security</NodeRef>, <NodeRef id="llm2">Performance</NodeRef> and <NodeRef id="llm3">Tests</NodeRef>. Each has instructions narrowly written for one concern, and none sees the others' output.
+
+The calls run in parallel, so the whole step takes as long as the slowest one, not the sum. Their reports return at different moments, which is why the diagram shows staggered finishes. A <NodeRef id="aggregator">merge</NodeRef> step waits until all have arrived and combines them, using code or one more LLM call, into the final <NodeRef id="out">review</NodeRef>.
+
+The same shape handles other splits: one chunk of a long document per call, or a guardrail model screening a request while the main model answers it.
+
+## When to use
+
+- The subtasks are independent and the split is known before the input arrives.
+- Latency matters, and wall-clock time should be set by the slowest part rather than the sum.
+- Each concern is better handled by a prompt dedicated to it than by one prompt juggling many.
+
+## When to avoid
+
+- Parts depend on each other. If step two needs step one's output, use prompt chaining.
+- You cannot tell in advance how to split the work. Orchestrator-workers lets a model decide the parts.
+- The parts are not really independent, and merging contradictory outputs costs more than it saves.
+
+## Trade-offs
+
+Sectioning lowers latency and sharpens focus, but it does not lower cost: every part still spends its own tokens, and any context shared by all parts, such as the diff, is paid for in each call. You also take on a merge step, which is a new place for things to go wrong. Concurrency limits and rate limits can erase some of the time you hoped to save.
+
+## Failure modes
+
+- **Slowest-worker latency:** one stalled call holds up the whole result. Set timeouts and decide whether to merge a partial result.
+- **Lossy or conflicting merge:** two reviewers flag the same line differently and the merge drops one. Tell the merge step how to resolve conflicts, and keep the original reports.
+- **Hidden dependencies:** a "tests" reviewer needs to know the security reviewer changed an API. If parts quietly depend on each other, chain them instead.
+- **Partial failure:** one call errors out and the merge reports a clean review. Make missing sections explicit.

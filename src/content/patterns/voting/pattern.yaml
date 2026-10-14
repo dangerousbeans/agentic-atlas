@@ -1,0 +1,99 @@
+slug: voting
+name: "Parallelization: Voting"
+family: workflows
+aliases: [Self-consistency, Ensembling, Majority vote]
+summary: Run the same task N times, or with N different prompts, and take the majority or consensus answer.
+badges: { autonomy: low, cost: high, latency: low }
+sources:
+  - title: Building effective agents (Anthropic, 2024)
+    url: https://www.anthropic.com/engineering/building-effective-agents
+  - title: Self-Consistency Improves Chain of Thought Reasoning in Language Models (Wang et al., 2022)
+    url: https://arxiv.org/abs/2203.11171
+related:
+  composesWith: [routing, prompt-chaining]
+  confusedWith:
+    - { slug: sectioning, difference: "Voting runs the same task several times and compares answers; sectioning gives each call a different part of the work." }
+    - { slug: evaluator-optimizer, difference: "Voting picks among independent attempts; the evaluator-optimizer revises one attempt using feedback, in a loop." }
+code:
+  - id: voting
+    title: voting.py
+    lang: python
+    source: |
+      from collections import Counter
+
+      def classify_with_vote(snippet, n=3):
+          answers = parallel(llm(AUDIT_PROMPT, code=snippet, temperature=0.8)
+                             for _ in range(n))          # same task, n times
+          tally = Counter(a.verdict for a in answers)
+          verdict, votes = tally.most_common(1)[0]
+          return verdict if votes > n // 2 else "needs human review"
+prompts:
+  - id: audit
+    title: Vulnerability audit prompt
+    lang: markdown
+    source: |
+      Decide whether the code below contains an exploitable
+      vulnerability. Reason step by step, then end with a final line
+      of exactly "VERDICT: vulnerable" or "VERDICT: safe".
+
+      <code>{{snippet}}</code>
+  - id: variant
+    title: Alternate-perspective prompt
+    lang: markdown
+    source: |
+      You are a {{persona}} reviewing the code below for exploitable
+      vulnerabilities. Judge only what the code shows, not what it
+      might be used for. End with "VERDICT: vulnerable" or "VERDICT: safe".
+
+      <code>{{snippet}}</code>
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Code }
+    - { id: llm1, kind: llm, label: Voter 1 }
+    - { id: llm2, kind: llm, label: Voter 2 }
+    - { id: llm3, kind: llm, label: Voter 3 }
+    - { id: aggregator, kind: aggregator, label: Tally }
+    - { id: out, kind: io, label: Verdict }
+  edges:
+    - { id: v1, from: user, to: llm1 }
+    - { id: v2, from: user, to: llm2 }
+    - { id: v3, from: user, to: llm3 }
+    - { id: a1, from: llm1, to: aggregator }
+    - { id: a2, from: llm2, to: aggregator }
+    - { id: a3, from: llm3, to: aggregator }
+    - { id: done, from: aggregator, to: out }
+  scenarios:
+    - id: majority
+      label: '"Is this snippet vulnerable?"'
+      steps:
+        - id: fan-out
+          caption: The same snippet goes to three voters, each sampled independently.
+          duration: 1400
+          codeRef: { block: voting, lines: "4-5" }
+          events:
+            - { type: send, edge: v1, token: { kind: prompt, label: snippet } }
+            - { type: send, edge: v2, token: { kind: prompt, label: snippet } }
+            - { type: send, edge: v3, token: { kind: prompt, label: snippet } }
+        - id: work
+          caption: Each voter reasons on its own and arrives at an answer.
+          duration: 2600
+          codeRef: { block: voting, lines: "4-5" }
+          events:
+            - { type: activate, node: llm1, status: thinking, at: [0, 0.5] }
+            - { type: activate, node: llm2, status: thinking, at: [0, 0.75] }
+            - { type: activate, node: llm3, status: thinking, at: [0, 0.9] }
+            - { type: send, edge: a1, token: { kind: result, label: A }, at: [0.5, 0.7] }
+            - { type: send, edge: a2, token: { kind: result, label: A }, at: [0.75, 0.9] }
+            - { type: send, edge: a3, token: { kind: result, label: B }, at: [0.9, 1] }
+        - id: tally
+          caption: The tally counts two votes for A and one for B, so A wins.
+          duration: 1600
+          codeRef: { block: voting, lines: "6-7" }
+          events:
+            - { type: activate, node: aggregator, status: thinking }
+        - id: verdict
+          caption: The majority answer A is returned as the verdict.
+          duration: 1400
+          codeRef: { block: voting, lines: "8" }
+          events:
+            - { type: send, edge: done, token: { kind: result, label: A } }
