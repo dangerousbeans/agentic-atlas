@@ -199,16 +199,16 @@ variants:
       requirements:
         - "Make the schemas returned per search (default 3) and the round cap (default 6) parameters."
         - "If the model calls a tool that has not been loaded, return an error naming tool_search as the way to load it, and do not run it."
-        - "Allow a short, configurable list of always-loaded tools for the ones most requests use."
+        - "Allow a short, configurable list of always-loaded tools for the ones most requests use (default: none)."
         - "Log every search query with the tools it returned, so weak catalog descriptions show up."
-        - "Add a test with a stub LLM that calls tool_search(\"refund\") and then refund_quote; assert the first call's tool list holds only tool_search and the second call's includes refund_quote."
+        - "Add a test with a stub LLM, and the always-loaded list left empty, that calls tool_search(\"refund\") and then refund_quote; assert the first call's tool list holds only tool_search and the second call's includes refund_quote."
     diagram:
       nodes:
         - { id: user, kind: io, label: Question, description: "The customer's message, such as 'What would a 30-day refund on my $240 plan be?'." }
         - { id: llm, kind: llm, label: LLM, description: "Starts with only the tool-search tool, finds the tool it needs, then calls it once its schema is loaded." }
         - { id: search, kind: tool, label: Tool search, description: "The one tool always in context: it matches a query against the descriptions of every tool in the catalog." }
         - { id: catalog, kind: memory, label: Tool catalog, sublabel: 200 tool schemas, description: "Every tool's name, description and full schema, kept outside the prompt until a search returns it." }
-        - { id: refund, kind: tool, label: Refund quote, hidden: true, description: "A tool loaded by the search: it computes a prorated refund from the plan price and the days used." }
+        - { id: refund, kind: tool, label: Refund quote, description: "A catalog tool the model cannot call until a search loads its schema; it computes a prorated refund from the price and days used." }
         - { id: out, kind: io, label: Answer, description: "The model's plain-language reply, sent once it needs no more tool calls." }
       edges:
         - { id: ask, from: user, to: llm, description: "The question arrives with only tool_search defined; the other tools' schemas are not in the context.", example: "What would a 30-day refund on my $240 plan be?" }
@@ -241,7 +241,7 @@ variants:
               duration: 2000
               events:
                 - { type: send, edge: schemas, token: { kind: result, label: 1 schema }, at: [0, 0.6] }
-                - { type: appear, node: refund, at: [0.6, 1] }
+                - { type: activate, node: refund, status: waiting, at: [0.6, 1] }
             - id: call
               caption: The model calls the newly loaded tool for the exact amount.
               duration: 2600
@@ -259,6 +259,14 @@ variants:
   - id: forced-output
     name: Forced output tool
     summary: "The model must call exactly one tool whose parameters are the output schema, so the reply is a structured record and there is no tool loop."
+    origin:
+      by: Erik Schluntz and Barry Zhang
+      org: Anthropic
+      year: 2024
+      url: https://www.anthropic.com/engineering/building-effective-agents
+      kind: popularized
+      uncertain: true
+      note: "No single originator: forced tool choice is a model-API feature that developers adopted as a structured-output technique. The credit shown is for the augmented LLM it builds on."
     build:
       goal: "Turn free text into one record that matches a fixed schema by forcing the model to call a single tool whose parameters are that schema."
       steps:

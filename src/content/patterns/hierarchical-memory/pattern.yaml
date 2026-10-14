@@ -23,14 +23,14 @@ build:
   goal: "Give a long-running chat agent memory beyond its context window by treating the window like RAM: a small always-visible core, a log of evicted messages and a searchable archive, paged with tool calls."
   steps:
     - "Build every prompt from the {{prompt:system}}: the core memory block, then the running summary, then the recent messages."
-    - "Give the agent three tools: core_memory_append(text), recall_search(query) over the evicted-message log, and archival_search(query) over the long-term store."
+    - "Give the agent five tools: core_memory_append(text) and core_memory_replace(old, new) for core memory, recall_search(query) over the evicted-message log, and archival_insert(text) and archival_search(query) for the long-term store."
     - "Run the agent loop: execute each tool call it makes, append the result, and call it again until it replies without a tool call."
     - "If a tool call fails or its arguments do not parse, return the error text as the tool result so the agent can retry or move on."
     - "After each turn, count the prompt's tokens. Above the threshold, evict the oldest messages: store them verbatim in recall memory and fold them into the running summary with the {{prompt:summary}}."
   stop: "Each turn stops when the agent replies without a tool call, or after 6 tool calls; at the cap, ask for a reply with tools disabled. The memory itself persists across sessions and is never reset."
   requirements:
     - "Make the eviction threshold (default 70% of the context window), the core memory limit (default 2,000 characters) and the per-turn tool cap (default 6) parameters."
-    - "Reject a core_memory_append that would pass the limit, with an error telling the agent to move older facts to archival memory."
+    - "Reject a core_memory_append that would pass the limit, with an error telling the agent to move older facts out with archival_insert or shorten them with core_memory_replace."
     - "Store recall and archival memory outside the process, keyed by user, so they survive restarts."
     - "Log every memory write and every eviction, with token counts before and after."
     - "Add a test with a stub token counter that crosses the threshold on turn 3; assert the oldest messages are in recall memory verbatim, the summarizer was called once, and those messages are no longer in the prompt."
@@ -47,8 +47,11 @@ prompts:
 
       Tools:
       - core_memory_append(text): save a durable fact to core memory.
+      - core_memory_replace(old, new): rewrite or shorten a fact in core memory.
       - recall_search(query): find exact past messages that were evicted from view.
+      - archival_insert(text): save a fact or document to the long-term store.
       - archival_search(query): look up documents and facts saved to the long-term store.
+      When core memory is full, move older facts out with archival_insert.
       Evicted messages are saved to recall memory automatically, and a running
       summary of them stays at the top of your context.
 
@@ -232,8 +235,8 @@ variants:
       steps:
         - "After each exchange, send the user message, the reply and a short running summary to the extractor with the {{prompt:extract}}, and parse its JSON list of candidate facts."
         - "For each candidate, find the 5 most similar stored facts by embedding similarity."
-        - "Call the model with the {{prompt:reconcile}}, passing the candidate and those facts, and parse one operation: ADD, UPDATE (with a fact id and new text), DELETE (with a fact id) or NOOP."
-        - "Apply the operation to the fact store, keeping each fact's id, text, timestamps and source exchange."
+        - "Call the model with the {{prompt:reconcile}}, passing the candidate and those facts, and parse its list of operations: ADD (new text), UPDATE (a fact id and the text with added detail), DELETE (the id of a contradicted fact) or NOOP."
+        - "Apply the operations in order to the fact store, keeping each fact's id, text, timestamps and source exchange."
         - "Before each agent turn, retrieve the 5 stored facts most similar to the new message and put them in the prompt."
         - "If the extractor or the reconcile reply does not parse, skip the memory update for that exchange and log it; the chat carries on."
       stop: "Memory updates run once per exchange, after the reply is sent, and never block it. There is no loop to stop; the store persists across sessions."
@@ -242,7 +245,7 @@ variants:
         - "Run extraction and reconciliation after the reply is sent, so the user never waits for them."
         - "Keep updated and deleted facts in a history table, so a wrong operation can be reverted."
         - "Log every operation with its candidate, the matched fact and the result."
-        - "Add a test with the stored fact 'User loves seafood' and a stub that returns UPDATE for the candidate 'User is vegetarian'; assert the store holds the single fact 'User is vegetarian' and the history holds the old text."
+        - "Add a test with the stored fact 'User loves seafood' and a stub that returns DELETE for it plus ADD 'User is vegetarian'; assert the store holds the single fact 'User is vegetarian' and the history holds the deleted text."
     prompts:
       - id: extract
         title: Fact extraction prompt
@@ -264,10 +267,14 @@ variants:
           <new_fact>{{candidate}}</new_fact>
           <similar_facts>{{similar}}</similar_facts>
 
-          Choose one operation:
-          ADD if it is new; UPDATE if it refines or replaces a stored fact;
-          DELETE if it shows a stored fact is no longer true; NOOP if already known.
-          Respond in JSON: {"op": "ADD|UPDATE|DELETE|NOOP", "id": "<fact id or null>", "text": "<new text or null>"}
+          List the operations to apply:
+          - ADD the new fact if no stored fact covers it.
+          - UPDATE a stored fact only to add complementary detail to it
+            (for example "Lisbon trip in May" becomes "Lisbon trip 12-19 May").
+          - DELETE every stored fact the new fact contradicts, then ADD the new fact.
+          - NOOP if the fact is already known.
+          Respond in JSON:
+          {"ops": [{"op": "ADD|UPDATE|DELETE|NOOP", "id": "<fact id or null>", "text": "<new text or null>"}]}
     diagram:
       nodes:
         - { id: user, kind: io, label: User, description: "The person chatting with the assistant, e.g. one who says 'I'm vegetarian now'." }
@@ -280,7 +287,7 @@ variants:
         - { id: reply, from: llm, to: user, description: "The agent's reply, sent before any memory work starts.", example: "Noted. I'll stick to vegetarian places from now on." }
         - { id: exchange, from: llm, to: extractor, label: exchange, description: "The latest exchange goes to the extractor after the reply is sent.", example: "user: I'm vegetarian now, so no more seafood suggestions. assistant: Noted..." }
         - { id: candidates, from: extractor, to: compare, label: candidates, description: "The candidate facts, each compared with the stored facts most similar to it.", example: "{\"facts\": [\"User is vegetarian\"]}" }
-        - { id: op, from: compare, to: facts, label: operation, description: "One operation per candidate is applied to the store.", example: "UPDATE fact 17: 'User loves Portuguese seafood' -> 'User is vegetarian (since October)'" }
+        - { id: op, from: compare, to: facts, label: operation, description: "The operations chosen for each candidate are applied to the store.", example: "DELETE fact 17 ('User loves Portuguese seafood'); ADD 'User is vegetarian (since October)'" }
         - { id: retrieve, from: facts, to: llm, style: dashed, label: facts, description: "On the next message, the stored facts most similar to it go into the agent's prompt.", example: "Relevant facts: User is vegetarian. Lisbon trip 12-19 May." }
       scenarios:
         - id: preference-changes
@@ -301,15 +308,15 @@ variants:
                 - { type: activate, node: extractor, status: thinking, at: [0.35, 0.65] }
                 - { type: send, edge: candidates, token: { kind: result, label: vegetarian }, at: [0.65, 1] }
             - id: reconcile
-              caption: The closest stored fact says the user loves seafood, so the operation is UPDATE, not ADD.
+              caption: The closest stored fact, that the user loves seafood, contradicts the new one, so the old fact is deleted and the new one added.
               duration: 2800
               events:
                 - { type: read, node: facts, at: [0, 0.25] }
                 - { type: activate, node: compare, status: thinking, at: [0.25, 0.55] }
-                - { type: send, edge: op, token: { kind: tokens, label: UPDATE }, at: [0.55, 0.85] }
+                - { type: send, edge: op, token: { kind: tokens, label: DELETE + ADD }, at: [0.55, 0.85] }
                 - { type: write, node: facts, at: [0.85, 1] }
             - id: next
-              caption: On the next message, the updated fact is retrieved into the agent's prompt.
+              caption: On the next message, the new fact is retrieved into the agent's prompt.
               duration: 2400
               events:
                 - { type: send, edge: msg, token: { kind: prompt, label: dinner? }, at: [0, 0.35] }

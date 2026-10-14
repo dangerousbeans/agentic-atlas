@@ -303,7 +303,7 @@ variants:
         - "Run each task with the actor as in plain Reflexion, and save every finished trial (task id, steps, outcome) to a trajectory store, failures and successes alike."
         - "After every 20 new trajectories, send the extractor pairs of a failed and a successful trial on the same task, together with the current insight list."
         - "Parse the extractor's reply as a list of operations (ADD, EDIT, UPVOTE, DOWNVOTE) and apply them to the insight bank; remove any insight whose score falls to zero."
-        - "When a new task starts, put the 5 highest-scored insights and the 2 most similar successful trajectories into the actor's first prompt."
+        - "When a new task starts, put the 5 highest-scored insights and the 2 most similar successful trajectories into the actor's first prompt (ExpeL itself includes the whole insight list; the cap keeps prompts short)."
         - "Run the task and save its trajectories for the next round of extraction."
       stop: "Each task stops as in Reflexion: on a pass or after 4 trials. Extraction runs in the background and never blocks a task."
       requirements:
@@ -311,7 +311,7 @@ variants:
         - "If a line of the extractor's reply does not parse as an operation, skip it and log it; apply the rest."
         - "Store each insight with its score, creation date and the trajectory ids it came from, so a bad insight can be traced and removed."
         - "Cap the bank (default 30 insights), dropping the lowest-scored one when it is full."
-        - "Add a test with a stub extractor that returns 'ADD: check 29 February'; assert the next new task's first actor prompt contains 'check 29 February'."
+        - "Add a test with the extraction batch set to 1 and a stub extractor that returns 'ADD: check 29 February'; after one saved trajectory, assert the next new task's first actor prompt contains 'check 29 February'."
     diagram:
       nodes:
         - { id: task, kind: io, label: New task, description: "A task never attempted before, such as 'Write days_between(a, b) for dates in two formats'." }

@@ -214,8 +214,8 @@ variants:
         - "Send the question to a small classifier that returns one label: A (no retrieval), B (single-step) or C (multi-step)."
         - "For A, call the model with the question alone and return its answer."
         - "For B, search the index once with the question, then call the model with the question and the top 5 documents."
-        - "For C, loop: search, call the model with the {{prompt:agent}} and every document so far, and either return its answer or search again with the follow-up query it writes."
-        - "If the classifier fails or returns an unknown label, treat the question as B."
+        - "For C, loop: search, call the model with the {{prompt:agent}} (with the index as the only source) and every document so far, and either return its answer or search again with the follow-up query it writes."
+        - "If the classifier fails or returns an unknown label, treat the question as B. If a search fails, answer from the documents so far (for B, from the question alone) and flag the answer."
       stop: "A and B end after one model call. C ends when the model answers, or after 4 searches; at the cap, answer from the documents gathered and flag the answer as having hit the limit."
       requirements:
         - "Make the search cap for C (default 4) and the documents per search (default 5) parameters."
@@ -230,7 +230,7 @@ variants:
         - { id: llm, kind: llm, label: LLM, description: "Writes the answer; for C questions it may instead write a follow-up query and loop." }
         - { id: out, kind: io, label: Answer, description: "The final answer, from whichever strategy the classifier picked." }
       edges:
-        - { id: ask, from: user, to: classifier, description: "Every question is classified before any retrieval happens.", example: "Where was the director of the film Lisbon Story born?" }
+        - { id: ask, from: user, to: classifier, description: "Every question is classified before any retrieval happens.", example: "Simple: What is the capital of Portugal? Multi-step: Where was the director of the film Lisbon Story born?" }
         - { id: simple, from: classifier, to: llm, label: "A: none", description: "Simple questions go straight to the model with no retrieval at all.", example: "Q: What is the capital of Portugal? -> label A, no retrieval" }
         - { id: retrieve, from: classifier, to: retriever, label: "B/C: search", description: "Questions that need facts are searched once (B) or iteratively (C).", example: "Q: Where was the director of Lisbon Story born? -> label C, multi-step" }
         - { id: docs, from: retriever, to: llm, style: dashed, label: docs, description: "Retrieved documents are added to the model's context.", example: "Lisbon Story is a 1994 film written and directed by Wim Wenders..." }

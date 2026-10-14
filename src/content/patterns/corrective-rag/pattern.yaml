@@ -174,16 +174,16 @@ variants:
     build:
       goal: "Let one model decide on demand whether to retrieve, judge each passage's relevance and its own output's support with reflection tokens, and keep the best-scored continuation."
       steps:
-        - "Use a model trained, or prompted with the {{prompt:self-rag}}, to emit reflection tokens: Retrieve (yes or no), IsRel (relevant or irrelevant), IsSup (fully, partially or not supported) and IsUse (1 to 5)."
+        - "Use a model trained, or prompted with the {{prompt:self-rag}}, to emit reflection tokens: Retrieve (yes, no, or continue to reuse the current passages), IsRel (relevant or irrelevant), IsSup (fully, partially or not supported) and IsUse (1 to 5)."
         - "Generate the next segment. If the model emits Retrieve=yes, search the index with the question plus the answer so far and take the top 4 passages."
         - "For each passage, generate a candidate segment in parallel and read the IsRel and IsSup tokens the model emits for it."
-        - "Score each candidate from its tokens, with relevant and fully supported scoring highest; keep the best one and append it to the answer."
+        - "Score each candidate as a weighted sum of its IsRel, IsSup and IsUse tokens, keep the best one and append it to the answer (the paper keeps the top 2 with a beam search)."
         - "When the model emits Retrieve=no, generate the segment without passages."
         - "If a candidate's reflection tokens cannot be parsed, give it the lowest score instead of failing the request."
       stop: "Stop when the model ends its answer, or after 6 segments. Return the answer with each segment's IsSup tag, so partly supported text can be shown as such."
       requirements:
-        - "Make the segment cap (default 6), the passages per retrieval (default 4) and the score weights parameters."
-        - "Expose a retrieval threshold: retrieve when the probability of Retrieve=yes is above it (default 0.5), where the model exposes token probabilities."
+        - "Make the segment cap (default 6), the passages per retrieval (default 4) and the score weights (defaults IsRel 1.0, IsSup 1.0, IsUse 0.5) parameters."
+        - "Expose a retrieval threshold: retrieve when the probability of Retrieve=yes is above it (default 0.2), where the model exposes token probabilities."
         - "Log every segment's candidates with their reflection tokens and scores."
         - "Add a test with a stub model that emits Retrieve=no for a rewording task; assert the retriever is never called and one segment is returned."
     prompts:
@@ -197,10 +197,12 @@ variants:
           <answer_so_far>{{answer}}</answer_so_far>
           {{#if passage}}<passage>{{passage}}</passage>{{/if}}
 
-          Before each segment, write [Retrieve=Yes] if you need a document, else [Retrieve=No].
+          Before each segment, write [Retrieve=Yes] if you need a new document,
+          [Retrieve=Continue] to keep using the current passage, else [Retrieve=No].
           If a passage is given, write [IsRel=Relevant] or [IsRel=Irrelevant] for it.
-          After the segment, write [IsSup=Fully], [IsSup=Partially] or [IsSup=No]
-          for how well the passage supports it, then [IsUse=1..5] for its usefulness.
+          If a passage was given, after the segment write [IsSup=Fully], [IsSup=Partially]
+          or [IsSup=No] for how well it supports the segment.
+          Finally write [IsUse=1..5] for the segment's usefulness.
     diagram:
       nodes:
         - { id: user, kind: io, label: Question, description: "The user's question, e.g. 'Who is our current vendor for payroll?'." }
@@ -259,6 +261,14 @@ variants:
   - id: groundedness
     name: Groundedness loop
     summary: "After generating, a grader checks that the answer is grounded and on-topic: ungrounded answers regenerate, and off-topic ones rewrite the query and retrieve again."
+    origin:
+      by: LangChain
+      org: LangChain
+      year: 2024
+      url: https://www.langchain.com/blog/agentic-rag-with-langgraph
+      kind: popularized
+      uncertain: true
+      note: "No single originator. It combines CRAG's query rewriting with Self-RAG-style checks of the answer for groundedness and relevance; LangChain's 'Self-Reflective RAG with LangGraph' (February 2024) describes this loop."
     build:
       goal: "Answer from retrieved documents, then grade the answer itself: regenerate when it is not grounded in the documents, and rewrite the query and retrieve again when it does not answer the question."
       steps:
@@ -271,9 +281,9 @@ variants:
       stop: "Stop when both checks pass, or after 3 loops in total, regenerations and re-retrievals together. At the cap, reply that no supported answer was found and return the last documents."
       requirements:
         - "Make the total loop cap (default 3) and the documents per retrieval (default 4) parameters."
-        - "Cap re-retrievals separately (default 2), so a poor index cannot use up every loop."
+        - "Cap re-retrievals separately (default 2), so a poor index cannot use up every loop. If a retrieval fails or returns nothing, reply that no supported answer was found."
         - "Log each grade with the loop it triggered."
-        - "Add a test with a stub grader that returns answers_question=false once and then passes both checks; assert two retrievals, the second using the rewritten query, and that the second answer is returned."
+        - "Add a test with a stub grader that returns answers_question=false once and then passes both checks, and a stub rewriter that returns 'payroll vendor contract'; assert two retrievals, the second with the query 'payroll vendor contract', and that the second answer is returned."
     prompts:
       - id: answer-grader
         title: Answer grader prompt
@@ -312,7 +322,7 @@ variants:
         - { id: ask, from: user, to: retriever, description: "The question is the first search query.", example: "Question: Who is our current vendor for payroll?" }
         - { id: docs, from: retriever, to: generator, style: dashed, label: docs, description: "The top documents go to the generator.", example: "4 docs: \"Payroll runs on the 25th of each month...\", \"Payroll FAQ...\"" }
         - { id: draft, from: generator, to: grader, label: answer, description: "Each answer is graded with the documents it should rest on.", example: "Payroll runs on the 25th of each month." }
-        - { id: regen, from: grader, to: generator, style: loop, label: ungrounded, description: "Claims not found in the documents go back so the generator can drop or fix them.", example: "{\"grounded\": false, \"answers_question\": true, \"unsupported_claims\": [\"on a three-year contract\"]}" }
+        - { id: regen, from: grader, to: generator, style: loop, label: rewrite, description: "If the answer is ungrounded, the claims not found in the documents go back so the generator can drop or fix them.", example: "{\"grounded\": false, \"answers_question\": true, \"unsupported_claims\": [\"on a three-year contract\"]}" }
         - { id: off, from: grader, to: rewriter, label: off-topic, description: "A grounded answer that misses the question means the search missed, so the query is rewritten.", example: "{\"grounded\": true, \"answers_question\": false, \"unsupported_claims\": []}" }
         - { id: requery, from: rewriter, to: retriever, style: loop, label: new query, description: "The rewritten query is searched, and the loop continues with the new documents.", example: "payroll provider contract vendor name 2025" }
         - { id: accept, from: grader, to: out, label: grounded, description: "An answer that passes both checks leaves the loop.", example: "Acme has used Gusto for payroll since March 2025." }
@@ -346,6 +356,32 @@ variants:
                 - { type: send, edge: docs, token: { kind: result, label: contract }, at: [0.85, 1] }
             - id: second-answer
               caption: The new answer names the vendor, every claim is in the documents, and it is returned.
+              duration: 2800
+              events:
+                - { type: activate, node: generator, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: draft, token: { kind: result, label: answer }, at: [0.3, 0.55] }
+                - { type: branch, node: grader, taken: accept, notTaken: [off, regen], at: [0.55, 0.7] }
+                - { type: send, edge: accept, token: { kind: result, label: Gusto }, at: [0.7, 1] }
+        - id: ungrounded
+          label: An ungrounded claim is dropped
+          steps:
+            - id: retrieve
+              caption: The question is searched and the documents, which include the vendor contract, go to the generator.
+              duration: 2000
+              events:
+                - { type: send, edge: ask, token: { kind: prompt, label: question }, at: [0, 0.4] }
+                - { type: read, node: retriever, at: [0.4, 0.6] }
+                - { type: send, edge: docs, token: { kind: result, label: 4 docs }, at: [0.6, 1] }
+            - id: first-answer
+              caption: The answer adds a three-year term that no document states, so the grader marks it ungrounded.
+              duration: 3200
+              events:
+                - { type: activate, node: generator, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: draft, token: { kind: result, label: answer }, at: [0.3, 0.55] }
+                - { type: branch, node: grader, taken: regen, notTaken: [accept, off], at: [0.55, 0.7] }
+                - { type: send, edge: regen, token: { kind: feedback, label: 3-year term }, at: [0.7, 1] }
+            - id: second-answer
+              caption: The generator drops the unsupported claim from the same documents, and the answer passes both checks.
               duration: 2800
               events:
                 - { type: activate, node: generator, status: thinking, at: [0, 0.3] }

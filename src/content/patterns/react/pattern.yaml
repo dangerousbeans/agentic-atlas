@@ -312,7 +312,7 @@ variants:
         - { id: ask, from: user, to: agent, description: "The task enters the ReAct prompt and starts the first context window.", example: "Task: Find out why checkout requests started failing last night." }
         - { id: act, from: agent, to: tools, label: action, description: "Each turn's tool call, as in plain ReAct.", example: "Action: search_logs[service=checkout level=error since=22:00]" }
         - { id: obs, from: tools, to: agent, style: dashed, label: observation, description: "Tool output is appended as an Observation; log searches and file reads make it grow fast.", example: "Observation: 1,204 lines: PaymentError: invalid merchant key (first at 22:14)" }
-        - { id: compact, from: agent, to: summarizer, label: history, description: "When the transcript passes the token threshold, the whole history goes to the summarizer instead of to the next turn.", example: "Transcript at 152k of 200k tokens: 37 turns of log searches and file reads." }
+        - { id: compact, from: agent, to: summarizer, label: history, description: "When the transcript passes the token threshold, the history, except the last few turns, goes to the summarizer instead of to the next turn.", example: "Transcript at 152k of 200k tokens: 37 turns of log searches and file reads." }
         - { id: fresh, from: summarizer, to: agent, style: loop, label: summary, description: "The summary starts a fresh window, followed by the last few turns verbatim; the loop resumes from there.", example: "Progress so far: errors began at 22:14, after deploy 4512. Ruled out the database and the cache. Next: diff the payments config." }
         - { id: finish, from: agent, to: out, label: final, description: "When the agent writes a Final Answer, the loop ends.", example: "Final Answer: Deploy 4512 rotated the merchant key in config but not in the vault; checkout has failed since 22:14." }
       scenarios:
@@ -334,11 +334,10 @@ variants:
                 - { type: activate, node: tools, status: calling, at: [0.5, 0.7] }
                 - { type: send, edge: obs, token: { kind: result, label: log lines }, at: [0.7, 1] }
             - id: compact
-              caption: The transcript passes three quarters of the window, so plain code sends it to the summarizer.
+              caption: Before the agent's next turn, a size check in plain code finds the transcript past three quarters of the window and sends it to the summarizer.
               duration: 2600
               events:
-                - { type: branch, node: agent, taken: compact, notTaken: [act, finish], at: [0, 0.2] }
-                - { type: send, edge: compact, token: { kind: tokens, label: 37 turns }, at: [0.2, 0.55] }
+                - { type: send, edge: compact, token: { kind: tokens, label: 37 turns }, at: [0, 0.55] }
                 - { type: activate, node: summarizer, status: thinking, at: [0.55, 1] }
             - id: resume
               caption: The summary opens a fresh window and the agent carries on from its next step.
