@@ -3,5 +3,5 @@ name: "Safety & Oversight"
 rank: 6
 accent: "#E9D8A6"
 description: Checks and human approval points wrapped around any of the other patterns.
-order: []
+order: [human-in-the-loop, guardrails]
 constellation: { x: 4.4, y: 2.6, z: -3.2 }
