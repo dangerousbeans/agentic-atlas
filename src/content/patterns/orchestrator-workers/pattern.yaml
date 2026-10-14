@@ -196,7 +196,7 @@ variants:
         - { id: w1, kind: llm, label: Agent 1, description: "A research subagent with its own search tools, working on one objective from the current round." }
         - { id: w2, kind: llm, label: Agent 2, description: "A second research subagent working in parallel on a different objective, with its own context." }
         - { id: w3, kind: llm, label: Agent 3, description: "A third research subagent; a round has as many as the lead asks for, up to a cap." }
-        - { id: findings, kind: memory, label: Findings, description: "Every subagent's findings with their sources, kept outside the lead's context and re-read by the lead after each round." }
+        - { id: findings, kind: memory, label: Findings, description: "The lead's plan and every subagent's findings with their sources, kept outside the lead's context and re-read by the lead after each round." }
         - { id: citer, kind: llm, label: Citations, description: "A separate finishing step that attaches a source from the findings to every claim in the report." }
         - { id: output, kind: io, label: Report, description: "The final report, with a citation on every claim." }
       edges:

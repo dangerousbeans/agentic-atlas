@@ -134,22 +134,22 @@ variants:
         - "Embed the examples and the messages with the same model; re-embed every example when that model changes."
         - "If the embedding call errors or times out, send the message to the general handler instead of failing."
         - "Log the chosen route with its score and best similarity, and the runner-up route with its score, so near-ties can be found and new examples added."
-        - "Add a test with a stub embedder that returns fixed vectors; assert 0.40 to the best example goes to general and 0.92 to a tech example goes to tech, and that one billing match at 0.93 plus three tech matches at 0.60 goes to general (tech wins at 1.80, but its best is under 0.75)."
+        - "Add a test with a stub embedder that returns fixed vectors; assert 0.40 to the best example goes to general and 0.92 to a tech example plus four tech matches at 0.50 goes to tech, and that one billing match at 0.93 plus three tech matches at 0.60 goes to general (tech wins at 1.80, but its best is under 0.75)."
     diagram:
       nodes:
         - { id: input, kind: io, label: Request, description: "The incoming customer message, such as 'The app crashes on login' or 'I was charged twice'." }
-        - { id: router, kind: router, label: Nearest match, sublabel: embed + compare, model: false, description: "No LLM: embeds the message, compares it with every stored example and picks the route of the closest ones." }
+        - { id: router, kind: router, label: Nearest match, sublabel: embed + compare, model: false, description: "No LLM: embeds the message, compares it with every stored example and picks the route whose top-5 matches score highest in total." }
         - { id: routes, kind: memory, label: Route examples, description: "Example utterances for each route, embedded once at startup and stored as vectors with their route name." }
         - { id: billing, kind: llm, label: Billing, description: "Specialist prompt for charges, invoices, refunds and plan changes, with account context." }
         - { id: tech, kind: llm, label: Tech support, description: "Specialist prompt for errors, crashes and how-to questions, with knowledge-base search and error-log tools." }
-        - { id: general, kind: llm, label: General, description: "Fallback handler for any message whose best match is below the similarity threshold." }
+        - { id: general, kind: llm, label: General, description: "Fallback handler for any message whose chosen route has no single match above the similarity threshold." }
         - { id: output, kind: io, label: Reply, description: "The reply written by whichever handler took the message." }
       edges:
         - { id: in, from: input, to: router, description: "The raw message is embedded with the same model used for the examples.", example: "\"The app crashes on login\" -> [0.012, -0.087, 0.231, ...] (1,024 dimensions)" }
         - { id: lookup, from: router, to: routes, style: dashed, label: lookup, description: "The message vector is compared with every stored example by cosine similarity; the closest examples come back with their scores.", example: "tech: 'app won't open' 0.91, 'crash after update' 0.89; billing: 'charged twice' 0.22" }
-        - { id: to-billing, from: router, to: billing, description: "Taken when most of the nearest examples are billing ones and the best score clears the threshold.", example: "I was charged twice for my March invoice (best match 'double charge on invoice', 0.93)" }
-        - { id: to-tech, from: router, to: tech, description: "Taken when most of the nearest examples are tech ones and the best score clears the threshold.", example: "The app crashes on login (best match 'app won't open', 0.91)" }
-        - { id: to-general, from: router, to: general, style: dashed, label: no match, description: "Taken when even the best match is below the threshold, so no route is a confident fit.", example: "Do you have an office in Berlin? (best match 'change my plan', 0.41, below 0.75)" }
+        - { id: to-billing, from: router, to: billing, description: "Taken when billing is the highest-scoring route among the top 5 matches and its own best match clears the threshold.", example: "I was charged twice for my March invoice (best match 'double charge on invoice', 0.93)" }
+        - { id: to-tech, from: router, to: tech, description: "Taken when tech is the highest-scoring route among the top 5 matches and its own best match clears the threshold.", example: "The app crashes on login (best match 'app won't open', 0.91)" }
+        - { id: to-general, from: router, to: general, style: dashed, label: no match, description: "Taken when the chosen route's best match is below the threshold, so no route is a confident fit.", example: "Do you have an office in Berlin? (best match 'change my plan', 0.41, below 0.75)" }
         - { id: billing-out, from: billing, to: output, description: "The billing specialist's reply goes back to the customer.", example: "Sorry about that. I can see two charges of $29 on March 3. I've flagged the duplicate for a refund; you'll hear from us within 3 days." }
         - { id: tech-out, from: tech, to: output, description: "The tech-support reply goes back to the customer.", example: "1. Update to version 4.2.1. 2. Clear the app cache. 3. Log in again. If it still crashes, send us the log from Settings > Help." }
         - { id: general-out, from: general, to: output, description: "The general handler's reply goes back to the customer.", example: "Thanks for reaching out. We are a fully remote team, so we do not have a Berlin office, but you can book a call at any time." }
