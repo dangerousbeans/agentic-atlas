@@ -1,0 +1,39 @@
+## Problem
+
+The strongest models cost tens to hundreds of times more per query than the smallest. A support bot that sends every question to its best model pays top price for "How do I reset my router?", which a small model answers perfectly. Sending everything to the small model instead saves money but fails the hard tail: "Why does my VPN drop only on 5 GHz since the last firmware update?" needs real troubleshooting. Most traffic is easy, but you cannot tell from the outside which questions are which.
+
+## How it works
+
+A cascade tries the cheap option first and pays for the expensive one only when it has to. Every <NodeRef id="user">question</NodeRef> goes to the <NodeRef id="small">small model</NodeRef>. Its answer goes to a <NodeRef id="scorer">scorer</NodeRef>, a cheap judge that rates how likely the answer is to be correct, from 0 to 1. In FrugalGPT the scorer is a small trained model; a short prompt on a cheap LLM also works.
+
+If the score clears the threshold, the cheap answer goes straight to the <NodeRef id="out">customer</NodeRef>. The router-reset answer scores 0.93 and ships for a fraction of a cent. If the score is too low, the cascade throws the cheap answer away and sends the same question up to the <NodeRef id="large">large model</NodeRef>. The VPN answer scores 0.41 because it ignores the firmware detail, so the large model takes over and finds the real cause.
+
+The diagram shows two rungs; real cascades often have three or more, each with its own threshold. The thresholds are the main dial. Tune them on a labelled sample so the cascade matches the top model's accuracy at the lowest total cost. FrugalGPT reports matching the best single model with up to 98% lower cost on its benchmarks.
+
+## Variants
+
+- **Predictive router:** a trained classifier guesses the difficulty before any model runs, so each query makes exactly one call. It saves the wasted cheap attempt but cannot look at an actual answer.
+- **Draft and verify:** the small model always drafts and the large model accepts or rewrites. Reading a draft and replying "accept" costs the large model far fewer output tokens than writing the answer itself.
+
+## When to use
+
+- Traffic is mostly easy, with a long tail of hard cases.
+- You can score answer quality cheaply and reasonably well.
+- Cost matters more than the extra latency on the escalated queries.
+
+## When to avoid
+
+- Nearly every query is hard. You pay for the cheap attempt and the expensive one.
+- Latency is tight. An escalated query waits for two models and a scorer in sequence.
+- You have no way to score answers; a scorer that cannot tell good from bad makes the cascade a coin toss.
+
+## Trade-offs
+
+The cascade's savings depend on two numbers: the share of queries the cheap rung handles and how well the scorer separates good answers from bad. A lenient scorer saves money but ships weak answers; a strict one escalates too often and costs more than calling the large model directly. Escalated queries are always slower and slightly more expensive than they would have been without the cascade, which is the price paid for the cheap majority.
+
+## Failure modes
+
+- **Overconfident scorer:** confident-sounding wrong answers score high and ship. Calibrate the scorer on labelled examples, and spot-check what passes.
+- **Everything escalates:** a threshold set too high, or a model upgrade that shifts scores, sends most traffic to the top. Track the share answered at each rung.
+- **Inconsistent answers:** two similar questions get answers from different models in different styles. Use the same prompt at every rung and keep the output format fixed.
+- **Scorer drift:** a scorer tuned for one small model misjudges its replacement. Re-tune thresholds whenever a rung changes.
