@@ -3,8 +3,9 @@ import '../styles/global.css';
 import Header from '../components/site/Header.astro';
 import Footer from '../components/site/Footer.astro';
 import { href } from '../lib/url';
+/** `accent` is accepted for compatibility but ignored: the accent is always var(--accent). */
 interface Props { title: string; description: string; accent?: string; pagefind?: boolean }
-const { title, description, accent, pagefind = false } = Astro.props;
+const { title, description, pagefind = false } = Astro.props;
 const fullTitle = title === 'Agentic Atlas' ? title : `${title} · Agentic Atlas`;
 const og = Astro.site ? new URL(href('/og.png'), Astro.site).toString() : href('/og.png');
 ---
@@ -21,7 +22,7 @@ const og = Astro.site ? new URL(href('/og.png'), Astro.site).toString() : href('
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" href={href('/favicon.svg')} type="image/svg+xml" />
   </head>
-  <body style={accent ? `--family-accent:${accent}` : undefined}>
+  <body>
     <a class="skip" href="#main">Skip to content</a>
     <Header />
     <main id="main" data-pagefind-body={pagefind ? '' : undefined}>

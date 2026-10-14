@@ -12,7 +12,7 @@ const f = cat.family(Astro.params.slug!);
 const data = buildConstellation(cat.families, cat.patternsOf);
 const pats = cat.patternsOf(f.slug);
 ---
-<BaseLayout title={f.name} description={f.description} accent={f.accent} pagefind>
+<BaseLayout title={f.name} description={f.description} pagefind>
   <section class="fam-hero">
     <Constellation data={data} focus={f.slug} height={420}>
       <div class="copy wrap"><p class="eyebrow">Family · {pats.length} patterns</p><h1><span data-pagefind-filter="family">{f.name}</span></h1><p class="lede">{f.description}</p></div>
@@ -30,18 +30,18 @@ const pats = cat.patternsOf(f.slug);
         </li>
       ))}
     </ul>
-    <nav class="other" aria-label="Other families"><p class="eyebrow">Other families</p>{cat.families.filter(x => x.slug !== f.slug).map(x => <a href={href(`/families/${x.slug}/`)} style={`--family-accent:${x.accent}`}>{x.name}</a>)}</nav>
+    <nav class="other" aria-label="Other families"><p class="eyebrow">Other families</p>{cat.families.filter(x => x.slug !== f.slug).map(x => <a href={href(`/families/${x.slug}/`)}>{x.name}</a>)}</nav>
   </section>
 </BaseLayout>
 <style>
   .copy { position: absolute; inset: auto 0 36px 0; z-index: 2; pointer-events: none; }
   .lede { color: var(--text-2); font-size: 18px; max-width: 40rem; }
   .pattern-strip { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 40px; }
-  .pattern-strip a { display: block; text-decoration: none; padding: 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--bg-1); height: 100%; }
-  .pattern-strip a:hover { border-color: var(--family-accent); }
+  .pattern-strip a { display: block; text-decoration: none; padding: 14px; border: 1px solid var(--line); border-radius: 0; background: var(--bg-1); height: 100%; }
+  .pattern-strip a:hover { border-color: var(--line-strong); }
   /* Compact thumbnails have no DOWN variant; keep the wide layout visible in narrow cards (scaled to fit). */
   .pattern-strip :global(.diagram-svg[data-layout="wide"]) { display: block; }
-  .pattern-strip h2 { font-size: 1.6rem; margin: 14px 0 4px; }
+  .pattern-strip h2 { font-size: 1.35rem; margin: 14px 0 4px; }
   .pattern-strip p { color: var(--text-2); font-size: 14px; margin: 0; }
   @media (max-width: 720px) {
     .fam-hero :global(.constellation) { height: auto; }
@@ -51,5 +51,5 @@ const pats = cat.patternsOf(f.slug);
     .copy { position: relative; inset: auto; order: 1; padding-top: 32px; }
   }
   .other { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: center; margin-top: 64px; }
-  .other a { color: var(--family-accent); }
+  .other a { color: var(--text); }
 </style>

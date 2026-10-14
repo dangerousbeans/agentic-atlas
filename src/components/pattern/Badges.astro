@@ -12,9 +12,9 @@ const items = [['Autonomy', badges.autonomy], ['Cost', badges.cost], ['Latency',
 <style>
   .badges { display: flex; gap: 22px; margin: 18px 0 28px; flex-wrap: wrap; }
   .badge { display: flex; flex-direction: column; gap: 4px; }
-  dt { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
+  dt { font: 500 11px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--text-3); }
   dd { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); text-transform: capitalize; }
   .dots { display: inline-flex; gap: 4px; }
-  .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
-  .dots i.on { background: var(--family-accent); box-shadow: 0 0 8px var(--family-accent); }
+  .dots i { width: 6px; height: 6px; border-radius: 0; background: var(--line-strong); }
+  .dots i.on { background: var(--accent); }
 </style>

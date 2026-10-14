@@ -1,0 +1,24 @@
+/* Buttons: sharp, hairline. `.btn` is the secondary (outline); add `.btn-primary` for solid red. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 44px; padding: 10px 20px;
+  font: 600 15px/1.2 var(--font-ui); letter-spacing: 0; text-decoration: none; white-space: nowrap;
+  color: var(--text); background: transparent;
+  border: 1px solid var(--line-strong); border-radius: 0;
+  cursor: pointer; transition: border-color .15s, background-color .15s, color .15s;
+}
+.btn:hover { color: var(--text); border-color: var(--text-2); background: var(--bg-1); }
+.btn:active { background: var(--bg-2); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+
+.btn-primary { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+.btn-primary:hover { color: var(--on-accent); background: color-mix(in oklab, var(--accent) 86%, var(--text)); border-color: transparent; }
+.btn-primary:active { background: color-mix(in oklab, var(--accent) 85%, var(--bg)); }
+.btn-primary:focus-visible { outline-color: var(--text); }
+
+/* Small variant for chrome (header, toolbars) and square icon buttons. */
+.btn-sm { min-height: 36px; padding: 6px 14px; font-size: 14px; }
+.btn-icon { width: 44px; padding: 0; }
+.btn-sm.btn-icon { width: 36px; }
+.btn .mark { width: var(--mark); height: var(--mark); }

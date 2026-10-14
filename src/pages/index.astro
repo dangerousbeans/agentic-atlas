@@ -17,12 +17,12 @@ const start = ['augmented-llm', 'prompt-chaining', 'routing', 'react', 'orchestr
         <h1>The night sky of <em>agentic</em> patterns</h1>
         <p>Every star is a pattern for building with LLMs; every constellation, a family. Hover a star to name it, click to see it run.</p>
       </div>
-      <ul class="legend" aria-hidden="true">{cat.families.map(f => <li style={`--c:${f.accent}`}>{f.name}</li>)}</ul>
+      <ul class="legend" aria-hidden="true">{cat.families.map(f => <li>{f.name}</li>)}</ul>
     </Constellation>
   </section>
   <section class="wrap start-here" aria-labelledby="start-h">
     <h2 id="start-h">Start <em>here</em></h2>
-    <ol>{start.map((p, i) => <li><a href={href(`/patterns/${p.slug}/`)} style={`--family-accent:${cat.family(p.family).accent}`}><span class="n">0{i + 1}</span><span class="name">{p.name}</span><span class="sum">{p.summary}</span></a></li>)}</ol>
+    <ol>{start.map((p, i) => <li><a href={href(`/patterns/${p.slug}/`)}><span class="n">0{i + 1}</span><span class="name">{p.name}</span><span class="sum">{p.summary}</span></a></li>)}</ol>
   </section>
   <section class="wrap" id="families" aria-labelledby="fam-h">
     <h2 id="fam-h">The six <em>families</em></h2>
@@ -31,14 +31,14 @@ const start = ['augmented-llm', 'prompt-chaining', 'routing', 'react', 'orchestr
 </BaseLayout>
 <style>
   .hero { position: relative; }
-  .copy { position: absolute; left: max(24px, calc((100vw - var(--max)) / 2 + 24px)); top: 56px; max-width: 460px; z-index: 2; pointer-events: none; }
+  .copy { position: absolute; left: max(var(--gutter), calc((100vw - var(--max)) / 2 + var(--gutter))); top: 56px; max-width: 460px; z-index: 2; pointer-events: none; }
   .copy p:last-child { color: var(--text-2); font-size: 17px; }
-  .legend { position: absolute; left: max(24px, calc((100vw - var(--max)) / 2 + 24px)); bottom: 32px; display: flex; gap: 18px; flex-wrap: wrap; list-style: none; padding: 0; margin: 0; font-size: 12px; color: var(--text-2); z-index: 2; pointer-events: none; }
-  .legend li::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; background: var(--c); box-shadow: 0 0 10px var(--c); }
+  .legend { position: absolute; left: max(var(--gutter), calc((100vw - var(--max)) / 2 + var(--gutter))); bottom: 32px; display: flex; gap: 18px; flex-wrap: wrap; list-style: none; padding: 0; margin: 0; font-size: 12px; color: var(--text-2); z-index: 2; pointer-events: none; }
+  .legend li::before { content: ""; display: inline-block; width: var(--mark); height: var(--mark); margin-right: 8px; background: var(--accent); vertical-align: middle; }
   .start-here ol { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
-  .start-here a { display: flex; flex-direction: column; gap: 6px; height: 100%; padding: 18px; border: 1px solid var(--line); border-radius: 14px; text-decoration: none; background: var(--bg-1); }
-  .start-here a:hover { border-color: var(--family-accent); }
-  .n { font: 12px var(--font-mono); color: var(--family-accent); } .name { font: 400 22px var(--font-display); } .sum { font-size: 13px; color: var(--text-2); }
+  .start-here a { display: flex; flex-direction: column; gap: 6px; height: 100%; padding: 18px; border: 1px solid var(--line); border-radius: 0; text-decoration: none; background: var(--bg-1); }
+  .start-here a:hover { border-color: var(--accent); }
+  .n { font: 12px var(--font-mono); color: var(--family-accent); } .name { font: 700 19px/1.25 var(--font-ui); } .sum { font-size: 13px; color: var(--text-2); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
   @media (max-width: 960px) { .start-here ol { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 720px) { .hero :global(.constellation) { height: auto; display: flex; flex-direction: column; } .hero :global(.constellation .fallback) { position: relative; inset: auto; height: 300px; order: 2; } .hero :global(.constellation-svg) { transform: scale(1.2); transform-origin: 50% 50%; } .copy { order: 1; position: relative; left: auto; top: auto; padding: 32px 24px 0; } .legend { display: none; } .start-here ol { grid-template-columns: 1fr; } }
