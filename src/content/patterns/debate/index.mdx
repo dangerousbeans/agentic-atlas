@@ -1,0 +1,34 @@
+## Problem
+
+A single model asked a hard question will commit to one line of reasoning and defend it, even when it is wrong. Sampling it again gives you another confident answer with no way to tell which one holds up. Math, factual recall and strategy questions suffer most from this lock-in.
+
+## How it works
+
+Run several instances as debaters and make them read each other. The <NodeRef id="user">question</NodeRef> goes to <NodeRef id="a">debater A</NodeRef>, <NodeRef id="b">debater B</NodeRef> and <NodeRef id="c">debater C</NodeRef> at the same time. Each answers independently, so the first answers often disagree: one says 42, another 36.
+
+Then come the rounds. In each round every debater sees what the others wrote, critiques it, and revises its own answer in light of it. A debater that finds an arithmetic slip in a peer's reasoning says so, and a debater whose own answer is exposed as wrong changes it. The diagram draws one cross edge per debater (A to B, B to C, C to A) to keep it readable, but in the original method each agent reads all the others. All of this happens in parallel, and two rounds are typically enough for answers to converge or for the disagreement to sharpen.
+
+Finally the <NodeRef id="judge">judge</NodeRef> reads the final answers with their arguments and issues one <NodeRef id="out">ruling</NodeRef>. In the research setup, simple majority or consensus can replace the judge.
+
+## When to use
+
+- The question has a verifiable-in-principle answer, such as math, facts or logic, where independent reasoning errors differ.
+- Accuracy matters more than cost.
+- Different model families or prompts can supply diverse viewpoints.
+
+## When to avoid
+
+- Cheap tools can verify the answer directly: run the tests, query the database.
+- The question is subjective, so there is nothing to converge on.
+- Latency or token budget is tight.
+
+## Trade-offs
+
+Cost scales as agents times rounds, and the prompt grows each round as answers accumulate. In exchange, reported gains on reasoning and factuality benchmarks are real but vary by task. Debaters built from the same model share biases, so more rounds do not add independence.
+
+## Failure modes
+
+- **Conformity:** debaters drop correct answers to agree with a confident wrong one. Instruct them to hold their position unless given a concrete reason.
+- **Echo chamber:** identical agents repeat the same error. Vary the model, prompt or persona.
+- **Verbose drift:** arguments balloon and the judge loses the thread. Cap each response and ask for a one-line answer.
+- **Judge bias:** the judge favors the longest or last answer. Randomize the order and require evidence-based reasons.

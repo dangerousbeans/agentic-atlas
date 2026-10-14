@@ -1,0 +1,34 @@
+## Problem
+
+One agent with a dozen tools and a long prompt gets confused. It picks the wrong tool, forgets instructions and mixes research notes with code. Giving each job its own specialist with a short prompt and a focused toolset works better, but then something has to decide who does what and combine the results.
+
+## How it works
+
+A central <NodeRef id="supervisor">supervisor</NodeRef> agent owns the conversation and the plan. Its tools are other agents. Given a <NodeRef id="user">task</NodeRef> such as "write a report on our churn with a chart", it picks a specialist, writes a self-contained brief and calls it, for example the <NodeRef id="researcher">researcher</NodeRef>, the <NodeRef id="coder">coder</NodeRef> or the <NodeRef id="writer">writer</NodeRef>. Each specialist is a full agent with its own tools and loop. When it finishes, its result returns to the supervisor, never directly to another specialist.
+
+The supervisor reads each result, decides the next step, and eventually returns the <NodeRef id="out">deliverable</NodeRef> itself. The hub shape makes the flow easy to trace, log and interrupt.
+
+Teams can nest. In the hierarchical scenario the coder is the lead of a small coding team, and it delegates test runs to the <NodeRef id="tester">tester</NodeRef>. The top supervisor sees only the coder's summarized result, so its own context stays small.
+
+## When to use
+
+- The task needs different tools, prompts or permissions for different parts.
+- You want one place to log, audit and apply guardrails.
+- A single agent's tool list has grown past what it can use reliably.
+
+## When to avoid
+
+- Subtasks are simple plain LLM calls. Orchestrator-workers is lighter.
+- The user should talk directly to the specialist. Consider handoffs.
+- One agent with a few tools already does the job.
+
+## Trade-offs
+
+Every result passes through the supervisor, so it is a bottleneck for both latency and context. Sequential delegation is slow, and each hop adds an agent run, so cost climbs quickly. You gain clear control and debuggability in exchange for those hops, which is why many teams start with a single agent and add a supervisor only when they must.
+
+## Failure modes
+
+- **Wrong delegation:** the supervisor picks the wrong specialist or writes a vague brief. Describe each specialist's scope sharply and require self-contained instructions.
+- **Telephone game:** details are lost as results are summarized upward. Let specialists return structured outputs or artifact references.
+- **Runaway delegation:** the supervisor keeps calling agents. Cap the turns and force a final answer.
+- **Context bloat:** raw specialist output floods the supervisor's history. Ask for concise reports.

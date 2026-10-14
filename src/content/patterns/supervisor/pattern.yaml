@@ -1,0 +1,162 @@
+slug: supervisor
+name: Supervisor
+family: multi-agent
+aliases: [Manager pattern, Orchestrator agent, Agents-as-tools, Hierarchical teams]
+summary: A supervisor agent sends work to specialist agents and every result comes back through it.
+badges: { autonomy: high, cost: high, latency: high }
+sources:
+  - title: A practical guide to building agents (OpenAI, 2025)
+    url: https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf
+  - title: Multi-agent (LangChain docs)
+    url: https://docs.langchain.com/oss/python/langchain/multi-agent
+related:
+  composesWith: [human-in-the-loop, guardrails]
+  confusedWith:
+    - { slug: orchestrator-workers, difference: "Orchestrator-workers hands subtasks to plain LLM calls; a supervisor delegates to full agents that have their own tools and loops." }
+    - { slug: handoffs, difference: "A supervisor keeps control and every result returns to it; with handoffs the conversation itself moves to another agent, with no manager." }
+code:
+  - id: manager
+    title: supervisor.py
+    lang: python
+    source: |
+      def supervisor(task, specialists, max_turns=8):
+          history = [task]
+          for turn in range(max_turns):
+              step = llm(SUPERVISOR_PROMPT, history=history, team=specialists.describe())
+              if step.action == "finish":
+                  return step.answer
+              worker = specialists[step.agent]
+              result = worker.run(step.instruction)  # a full agent: own tools, own loop
+              history.append((step.agent, result))
+          return llm(SUPERVISOR_PROMPT, history=history, must_finish=True)
+prompts:
+  - id: supervisor
+    title: Supervisor prompt
+    lang: markdown
+    source: |
+      You lead a team of specialist agents. You never do the work yourself.
+
+      <team>
+      {{team_descriptions}}
+      </team>
+
+      <task>{{task}}</task>
+      <results_so_far>{{history}}</results_so_far>
+
+      Choose the next step. Respond in JSON:
+      {"action": "delegate" | "finish",
+       "agent": "<name from the team>",
+       "instruction": "a self-contained brief with the goal and what to return",
+       "answer": "only when finishing: the final deliverable"}
+      Delegate one step at a time. Finish only when the task is fully done.
+  - id: specialist
+    title: Specialist agent prompt
+    lang: markdown
+    source: |
+      You are the {{role}} on a team. You have these tools: {{tools}}.
+
+      Your supervisor gave you this brief:
+      <brief>{{instruction}}</brief>
+
+      Do exactly what the brief asks, using your tools as needed.
+      Report back concisely: what you did, what you found, and anything you could not do.
+diagram:
+  groups:
+    - { id: coding-team, label: Coding team, children: [coder, tester] }
+  nodes:
+    - { id: user, kind: io, label: Task }
+    - { id: supervisor, kind: agent, label: Supervisor }
+    - { id: researcher, kind: agent, label: Researcher }
+    - { id: coder, kind: agent, label: Coder }
+    - { id: tester, kind: agent, label: Tester }
+    - { id: writer, kind: agent, label: Writer }
+    - { id: out, kind: io, label: Result }
+  edges:
+    - { id: task, from: user, to: supervisor }
+    - { id: d-research, from: supervisor, to: researcher }
+    - { id: r-research, from: researcher, to: supervisor, style: dashed }
+    - { id: d-code, from: supervisor, to: coder }
+    - { id: r-code, from: coder, to: supervisor, style: dashed }
+    - { id: d-write, from: supervisor, to: writer }
+    - { id: r-write, from: writer, to: supervisor, style: dashed }
+    - { id: sub-brief, from: coder, to: tester, label: sub-task }
+    - { id: sub-result, from: tester, to: coder, style: dashed }
+    - { id: finish, from: supervisor, to: out }
+  scenarios:
+    - id: delegate
+      label: One supervisor, three specialists
+      steps:
+        - id: arrive
+          caption: A task arrives at the supervisor, who plans which specialist to call first.
+          duration: 1400
+          codeRef: { block: manager, lines: "1-4" }
+          events:
+            - { type: send, edge: task, token: { kind: prompt, label: report + chart } }
+            - { type: activate, node: supervisor, status: thinking, at: [0.5, 1] }
+        - id: research
+          caption: The supervisor briefs the researcher, a full agent with search tools, and the findings come back to it.
+          duration: 3200
+          codeRef: { block: manager, lines: "5-9" }
+          events:
+            - { type: branch, node: supervisor, taken: d-research, notTaken: [d-code, d-write], at: [0, 0.15] }
+            - { type: send, edge: d-research, token: { kind: prompt, label: brief }, at: [0.15, 0.35] }
+            - { type: activate, node: researcher, status: calling, at: [0.35, 0.75] }
+            - { type: send, edge: r-research, token: { kind: result, label: findings }, at: [0.75, 1] }
+        - id: code
+          caption: Next the supervisor sends the data to the coder, which runs code and returns a chart.
+          duration: 3200
+          codeRef: { block: manager, lines: "3-9" }
+          events:
+            - { type: branch, node: supervisor, taken: d-code, notTaken: [d-research, d-write], at: [0, 0.15] }
+            - { type: send, edge: d-code, token: { kind: prompt, label: brief }, at: [0.15, 0.35] }
+            - { type: activate, node: coder, status: calling, at: [0.35, 0.75] }
+            - { type: send, edge: r-code, token: { kind: result, label: chart }, at: [0.75, 1] }
+        - id: write
+          caption: The writer receives both results through the supervisor and drafts the report.
+          duration: 3200
+          codeRef: { block: manager, lines: "3-9" }
+          events:
+            - { type: branch, node: supervisor, taken: d-write, notTaken: [d-research, d-code], at: [0, 0.15] }
+            - { type: send, edge: d-write, token: { kind: prompt, label: brief }, at: [0.15, 0.35] }
+            - { type: activate, node: writer, status: thinking, at: [0.35, 0.75] }
+            - { type: send, edge: r-write, token: { kind: result, label: draft }, at: [0.75, 1] }
+        - id: finish
+          caption: The supervisor judges the task complete and returns the deliverable.
+          duration: 2200
+          codeRef: { block: manager, lines: "5-6" }
+          events:
+            - { type: activate, node: supervisor, status: thinking, at: [0, 0.4] }
+            - { type: send, edge: finish, token: { kind: result, label: report }, at: [0.4, 1] }
+    - id: hierarchical
+      label: Hierarchical, with a coding sub-team
+      steps:
+        - id: arrive
+          caption: A coding task arrives at the top-level supervisor.
+          duration: 1400
+          codeRef: { block: manager, lines: "1-4" }
+          events:
+            - { type: send, edge: task, token: { kind: prompt, label: fix bug } }
+            - { type: activate, node: supervisor, status: thinking, at: [0.5, 1] }
+        - id: delegate
+          caption: The supervisor hands the whole job to the coder, who leads a small team of its own.
+          duration: 2400
+          codeRef: { block: manager, lines: "7-8" }
+          events:
+            - { type: branch, node: supervisor, taken: d-code, notTaken: [d-research, d-write], at: [0, 0.25] }
+            - { type: send, edge: d-code, token: { kind: prompt, label: brief }, at: [0.25, 0.75] }
+            - { type: activate, node: coder, status: thinking, at: [0.75, 1] }
+        - id: sub-team
+          caption: Inside the team, the coder delegates testing to the tester and waits for the verdict.
+          duration: 3400
+          codeRef: { block: manager, lines: "7-8" }
+          events:
+            - { type: send, edge: sub-brief, token: { kind: prompt, label: run tests }, at: [0, 0.3] }
+            - { type: activate, node: tester, status: calling, at: [0.3, 0.7] }
+            - { type: send, edge: sub-result, token: { kind: result, label: 12 pass }, at: [0.7, 1] }
+        - id: report
+          caption: The coder reports one summarized result up to the supervisor, which never sees the inner steps.
+          duration: 2400
+          codeRef: { block: manager, lines: "9" }
+          events:
+            - { type: send, edge: r-code, token: { kind: result, label: patch }, at: [0, 0.6] }
+            - { type: send, edge: finish, token: { kind: result, label: fix }, at: [0.6, 1] }
