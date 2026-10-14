@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { parse } from 'yaml';
+import { parse, parseDocument, visit } from 'yaml';
 import { patternSchema, familySchema } from '../../src/lib/schema';
 import { buildCatalog } from '../../src/lib/catalog';
 
@@ -30,6 +30,19 @@ describe('content', () => {
       expect(missing).toEqual([]);
     });
   }
+  it('content YAML has no comments (an unquoted " #" silently truncates a value)', () => {
+    const files = [
+      ...readdirSync(`${root}/families`).map(f => `${root}/families/${f}`),
+      ...slugs.map(s => `${root}/patterns/${s}/pattern.yaml`),
+    ];
+    const comments: string[] = [];
+    for (const f of files) {
+      const doc = parseDocument(readFileSync(f, 'utf8'));
+      if (doc.comment) comments.push(`${f}: #${doc.comment}`);
+      visit(doc, { Node(_k, n) { if ('comment' in n && n.comment) comments.push(`${f}: #${n.comment}`); } });
+    }
+    expect(comments).toEqual([]);
+  });
   it('has all 21 v1 patterns', () => expect(slugs).toHaveLength(21));
   it('catalog cross-references are consistent (Review Focus 3)', () => {
     const patterns = slugs.map(s => patternSchema.parse(parse(readFileSync(`${root}/patterns/${s}/pattern.yaml`, 'utf8'))));

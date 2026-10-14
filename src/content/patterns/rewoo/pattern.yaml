@@ -2,7 +2,7 @@ slug: rewoo
 name: ReWOO
 family: planning-search
 aliases: [Reasoning WithOut Observation, Planner-worker-solver]
-summary: Plan every tool call upfront using placeholders (#E1, #E2), run them, then a solver writes the answer in one pass.
+summary: "Plan every tool call upfront using placeholders (#E1, #E2), run them, then a solver writes the answer in one pass."
 badges: { autonomy: medium, cost: medium, latency: medium }
 sources:
   - title: "ReWOO: Decoupling Reasoning from Observations for Efficient Augmented Language Models (Xu et al., 2023)"
@@ -147,7 +147,7 @@ diagram:
             - { type: activate, node: planner, status: thinking, at: [0, 0.5] }
             - { type: send, edge: plan, token: { kind: tokens, label: "#E1 #E2 #E3" }, at: [0.5, 1] }
         - id: search
-          caption: Search runs the first two calls, population as #E1 and area as #E2, and logs each to the evidence store.
+          caption: "Search runs the first two calls, population as #E1 and area as #E2, and logs each to the evidence store."
           duration: 3000
           codeRef: { block: rewoo, lines: "4-6" }
           events:
@@ -155,7 +155,7 @@ diagram:
             - { type: send, edge: log-search, token: { kind: result, label: "#E1 #E2" }, at: [0.5, 0.8] }
             - { type: write, node: evidence, at: [0.8, 1] }
         - id: calculate
-          caption: The calculator runs the third call with #E1 and #E2 substituted in, with no model call in between.
+          caption: "The calculator runs the third call with #E1 and #E2 substituted in, with no model call in between."
           duration: 3000
           codeRef: { block: rewoo, lines: "5-6" }
           events:
