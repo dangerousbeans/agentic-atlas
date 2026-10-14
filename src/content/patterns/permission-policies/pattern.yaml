@@ -27,18 +27,18 @@ build:
   steps:
     - "Load the policy from a config file: ordered deny, ask and allow rules, each a tool name plus an optional argument pattern, and a budget with a spend cap and a step cap."
     - "Run the agent with the {{prompt:agent}}, which tells it that some calls may be denied or need approval and how to react."
-    - "When the agent proposes a tool call, match it against the rules in the order deny, then ask, then allow. A call that matches no rule is treated as ask."
-    - "On allow, run the tool and return its result to the agent. On deny, do not run it; return an error to the agent that names the rule that matched."
-    - "On ask, send the person a message built from the {{prompt:approval}} and wait. Run the tool if they approve; return their refusal and reason to the agent if they reject."
-    - "Before each call, add its estimated cost to the budget meter. If the call would pass the spend or step cap, stop the run instead of calling the tool."
+    - "When the agent proposes a tool call, deny it at once if its tool is not declared in the policy. Otherwise match it against the rules in the order deny, then ask, then allow; a declared tool whose arguments match no rule goes to ask."
+    - "On allow, run the tool and return its result to the agent. On deny, do not run it; return an error naming the rule that matched, and count the denial as a step toward the step cap."
+    - "On ask, send the person a message built from the {{prompt:approval}} and wait up to a timeout (default 10 minutes). Run the tool only if they approve. A rejection, a timeout, or a run with no person attached is a denial, reported to the agent like any other."
+    - "Keep one budget meter for the run: add the agent's own model-call spend after each turn and each tool call's estimated cost before it runs. If the next call would pass the spend or step cap, stop the run instead of calling the tool."
     - "Record every decision (the call, the matched rule, the verdict, who approved it and the running spend) in an audit log."
-  stop: "Stop when the agent returns a final answer, or when the spend or step cap is reached. On a cap, return the partial work with a status that says which cap stopped it."
+  stop: "Stop when the agent returns a final answer, or when the spend or step cap is reached (denials count as steps). On a cap, return the partial work with a status naming the cap. An unanswered ask never blocks the run: it times out as a denial."
   requirements:
     - "Keep the policy in data (a file or a table), not in prompt text, and never let the agent change it."
     - "Evaluate deny before ask before allow, so a broad allow rule can never override a specific deny."
-    - "Treat a call that matches no rule as ask, never as allow."
+    - "Fail closed: deny any tool not declared in the policy, send a declared tool with unmatched arguments to ask, and turn an ask that times out or has no person to answer into a deny. Never fall through to allow."
     - "Match rules on the parsed tool name and arguments, not on the raw text, so that 'git status; rm -rf ~' does not match an allow rule for 'git status'."
-    - "Add a test with a stub LLM that proposes 'git status', then 'rm -rf /', then a final answer; with rules allow 'git status' and deny 'rm *', assert the tool ran once and the agent received exactly one denial error."
+    - "Add a test with a stub LLM that proposes 'git status', then 'rm -rf /', then the unlisted tool http_post, then a final answer; with rules allow 'git status' and deny 'rm *', assert the shell ran once, no one was asked, and the agent got exactly two denial errors."
 prompts:
   - id: agent
     title: Agent prompt with a permission policy
@@ -48,7 +48,9 @@ prompts:
       <task>{{task}}</task>
 
       Every tool call you make is checked against a permission policy before it runs.
-      - Some calls run at once. Some need a person's approval, so say why you need them.
+      - Some calls run at once. Some need a person's approval, so say why you need them;
+        if nobody answers in time, the call is denied.
+      - Only the tools listed for you exist. Calls to any other tool are denied.
       - A denied call returns an error naming the rule. Do not retry it or try to
         reach the same effect another way; find a different approach or explain
         why the task cannot be finished.
@@ -68,32 +70,39 @@ prompts:
       Agent's reason: {{rationale}}
       Spent so far: {{spent}} of {{budget}}
 
-      Reply approve or reject. A rejection is passed to the agent with your reason.
+      Reply approve or reject within {{timeout}}. A rejection is passed to the agent
+      with your reason; no reply in time counts as a rejection.
 diagram:
   nodes:
     - id: user
       kind: io
+      pos: { x: 0, y: 0 }
       label: Task
       description: "The request that starts the run, such as 'Fix the failing date-parsing test in this repo'."
     - id: agent
       kind: agent
+      pos: { x: 210, y: 0 }
       label: Agent
       description: "The coding agent. It proposes tool calls one at a time and reads each result, denial or refusal before its next move."
     - id: policy
       kind: guard
+      pos: { x: 440, y: 0 }
       label: Policy
-      sublabel: "rules + $2 budget"
-      description: "Plain code that matches each proposed call against the rules, in the order deny, ask, allow, and adds its cost to the budget meter."
+      sublabel: "spent $1.40 of $2"
+      description: "Plain code: denies undeclared tools, matches the rest in the order deny, ask, allow, and keeps the run's budget meter, here at $1.40 of $2."
     - id: human
       kind: human
+      pos: { x: 680, y: -100 }
       label: Developer
       description: "The person asked about calls in the ask lane only, such as installing a new package. Everything else is decided without them."
     - id: tool
       kind: tool
+      pos: { x: 920, y: 0 }
       label: Shell
       description: "The tool that actually runs commands. It only ever receives calls the policy allowed or the developer approved."
     - id: out
       kind: io
+      pos: { x: 680, y: 110 }
       label: Result
       description: "The agent's final answer, or a stop report naming the cap that ended the run."
   edges:
@@ -118,7 +127,7 @@ diagram:
       from: policy
       to: human
       label: ask
-      description: "A call that matches an ask rule, or no rule at all, waits for the developer's decision."
+      description: "A declared tool whose call matches an ask rule, or no rule, waits for the developer. No answer before the timeout counts as a deny."
       example: "npm install date-fns@4 matched ask rule shell(npm install *). Agent's reason: the parser needs date-fns."
     - id: approve
       from: human

@@ -6,9 +6,9 @@ An agent that acts on real systems will sooner or later propose something it sho
 
 Put a <NodeRef id="policy">policy</NodeRef> between the <NodeRef id="agent">agent</NodeRef> and its tools. The policy is plain code reading declarative rules, so the model cannot argue with it. Every proposed call is matched against three lists, checked in a fixed order: deny first, then ask, then allow. The order matters, because it means a broad allow rule can never override a specific deny.
 
-In the example, `git status` matches an allow rule and goes straight to the <NodeRef id="tool">shell</NodeRef>; nobody is bothered. `npm install date-fns@4` matches an ask rule, so the policy sends it to the <NodeRef id="human">developer</NodeRef> with the agent's reason, and it runs only after they approve. `rm -rf /` matches a deny rule. It never runs, and the agent gets an error naming the rule, so it can pick another approach instead of retrying the same one. A call that matches no rule at all is treated as ask, never allow.
+In the example, `git status` matches an allow rule and goes straight to the <NodeRef id="tool">shell</NodeRef>; nobody is bothered. `npm install date-fns@4` matches an ask rule, so the policy sends it to the <NodeRef id="human">developer</NodeRef> with the agent's reason, and it runs only after they approve. `rm -rf /` matches a deny rule. It never runs, and the agent gets an error naming the rule, so it can pick another approach instead of retrying the same one. The defaults fail closed. A tool the policy does not declare at all is denied outright. A declared tool whose arguments match no rule goes to ask, and an ask that nobody answers before its timeout, or that comes up in an unattended run with no person attached, is treated as a deny.
 
-The policy also keeps a budget meter. Each call adds its cost and counts as a step. When the next call would pass the cap, here $2, the policy ends the run and sends a stop report to the <NodeRef id="out">result</NodeRef> instead of running it. Every decision goes into an audit log: the call, the rule it matched, the verdict and who approved it.
+The policy also keeps a budget meter for the whole run, covering the agent's own model calls as well as the tools. Each call adds its cost and counts as a step, and so does each denial. When the next call would pass the cap, here $2, the policy ends the run and sends a stop report to the <NodeRef id="out">result</NodeRef> instead of running it. Every decision goes into an audit log: the call, the rule it matched, the verdict and who approved it.
 
 ## When to use
 
@@ -31,4 +31,4 @@ A policy makes autonomy auditable, but only as good as its rules. Rules written 
 - **Rule bypass:** the agent reaches a denied effect another way, such as writing a script that does what the denied command would. Deny by effect where you can, and pair the policy with a sandbox.
 - **Approval fatigue:** the ask lane fires so often that the developer approves everything. Move safe, frequent calls to allow, and keep ask for the few that matter.
 - **Retry storms:** the agent keeps rephrasing a denied call. Tell it, in the prompt and in the error, not to retry denied calls, and count denials toward the step cap.
-- **Silent defaults:** a new tool with no rule is allowed by mistake. Default to ask.
+- **Silent defaults:** a new tool with no rule is allowed by mistake, or an ask with no one to answer hangs the run or gets wired to auto-approve. Deny undeclared tools, and let unanswered asks time out as denials.
