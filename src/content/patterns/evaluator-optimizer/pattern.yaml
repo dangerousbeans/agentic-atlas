@@ -1,0 +1,113 @@
+slug: evaluator-optimizer
+name: Evaluator-Optimizer
+family: workflows
+aliases: [Reflection, Self-Refine, Generator-Critic, Self-correction]
+summary: One model drafts, another judges; the loop runs until the work clears the bar.
+badges: { autonomy: low, cost: medium, latency: high }
+sources:
+  - title: Building effective agents (Anthropic, 2024)
+    url: https://www.anthropic.com/engineering/building-effective-agents
+  - title: "Self-Refine: Iterative Refinement with Self-Feedback (Madaan et al., 2023)"
+    url: https://arxiv.org/abs/2303.17651
+related:
+  composesWith: [routing]
+  confusedWith: []
+code:
+  - id: loop
+    title: evaluator_optimizer.py
+    lang: python
+    source: |
+      def evaluator_optimizer(task, criteria, max_rounds=3):
+          feedback = None
+          for round in range(max_rounds):
+              draft = llm(GENERATOR_PROMPT, task=task, feedback=feedback)
+              verdict = llm(EVALUATOR_PROMPT, draft=draft, criteria=criteria)
+              if verdict.passed:
+                  return draft
+              feedback = verdict.critique
+          return draft  # best effort once the budget is spent
+prompts:
+  - id: generator
+    title: Generator prompt
+    lang: markdown
+    source: |
+      You are writing {{artifact}} for the task below.
+
+      <task>{{task}}</task>
+
+      {{#if feedback}}
+      A reviewer rejected your previous draft. Address every point:
+      <feedback>{{feedback}}</feedback>
+      {{/if}}
+
+      Return only the {{artifact}}, with no commentary.
+  - id: evaluator
+    title: Evaluator prompt
+    lang: markdown
+    source: |
+      You are a strict reviewer. Judge the draft against each criterion.
+
+      <criteria>{{criteria}}</criteria>
+      <draft>{{draft}}</draft>
+
+      Respond in JSON:
+      {"passed": true|false, "critique": "specific, actionable fixes; empty if passed"}
+      Only pass the draft if every criterion is fully met.
+diagram:
+  nodes:
+    - { id: input, kind: io, label: Task }
+    - { id: generator, kind: llm, label: Generator }
+    - { id: evaluator, kind: evaluator, label: Evaluator }
+    - { id: output, kind: io, label: Output }
+  edges:
+    - { id: task, from: input, to: generator }
+    - { id: draft, from: generator, to: evaluator }
+    - { id: revise, from: evaluator, to: generator, style: loop, label: revise }
+    - { id: accept, from: evaluator, to: output, label: pass }
+  scenarios:
+    - id: fails-twice
+      label: Fails twice, then passes
+      steps:
+        - id: start
+          caption: The task arrives at the generator.
+          duration: 1000
+          codeRef: { block: loop, lines: "1-3" }
+          events:
+            - { type: send, edge: task, token: { kind: prompt, label: task } }
+        - id: round
+          caption: The generator drafts; the evaluator finds problems and sends a critique back.
+          duration: 3200
+          repeat: 2
+          codeRef: { block: loop, lines: "4-8" }
+          events:
+            - { type: activate, node: generator, status: thinking, at: [0, 0.25] }
+            - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.25, 0.5] }
+            - { type: branch, node: evaluator, taken: revise, notTaken: [accept], at: [0.5, 0.7] }
+            - { type: send, edge: revise, token: { kind: feedback, label: critique }, at: [0.7, 1] }
+        - id: pass
+          caption: The revised draft meets every criterion and is returned.
+          duration: 2600
+          codeRef: { block: loop, lines: "4-7" }
+          events:
+            - { type: activate, node: generator, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.3, 0.6] }
+            - { type: branch, node: evaluator, taken: accept, notTaken: [revise], at: [0.6, 0.8] }
+            - { type: send, edge: accept, token: { kind: result, label: final }, at: [0.8, 1] }
+    - id: passes-first-time
+      label: Passes first time
+      steps:
+        - id: start
+          caption: The task arrives at the generator.
+          duration: 1000
+          codeRef: { block: loop, lines: "1-3" }
+          events:
+            - { type: send, edge: task, token: { kind: prompt, label: task } }
+        - id: pass
+          caption: The first draft already meets every criterion and is returned.
+          duration: 2600
+          codeRef: { block: loop, lines: "4-7" }
+          events:
+            - { type: activate, node: generator, status: thinking, at: [0, 0.3] }
+            - { type: send, edge: draft, token: { kind: result, label: draft }, at: [0.3, 0.6] }
+            - { type: branch, node: evaluator, taken: accept, notTaken: [revise], at: [0.6, 0.8] }
+            - { type: send, edge: accept, token: { kind: result, label: final }, at: [0.8, 1] }

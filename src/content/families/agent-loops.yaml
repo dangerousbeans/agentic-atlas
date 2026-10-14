@@ -1,0 +1,7 @@
+slug: agent-loops
+name: "Agent Loops"
+rank: 2
+accent: "#A78BFA"
+description: One model chooses its next action, observes the result and loops, sometimes critiquing itself or learning across attempts.
+order: []
+constellation: { x: 1.2, y: 2.2, z: -1.5 }

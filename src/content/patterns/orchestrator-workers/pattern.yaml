@@ -1,0 +1,112 @@
+slug: orchestrator-workers
+name: Orchestrator-Workers
+family: workflows
+aliases: [Dynamic decomposition, Planner-workers]
+summary: A central LLM works out the subtasks at run time, sends them to worker LLMs, then combines the results.
+badges: { autonomy: medium, cost: high, latency: medium }
+sources:
+  - title: Building effective agents (Anthropic, 2024)
+    url: https://www.anthropic.com/engineering/building-effective-agents
+related:
+  composesWith: [evaluator-optimizer]
+  confusedWith:
+    - { slug: routing, difference: "Routing picks one fixed path; the orchestrator invents the subtasks at run time and uses several workers." }
+code:
+  - id: orchestrator
+    title: orchestrator_workers.py
+    lang: python
+    source: |
+      def orchestrator_workers(task):
+          subtasks = llm(PLANNER_PROMPT, task=task).subtasks  # decided at run time
+          results = parallel(llm(WORKER_PROMPT, subtask=s) for s in subtasks)
+          return llm(SYNTHESIS_PROMPT, task=task, results=results)
+prompts:
+  - id: planner
+    title: Orchestrator planning prompt
+    lang: markdown
+    source: |
+      Break the task below into independent subtasks, one per file or
+      source that needs separate work. Do not invent work the task does
+      not need.
+
+      <task>{{task}}</task>
+
+      Respond in JSON:
+      {"subtasks": [{"target": "...", "instruction": "self-contained instructions"}]}
+  - id: worker
+    title: Worker prompt
+    lang: markdown
+    source: |
+      You are handling one part of a larger task. Do only this part.
+
+      <target>{{subtask.target}}</target>
+      <instruction>{{subtask.instruction}}</instruction>
+
+      Return the finished change and a one-line note on anything you
+      could not do.
+  - id: synthesis
+    title: Synthesis prompt
+    lang: markdown
+    source: |
+      Combine the worker results into one coherent answer for the task.
+      Flag any conflicts between workers and resolve them.
+
+      <task>{{task}}</task>
+      <results>{{results}}</results>
+diagram:
+  nodes:
+    - { id: input, kind: io, label: Task }
+    - { id: orchestrator, kind: llm, label: Orchestrator }
+    - { id: w1, kind: llm, label: Worker 1, hidden: true }
+    - { id: w2, kind: llm, label: Worker 2, hidden: true }
+    - { id: w3, kind: llm, label: Worker 3, hidden: true }
+    - { id: output, kind: io, label: Result }
+  edges:
+    - { id: task, from: input, to: orchestrator }
+    - { id: d1, from: orchestrator, to: w1 }
+    - { id: d2, from: orchestrator, to: w2 }
+    - { id: d3, from: orchestrator, to: w3 }
+    - { id: r1, from: w1, to: orchestrator, style: dashed }
+    - { id: r2, from: w2, to: orchestrator, style: dashed }
+    - { id: r3, from: w3, to: orchestrator, style: dashed }
+    - { id: done, from: orchestrator, to: output }
+  scenarios:
+    - id: three-files
+      label: '"Rename the API across the repo"'
+      steps:
+        - { id: arrive, caption: The task reaches the orchestrator., duration: 1000, codeRef: { block: orchestrator, lines: "1" }, events: [{ type: send, edge: task, token: { kind: prompt, label: task } }] }
+        - id: plan
+          caption: The orchestrator decides at run time that three files need changes, and spins up a worker for each.
+          duration: 2000
+          codeRef: { block: orchestrator, lines: "2" }
+          events:
+            - { type: activate, node: orchestrator, status: thinking, at: [0, 0.5] }
+            - { type: appear, node: w1, at: [0.5, 0.65] }
+            - { type: appear, node: w2, at: [0.6, 0.75] }
+            - { type: appear, node: w3, at: [0.7, 0.85] }
+        - id: dispatch
+          caption: Each worker gets its own subtask in parallel.
+          duration: 1400
+          codeRef: { block: orchestrator, lines: "3" }
+          events:
+            - { type: send, edge: d1, token: { kind: prompt, label: a.ts } }
+            - { type: send, edge: d2, token: { kind: prompt, label: b.ts } }
+            - { type: send, edge: d3, token: { kind: prompt, label: c.ts } }
+        - id: work
+          caption: Workers finish at different times and report back.
+          duration: 2400
+          codeRef: { block: orchestrator, lines: "3" }
+          events:
+            - { type: activate, node: w1, status: thinking, at: [0, 0.4] }
+            - { type: activate, node: w2, status: thinking, at: [0, 0.6] }
+            - { type: activate, node: w3, status: thinking, at: [0, 0.75] }
+            - { type: send, edge: r1, token: { kind: result }, at: [0.4, 0.65] }
+            - { type: send, edge: r2, token: { kind: result }, at: [0.6, 0.85] }
+            - { type: send, edge: r3, token: { kind: result }, at: [0.75, 1] }
+        - id: synthesize
+          caption: The orchestrator combines the results into one answer.
+          duration: 1800
+          codeRef: { block: orchestrator, lines: "4" }
+          events:
+            - { type: activate, node: orchestrator, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: done, token: { kind: result, label: diff }, at: [0.5, 1] }

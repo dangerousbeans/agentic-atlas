@@ -1,0 +1,34 @@
+## Problem
+
+Some tasks cannot be split up front. "Rename this API across the repo" touches three files in one codebase and thirty in another, and which files, and what each needs, depends on what the code looks like. A fixed pipeline cannot know the shape of the work before it sees the input.
+
+## How it works
+
+The <NodeRef id="orchestrator">orchestrator</NodeRef> reads the <NodeRef id="input">task</NodeRef> and decides, at run time, what subtasks it needs. For the rename it might search the repo, find three call sites and define one subtask per file. It then dispatches each subtask to a worker: <NodeRef id="w1">worker 1</NodeRef>, <NodeRef id="w2">worker 2</NodeRef> and <NodeRef id="w3">worker 3</NodeRef>. The workers are plain LLM calls with self-contained instructions, and they run in parallel.
+
+As the workers finish, their results flow back to the orchestrator. It reconciles them, for instance by checking that the three edits agree on the new name, and returns a single <NodeRef id="output">result</NodeRef>, here a combined diff.
+
+The number of workers, and what each does, is chosen by the model per input. That is the whole difference from a fixed fan-out.
+
+## When to use
+
+- The subtasks cannot be predicted in advance and depend on the input.
+- Coding changes that span multiple files, where the set of files varies by task.
+- Research that gathers and analyzes information from several sources.
+- Each subtask can be described in a few sentences without the full conversation.
+
+## When to avoid
+
+- The subtasks are known ahead of time. Use parallel sectioning, which is cheaper and more predictable.
+- The task is small enough for one call.
+- Workers need tools, memory or autonomy of their own. That points to a supervisor with full agents.
+
+## Trade-offs
+
+You buy flexibility with cost and latency. Every run has a planning call, N worker calls and a synthesis call, and total time is the planner plus the slowest worker plus the synthesizer. Behavior is also less predictable than a fixed workflow, because the plan changes with the input.
+
+## Failure modes
+
+- **Bad decomposition:** the orchestrator splits the task into overlapping or dependent pieces. Ask for independent, self-contained subtasks and cap the worker count.
+- **Lost context:** a worker lacks something it needed and guesses. Put everything it needs in its instruction.
+- **Conflicting results:** two workers edit the same thing differently. Have the synthesis step check for conflicts explicitly, and do not just concatenate.

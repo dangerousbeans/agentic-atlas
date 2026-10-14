@@ -1,0 +1,7 @@
+slug: multi-agent
+name: "Multi-Agent"
+rank: 5
+accent: "#FB7185"
+description: Several role-specialized agents coordinate through a manager, hand off to each other, or debate.
+order: []
+constellation: { x: -0.4, y: -0.2, z: 3.8 }

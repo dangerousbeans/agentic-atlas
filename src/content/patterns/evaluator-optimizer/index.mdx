@@ -1,0 +1,31 @@
+## Problem
+
+First drafts are rarely the best an LLM can do. A model asked to write, translate or code in one shot will miss requirements it would have caught had it reread its own work, but a single prompt gives it no chance to reread.
+
+## How it works
+
+A <NodeRef id="generator">generator</NodeRef> produces a draft. An <NodeRef id="evaluator">evaluator</NodeRef> (a second model, or the same model under a reviewer prompt) checks it against explicit criteria and either passes it or returns a concrete critique. The critique goes back to the generator as context for the next draft. The loop ends when the evaluator passes the draft or a round budget runs out, and the result goes to the <NodeRef id="output">output</NodeRef>.
+
+The criteria are what make this work: the evaluator needs a bar it can actually check, such as "every claim is cited", "the code passes these tests" or "the tone matches this example".
+
+## When to use
+
+- You can state clear evaluation criteria, ideally checkable ones.
+- Revising measurably improves the result: literary translation, complex search, code that must pass tests.
+- A human could give useful feedback on the draft, so a model probably can too.
+
+## When to avoid
+
+- There are no criteria to judge against: the loop just churns.
+- The first draft is usually good enough: you pay two or three times the latency for nothing.
+- The evaluator and generator share a blind spot. Prefer tool-grounded checks (tests, validators) over pure opinion.
+
+## Trade-offs
+
+Each round costs at least two model calls, so latency and cost grow with the number of rounds. Always cap the rounds. Quality gains usually flatten after two or three rounds.
+
+## Failure modes
+
+- **Endless loop:** the evaluator never passes the draft. Mitigate with a round budget and a "best so far" fallback.
+- **Rubber-stamping:** an evaluator that's too lenient passes everything. Make the prompt strict and the criteria explicit.
+- **Oscillation:** fixes for one critique break an earlier one. Pass the full critique history, not just the last one.

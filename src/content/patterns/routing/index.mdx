@@ -1,0 +1,31 @@
+## Problem
+
+One prompt cannot be best at everything. A support assistant that must handle refunds, crash reports and sales questions ends up with a sprawling prompt, a pile of tools it rarely needs, and answers that are mediocre across the board. Tuning it for billing quietly makes it worse at debugging.
+
+## How it works
+
+A <NodeRef id="router">classifier</NodeRef> reads the <NodeRef id="input">incoming request</NodeRef> and picks exactly one category. Code then sends the request down the matching path: a <NodeRef id="billing">billing</NodeRef> prompt with access to account records, a <NodeRef id="tech">tech-support</NodeRef> prompt with the knowledge base and error logs, or a <NodeRef id="general">general</NodeRef> fallback. Each specialist has its own instructions, tools and, if you like, its own model. Its answer becomes the <NodeRef id="output">reply</NodeRef>.
+
+The classifier can be an LLM call, a small fine-tuned model or a plain rules engine. The same shape also routes by difficulty: send easy questions to a small, cheap model and hard ones to a larger one.
+
+## When to use
+
+- The input falls into distinct categories that are better handled separately.
+- A classifier, LLM or traditional, can sort them reliably.
+- Specialization pays off, and you can measure it per category: different tools, different tone, or a different model per route.
+
+## When to avoid
+
+- Categories blur or overlap, so the classifier guesses and the wrong specialist answers confidently.
+- One well-written prompt already handles every case acceptably.
+- Requests routinely need several categories at once. Consider orchestrator-workers instead.
+
+## Trade-offs
+
+Routing is the cheapest workflow to add. It adds one cheap, fast call before the real work, and often saves money by keeping most traffic on small models. The cost is maintenance: every new category means a new handler, and the classifier must be re-tested whenever the categories change.
+
+## Failure modes
+
+- **Misrouting:** a billing complaint phrased as a bug report lands with tech support. Evaluate the classifier on labelled real traffic and log its choices.
+- **No fallback:** an unexpected label crashes the flow. Always default to a general handler, as the pseudocode does.
+- **Category drift:** products change, but the category list does not. Review misrouted examples regularly and update the labels.

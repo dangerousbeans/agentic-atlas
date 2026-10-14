@@ -1,0 +1,7 @@
+slug: workflows
+name: "Workflows"
+rank: 1
+accent: "#F5B14C"
+description: The code fixes the path; the LLMs fill in each step.
+order: [routing, orchestrator-workers, evaluator-optimizer]
+constellation: { x: 3.2, y: -1.2, z: 1.5 }

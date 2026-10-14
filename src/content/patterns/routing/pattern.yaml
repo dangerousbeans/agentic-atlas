@@ -1,0 +1,102 @@
+slug: routing
+name: Routing
+family: workflows
+aliases: [Classifier/dispatcher, Intent routing, Triage]
+summary: Classify the input, then send it to a specialized prompt, model or tool.
+badges: { autonomy: low, cost: low, latency: low }
+sources:
+  - title: Building effective agents (Anthropic, 2024)
+    url: https://www.anthropic.com/engineering/building-effective-agents
+related:
+  composesWith: [evaluator-optimizer, orchestrator-workers]
+  confusedWith: []
+code:
+  - id: router
+    title: routing.py
+    lang: python
+    source: |
+      HANDLERS = {"billing": BILLING, "tech": TECH, "general": GENERAL}
+
+      def route(request):
+          label = llm(CLASSIFIER_PROMPT, request=request).label
+          handler = HANDLERS.get(label, HANDLERS["general"])
+          return llm(handler.prompt, request=request, tools=handler.tools)
+prompts:
+  - id: classifier
+    title: Classifier prompt
+    lang: markdown
+    source: |
+      Classify the customer message into exactly one category:
+
+      - billing: charges, invoices, refunds, plan changes
+      - tech: errors, crashes, bugs, how-to questions about the product
+      - general: anything else
+
+      <message>{{request}}</message>
+
+      Respond in JSON: {"label": "billing" | "tech" | "general"}
+      If the message fits no category clearly, answer "general".
+  - id: tech-handler
+    title: Tech-support handler prompt
+    lang: markdown
+    source: |
+      You are a support engineer for {{product}}. You can search the
+      knowledge base and read the customer's recent error logs.
+
+      <message>{{request}}</message>
+
+      Diagnose the problem, give numbered steps to fix it, and say what
+      to send us if the steps do not work.
+diagram:
+  nodes:
+    - { id: input, kind: io, label: Request }
+    - { id: router, kind: router, label: Classifier }
+    - { id: billing, kind: llm, label: Billing }
+    - { id: tech, kind: llm, label: Tech support }
+    - { id: general, kind: llm, label: General }
+    - { id: output, kind: io, label: Reply }
+  edges:
+    - { id: in, from: input, to: router }
+    - { id: to-billing, from: router, to: billing }
+    - { id: to-tech, from: router, to: tech }
+    - { id: to-general, from: router, to: general }
+    - { id: billing-out, from: billing, to: output }
+    - { id: tech-out, from: tech, to: output }
+    - { id: general-out, from: general, to: output }
+  scenarios:
+    - id: tech
+      label: '"The app crashes on login"'
+      steps:
+        - { id: arrive, caption: A customer message arrives at the classifier., duration: 1000, codeRef: { block: router, lines: "3" }, events: [{ type: send, edge: in, token: { kind: prompt, label: crash? } }] }
+        - id: classify
+          caption: The classifier labels it a technical issue; the other routes go dark.
+          duration: 1400
+          codeRef: { block: router, lines: "4-5" }
+          events:
+            - { type: branch, node: router, taken: to-tech, notTaken: [to-billing, to-general], at: [0, 0.5] }
+            - { type: send, edge: to-tech, token: { kind: prompt }, at: [0.5, 1] }
+        - id: handle
+          caption: The tech-support prompt, with its own tools and instructions, writes the reply.
+          duration: 1800
+          codeRef: { block: router, lines: "6" }
+          events:
+            - { type: activate, node: tech, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: tech-out, token: { kind: result, label: reply }, at: [0.5, 1] }
+    - id: billing
+      label: '"I was charged twice"'
+      steps:
+        - { id: arrive, caption: A customer message arrives at the classifier., duration: 1000, codeRef: { block: router, lines: "3" }, events: [{ type: send, edge: in, token: { kind: prompt, label: refund? } }] }
+        - id: classify
+          caption: The classifier labels it a billing question.
+          duration: 1400
+          codeRef: { block: router, lines: "4-5" }
+          events:
+            - { type: branch, node: router, taken: to-billing, notTaken: [to-tech, to-general], at: [0, 0.5] }
+            - { type: send, edge: to-billing, token: { kind: prompt }, at: [0.5, 1] }
+        - id: handle
+          caption: The billing specialist answers using account context.
+          duration: 1800
+          codeRef: { block: router, lines: "6" }
+          events:
+            - { type: activate, node: billing, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: billing-out, token: { kind: result, label: reply }, at: [0.5, 1] }
