@@ -8,7 +8,7 @@ Least-to-most splits the work into two stages. In the first, the <NodeRef id="qu
 
 In the second stage, the <NodeRef id="solver">solve</NodeRef> call takes the subquestions one at a time. Each call sees the original problem, every earlier question with its answer, and the current subquestion. Q1 gets "4 + 1 = 5 minutes", which is written in beside it. Q2 is then asked with that answer above it, and 15 ÷ 5 = 3 is easy. Because the last subquestion is the original one, its answer is the <NodeRef id="answer">answer</NodeRef>.
 
-The name describes the order: least difficult first, most difficult last, with each answer making the next question easier. The model chooses the subquestions, not your code, but there are no tools and no replanning. If a decomposition is wrong, the solving stage follows it anyway.
+The name describes the order: least difficult first, most difficult last, with each answer making the next question easier. The model chooses the subquestions, not your code, but there are no tools and no replanning. If a decomposition is wrong, the solving stage follows it anyway. Successive prompting (Dua et al., 2022) is a close cousin that interleaves the two stages instead: it asks one simple question, answers it, then decides the next.
 
 ## When to use
 

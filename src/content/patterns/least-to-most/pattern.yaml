@@ -1,7 +1,7 @@
 slug: least-to-most
 name: Least-to-Most Prompting
 family: reasoning-prompting
-aliases: [Decompose-then-solve, Successive prompting, Easy-to-hard decomposition]
+aliases: [Decompose-then-solve, Easy-to-hard decomposition]
 summary: First break the problem into easier subquestions, then solve them in order, feeding each answer into the next.
 badges: { autonomy: low, cost: medium, latency: medium }
 sources:
@@ -28,7 +28,7 @@ build:
     - "For each subquestion in order, call the model with the {{prompt:solve}}, passing the original problem, every solved question and answer so far, and the current subquestion."
     - "Parse the answer from the reply's 'Answer:' line and append the subquestion with its answer to the solved list."
     - "When the last subquestion is answered, return its answer as the final answer, together with the solved list as the working."
-  stop: "Stop when every subquestion has been answered, or once 6 subquestions have been solved. If the decomposition is longer than the cap, or an answer cannot be parsed, return no answer with the solved list so far and a status saying which step failed."
+  stop: "Stop when every subquestion is answered. If the decomposition, including the appended original question, has more than 6 subquestions, return no answer before solving, with status 'decomposition too long'. If an answer cannot be parsed, return no answer with the solved list so far."
   requirements:
     - "Make the subquestion cap a parameter (default 6) and check it before solving, not after."
     - "If the decomposition does not end with the original question, append the original question as the last subquestion."
