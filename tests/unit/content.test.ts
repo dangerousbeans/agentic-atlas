@@ -14,8 +14,6 @@ const slugs = readdirSync(`${root}/patterns`);
  * removes the slugs it completes; once this list is empty, `build` and `origin` become required in the schema.
  */
 export const MIGRATION_PENDING: readonly string[] = [
-  'supervisor', 'handoffs', 'debate',
-  'human-in-the-loop', 'guardrails',
 ];
 
 describe('content', () => {
