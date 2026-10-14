@@ -84,6 +84,7 @@ flow-player[data-fit="wide"] .diagram-svg[data-layout="narrow"], flow-player[dat
 .edge[data-state="active"] { stroke: var(--dg-hot-deep); stroke-width: 1.5; }
 .edge-glow { fill: none; stroke: rgb(255 59 48); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; stroke-opacity: 0; visibility: hidden; pointer-events: none; transition: stroke-opacity 0.3s, visibility 0.3s; } /* hidden while idle: not painted at all */
 .edge-glow[data-state="active"] { stroke-opacity: 0.18; visibility: visible; }
+.edge-glow--dashed, .edge-glow--loop { stroke-dasharray: 3 4; stroke-linecap: butt; } /* the glow follows the dashes, as the drop-shadow did */
 flow-player.has-focus .edge-glow:not(.is-rel) { opacity: 0.22; }
 .edge[data-state="traversed"] { stroke: var(--dg-edge-trav); }
 .edge[data-state="dim"] { opacity: 0.3; }
@@ -104,8 +105,8 @@ flow-player.has-focus .edge-glow:not(.is-rel) { opacity: 0.22; }
    a live drop-shadow on a moving dot re-runs its blur on every frame (R11). So no CSS `fill` here. */
 .token-glow--head .tg-core { stop-color: #FFF8F2; }
 .token-glow--trail .tg-core { stop-color: #FFD9D2; }
-.tg-a { stop-color: rgb(255 59 48); stop-opacity: 0.9; }
-.tg-b { stop-color: rgb(255 59 48); stop-opacity: 0.38; }
+.tg-a { stop-color: rgb(255 59 48); stop-opacity: 0.78; }
+.tg-b { stop-color: rgb(255 59 48); stop-opacity: 0.3; }
 .tg-c { stop-color: rgb(255 59 48); stop-opacity: 0.14; }
 .tg-d { stop-color: rgb(255 59 48); stop-opacity: 0; }
 .token .head { r: 12px; } /* core 4.2 */

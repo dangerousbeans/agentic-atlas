@@ -40,7 +40,7 @@ const sizing = compact ? undefined : `--max-w:${Math.round(layout.width * MAX_SC
   {/* Active-edge glow as a soft stroked underlay, not a filter: the comet rides the active edge, and a drop-shadow
       under it would be re-blurred on every frame (R11). */}
   <g class="edge-glows" aria-hidden="true">
-    {spec.edges.map(e => <path class="edge-glow" data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} data-from={e.from} data-to={e.to} />)}
+    {spec.edges.map(e => <path class={`edge-glow edge-glow--${e.style ?? 'solid'}`} data-edge={e.id} data-state="idle" d={layout.edges[e.id].d} data-from={e.from} data-to={e.to} />)}
   </g>
   <g class="edges">
     {spec.edges.map(e => (
