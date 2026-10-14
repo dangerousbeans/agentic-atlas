@@ -16,7 +16,6 @@ const slugs = readdirSync(`${root}/patterns`);
 export const MIGRATION_PENDING: readonly string[] = [
   'prompt-chaining', 'routing', 'sectioning', 'voting', 'orchestrator-workers',
   'augmented-llm', 'react', 'reflexion',
-  'plan-and-execute', 'rewoo', 'llm-compiler', 'tree-of-thoughts',
   'agentic-rag', 'corrective-rag', 'hierarchical-memory',
   'supervisor', 'handoffs', 'debate',
   'human-in-the-loop', 'guardrails',
