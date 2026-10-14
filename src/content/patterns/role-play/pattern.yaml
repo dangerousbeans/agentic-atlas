@@ -34,7 +34,7 @@ build:
     - "Make the round cap a parameter (default 20), and detect three identical consecutive messages from either agent as a loop."
     - "The two agents may use different models, configured separately; the specifier can be a cheaper model."
     - "Log every message with its role, its round number and its token count."
-    - "Add a test with a stub LLM whose AI user sends two instructions and then <CAMEL_TASK_DONE>; assert exactly two AI assistant calls and a transcript ordered instruction, solution, instruction, solution, done."
+    - "Add a test with a stub LLM whose AI user replies 'Instruction: a', 'Instruction: b', then <CAMEL_TASK_DONE>, and whose AI assistant always replies 'Solution: ... Next request.'; assert exactly two AI assistant calls and a transcript ordered instruction, solution, instruction, solution, done."
 prompts:
   - id: specifier
     title: Task specifier prompt
@@ -60,6 +60,7 @@ prompts:
 
       Give instructions only, never solutions. Do not ask me questions.
       When the task is fully complete, reply with only: <CAMEL_TASK_DONE>
+      Never say <CAMEL_TASK_DONE> unless my responses have solved the task.
   - id: ai-assistant
     title: AI assistant (doer) prompt
     lang: markdown
@@ -84,7 +85,7 @@ diagram:
   edges:
     - { id: seed, from: idea, to: specifier, description: "The rough idea and both role names go to the task specifier.", example: "Idea: Develop a trading bot for the stock market. Roles: Stock Trader, Python Programmer." }
     - { id: brief-user, from: specifier, to: aiuser, label: task, description: "The specified task is written into the AI user's inception prompt, alongside both roles.", example: "Task: Build a Python bot that reads Reddit sentiment on 5 tickers and places paper trades when sentiment flips." }
-    - { id: brief-assistant, from: specifier, to: aiassistant, style: dashed, description: "The same specified task is written into the AI assistant's inception prompt, so both agents share one goal.", example: "Never forget you are a Python Programmer and I am a Stock Trader. Task: Build a Python bot that reads Reddit sentiment..." }
+    - { id: brief-assistant, from: specifier, to: aiassistant, style: dashed, label: task, description: "The same specified task is written into the AI assistant's inception prompt, so both agents share one goal.", example: "Never forget you are a Python Programmer and I am a Stock Trader. Task: Build a Python bot that reads Reddit sentiment..." }
     - { id: instruct, from: aiuser, to: aiassistant, label: Instruction, description: "One instruction at a time, with the input it needs, passed to the assistant as its next user message.", example: "Instruction: Write a function that fetches the last 24 hours of posts mentioning a ticker. Input: tickers = ['AAPL', 'TSLA']" }
     - { id: solve, from: aiassistant, to: aiuser, style: loop, label: Solution, description: "The assistant's solution goes back to the AI user, who reads it and decides the next instruction.", example: "Solution: def fetch_posts(ticker, hours=24): ... returns a list of {text, score, created}. Next request." }
     - { id: done, from: aiuser, to: out, label: TASK_DONE, description: "When the AI user judges the task complete, it sends the done token instead of another instruction.", example: "<CAMEL_TASK_DONE>" }
@@ -127,13 +128,12 @@ diagram:
             - { type: send, edge: brief-user, token: { kind: prompt, label: task }, at: [0, 0.6] }
             - { type: send, edge: brief-assistant, token: { kind: prompt, label: task }, at: [0, 0.6] }
         - id: drift
-          caption: The assistant flips roles and replies with an instruction of its own, so the format check rejects it.
+          caption: The assistant flips roles and replies with an instruction of its own; the format check rejects it before it reaches the AI user.
           duration: 3000
           events:
             - { type: send, edge: instruct, token: { kind: prompt, label: Instruction }, at: [0, 0.3] }
             - { type: activate, node: aiassistant, status: thinking, at: [0.3, 0.55] }
-            - { type: send, edge: solve, token: { kind: feedback, label: "Instruction?" }, at: [0.55, 0.85] }
-            - { type: activate, node: aiassistant, status: error, at: [0.8, 1] }
+            - { type: activate, node: aiassistant, status: error, at: [0.55, 1] }
         - id: remind
           caption: The instruction is resent with the assistant's role rules attached, and this time it answers with a solution.
           duration: 3000
