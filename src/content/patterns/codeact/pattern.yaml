@@ -198,13 +198,15 @@ diagram:
             - { type: activate, node: llm, status: thinking, at: [0, 0.55] }
             - { type: send, edge: code, token: { kind: tool-call, label: for v in vs }, at: [0.55, 1] }
         - id: crash
-          caption: The code fails with KeyError 'total', and the traceback comes back as the observation.
-          duration: 2600
+          caption: The first invoice rows come back without a 'total' field, so the code fails with KeyError and the traceback returns as the observation.
+          duration: 3200
           events:
-            - { type: send, edge: list, token: { kind: tool-call, label: list }, at: [0, 0.2] }
-            - { type: send, edge: vendors, token: { kind: result, label: 40 vendors }, at: [0.2, 0.4] }
-            - { type: activate, node: interp, status: error, at: [0.4, 0.7] }
-            - { type: send, edge: stdout, token: { kind: feedback, label: KeyError }, at: [0.6, 1] }
+            - { type: send, edge: list, token: { kind: tool-call, label: list }, at: [0, 0.15] }
+            - { type: send, edge: vendors, token: { kind: result, label: 40 vendors }, at: [0.15, 0.3] }
+            - { type: send, edge: invoices, token: { kind: tool-call, label: v01 }, at: [0.3, 0.45] }
+            - { type: send, edge: rows, token: { kind: result, label: rows }, at: [0.45, 0.6] }
+            - { type: activate, node: interp, status: error, at: [0.6, 0.8] }
+            - { type: send, edge: stdout, token: { kind: feedback, label: KeyError }, at: [0.75, 1] }
         - id: fix
           caption: The model reads the traceback and sends a patched snippet that uses 'amount'. The vendor list is still in memory.
           duration: 2400

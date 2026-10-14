@@ -1,6 +1,6 @@
 ## Problem
 
-"Which 3 of our 40 SaaS vendors raised prices the most this year?" needs the vendor list, then two invoice lookups per vendor, then a comparison. With JSON tool calls, that is 81 model turns, and every invoice row lands in the context, whether or not the model needs it. The work is a loop with arithmetic, which is exactly what code is good at and what a turn-by-turn tool loop is bad at.
+"Which 3 of our 40 SaaS vendors raised prices the most this year?" needs the vendor list, then two invoice lookups per vendor, then a comparison. With JSON tool calls, that is up to 81 model turns, and every invoice row passes through the context, whether or not the model needs it. The work is a loop with arithmetic, which is exactly what code is good at and what a turn-by-turn tool loop is bad at.
 
 ## How it works
 
