@@ -12,7 +12,7 @@ sources:
 related:
   composesWith: [hierarchical-memory, human-in-the-loop]
   confusedWith:
-    - { slug: group-chat, difference: "A group chat is a linear transcript where the manager calls on one speaker; a blackboard is a shared workspace of partial results, and the control unit can activate several specialists in a round." }
+    - { slug: group-chat, difference: "A group chat is an append-only transcript where one agent speaks per turn; a blackboard is a workspace of partial results that several specialists can add to, revise or clear in the same round." }
     - { slug: supervisor, difference: "A supervisor assigns each task and every result comes back to it; on a blackboard the control unit only decides who acts, and all results go to the shared board." }
 origin:
   by: Lee D. Erman et al.
@@ -21,22 +21,22 @@ origin:
   url: https://doi.org/10.1145/356810.356816
   kind: introduced
   uncertain: true
-  note: "Hearsay-II, a CMU speech-understanding system of the 1970s, is the classic blackboard system; this 1980 survey describes it, but the idea grew out of earlier work. Han & Zhang (CAS, 2025) adapted it to LLM agents."
+  note: "Hearsay-II (CMU, c. 1971-76) was the first blackboard system, and Newell (1962) supplied the metaphor; this 1980 survey is its standard reference. Han & Zhang (CAS, 2025) adapted it to LLM agents."
 build:
   goal: "Solve an open-ended problem by letting a control model pick, each round, which specialist agents read a shared blackboard and add to it, until a critic judges that the board holds a solution."
   steps:
-    - "Define each specialist with a name and a one-line capability. Create the blackboard as an append-only list of entries (author, round, content), and post the problem as its first entry."
+    - "Define each specialist with a name and a one-line capability, and include the critic in that list. Create the blackboard as a set of entries with ids (id, author, round, content), and post the problem as entry 1."
     - "Each round, call the control model with the {{prompt:control}}, passing the specialist list and the board. Parse its JSON reply into a list of one to three names to activate."
-    - "Call each selected specialist with the {{prompt:expert}} and the whole board, and append its reply as a new entry. Specialists selected in the same round can run in parallel."
-    - "When the control model selects the critic, call it with the {{prompt:critic}}. If it judges the problem solved, return its solution; otherwise append its objection to the board for the next round."
-    - "If the board grows past the context budget, summarize the oldest entries into one, keeping the problem entry and the newest entries word for word."
-  stop: "Stop when the critic judges the problem solved, or after 8 rounds. On the cap, return the board and the critic's best candidate with a status of unsolved. If the control model selects no one twice in a row, run the critic."
+    - "Call each selected specialist with the {{prompt:expert}} and the whole board. Parse its JSON reply: add a new entry, or revise or retract an existing one by id, with a reason. Specialists selected in the same round can run in parallel."
+    - "When the control model selects the critic, call it with the {{prompt:critic}}. If it judges the problem solved, return its solution; otherwise add its objection to the board for the next round."
+    - "After each round, run a cleaning step (or a cleaner specialist) that removes superseded, retracted or redundant entries, so the board stays a current picture rather than a log. Never remove the problem entry."
+  stop: "Stop when the critic judges the problem solved, or after 8 rounds (bMAS used 4; allow more for problems that need several lines of evidence). On the cap, return the board and the critic's latest best_candidate with a status of unsolved. If the control model selects no one twice in a row, run the critic."
   requirements:
     - "Specialists never message each other; every contribution goes through the board, tagged with its author and round."
     - "Validate the control model's selection against the specialist list, and drop unknown names rather than failing the round."
     - "Cap the rounds with a parameter (default 8)."
-    - "Log each round: who was selected, why, and each new entry with its token count."
-    - "Add a test with a stub LLM whose control model selects [logs, db], then [net], then [critic], and whose critic replies solved; assert 3 rounds ran, the board holds 4 entries before the critic, and the returned solution is the critic's."
+    - "Log each round: who was selected, why, and every add, revise or retract with its reason and token count."
+    - "Add a stub-LLM test: control selects [logs, db], then [net], then [critic]; each specialist adds one entry, the cleaner removes nothing, the critic replies solved. Assert 3 rounds ran, the board holds 4 entries before the critic, and the critic's solution is returned."
 prompts:
   - id: control
     title: Control unit prompt
@@ -68,9 +68,14 @@ prompts:
       {{board}}
       </blackboard>
 
-      Add one entry that moves the problem forward from your expertise: a finding,
-      a hypothesis with its evidence, or a correction to an earlier entry (name it).
+      Move the problem forward from your expertise. Either add one entry (a finding,
+      or a hypothesis with its evidence), or revise or retract an existing entry by id
+      when the evidence shows it is wrong or superseded.
       Do not repeat what is already on the board. Keep it under 120 words.
+      Respond in JSON, one of:
+      {"add": "..."}
+      {"revise": <entry id>, "content": "...", "reason": "..."}
+      {"retract": <entry id>, "reason": "..."}
   - id: critic
     title: Critic prompt
     lang: markdown
@@ -84,17 +89,18 @@ prompts:
 
       Respond in JSON:
       {"solved": true|false,
+       "best_candidate": "the best answer the board supports so far, citing entry ids",
        "solution": "the solution, assembled from the board, if solved",
        "objection": "what is missing or unsupported, if not solved"}
 diagram:
   nodes:
     - { id: user, kind: io, label: Problem, description: "An open problem with no known path, such as 'Why do the nightly ETL jobs fail about one night in five?'." }
-    - { id: board, kind: memory, label: Blackboard, description: "The shared workspace. Every finding, hypothesis and objection is posted here, and every agent reads all of it." }
+    - { id: board, kind: memory, label: Blackboard, description: "The shared workspace of current findings, hypotheses and objections. Entries can be added, revised or removed, and every agent reads all of it." }
     - { id: control, kind: router, label: Control unit, description: "Reads the board each round and picks which specialists act next. It never adds findings itself." }
     - { id: logs, kind: agent, label: Log analyst, description: "Searches the job and scheduler logs for patterns, such as when and where the failures happen." }
     - { id: db, kind: agent, label: DB expert, description: "Checks the database side: locks, slow queries and connection limits around the failure times." }
     - { id: net, kind: agent, label: Network expert, description: "Checks the network side: link saturation, DNS and other jobs competing for bandwidth." }
-    - { id: critic, kind: evaluator, label: Critic, description: "Judges whether the board holds a complete, supported answer. If not, it posts what is missing." }
+    - { id: critic, kind: evaluator, label: Critic, description: "Judges whether the board holds a complete, supported answer (bMAS calls this agent the decider). If not, it posts what is missing." }
     - { id: out, kind: io, label: Diagnosis, description: "The root cause and fix, assembled by the critic from the entries on the board." }
   edges:
     - { id: post, from: user, to: board, description: "The problem is posted as the board's first entry.", example: "Problem: nightly ETL fails about 1 night in 5 with 'connection reset'. No code changes in a month." }
@@ -103,7 +109,7 @@ diagram:
     - { id: go-db, from: control, to: db, description: "The control unit activates the database expert.", example: '{"activate": ["logs", "db"], "why": "Nothing is known yet; start with when it fails and the database."}' }
     - { id: go-net, from: control, to: net, description: "The control unit activates the network expert.", example: '{"activate": ["net"], "why": "Failures cluster at 02:00 and the DB is clean; check the network at that time."}' }
     - { id: go-critic, from: control, to: critic, description: "When the board may hold an answer, the control unit calls the critic.", example: '{"activate": ["critic"], "why": "A cause with evidence is on the board."}' }
-    - { id: w-logs, from: logs, to: board, description: "The log analyst posts its finding to the board, where everyone can build on it.", example: "[logs] Every failure is between 02:00 and 02:10; all are 'connection reset' on the extract step." }
+    - { id: w-logs, from: logs, to: board, label: post, description: "The log analyst posts its finding to the board, where everyone can build on it.", example: "[logs] Every failure is between 02:00 and 02:10; all are 'connection reset' on the extract step." }
     - { id: w-db, from: db, to: board, description: "The database expert posts its finding to the board.", example: "[db] No locks, slow queries or connection-limit hits between 01:50 and 02:20 on failure nights." }
     - { id: w-net, from: net, to: board, description: "The network expert posts its finding to the board.", example: "[net] The backup job saturates the 1 Gbps link from 02:00 to 02:15 on the nights it runs a full backup." }
     - { id: object, from: critic, to: board, style: dashed, label: not yet, description: "If the board does not yet hold a supported answer, the critic posts what is missing.", example: '{"solved": false, "objection": "The 02:00 timing is known, but nothing explains why only some nights fail."}' }
