@@ -63,6 +63,8 @@ const cat = await getCatalog();
 <style>
   .search-btn { padding-inline: 12px; font-weight: 500; }
   kbd { font: 11px var(--font-mono); color: var(--text-2); }
+  /* the smallest phones need the room for the sound toggle, and have no keyboard shortcut to show */
+  @media (max-width: 359px) { .search-btn kbd { display: none; } }
   dialog.search { width: min(640px, 92vw); border: 1px solid var(--line-strong); border-top: 2px solid var(--accent); border-radius: 0; background: var(--bg-1); color: var(--text); padding: 0; margin-top: 12vh; }
   dialog.search::backdrop { background: #120F0Ecc; backdrop-filter: blur(4px); }
   .search-head { display: flex; gap: 8px; padding: 14px; border-bottom: 1px solid var(--line); }
