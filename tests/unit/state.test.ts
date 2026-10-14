@@ -79,6 +79,11 @@ describe('frameAt', () => {
     expect(f.stepIndex).toBe(3);
     expect(frameAt(spec, tl, -5).t).toBe(0);
   });
+  it('marks an io node done once a token has arrived, not before', () => {
+    expect(frameAt(spec, tl, 3499).nodes.out).toBe('idle');
+    expect(frameAt(spec, tl, 4000).nodes.out).toBe('done');
+    expect(frameAt(spec, tl, 3600).nodes.out).toBe('idle');
+  });
   it('reports codeRef of current step', () => {
     const s2: DiagramSpec = { ...spec, scenarios: [{ id: 'x', label: 'X', steps: [{ id: 'a', caption: 'A', codeRef: { block: 'b', lines: '1' }, events: [{ type: 'send', edge: 'task', token: { kind: 'prompt' } }] }] }] };
     expect(frameAt(s2, compileScenario(s2.scenarios[0]), 10).codeRef).toEqual({ block: 'b', lines: '1' });

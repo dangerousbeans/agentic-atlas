@@ -16,6 +16,7 @@ export function frameAt(d: DiagramSpec, tl: Timeline, tIn: number): FrameState {
   const edges: Record<string, EdgeState> = {};
   for (const e of d.edges) edges[e.id] = 'idle';
   const target = new Map(d.edges.map(e => [e.id, e.to]));
+  const kindOf = new Map(d.nodes.map(n => [n.id, n.kind]));
   const tokens: TokenState[] = [];
 
   for (const te of tl.events) {
@@ -29,7 +30,11 @@ export function frameAt(d: DiagramSpec, tl: Timeline, tIn: number): FrameState {
           const tok: TokenState = { edge: ev.edge, kind: ev.token.kind, progress: (t - te.start) / (te.end - te.start) };
           if (ev.token.label) tok.label = ev.token.label;
           tokens.push(tok);
-        } else edges[ev.edge] = 'traversed';
+        } else {
+          edges[ev.edge] = 'traversed';
+          const to = target.get(ev.edge)!;
+          if (kindOf.get(to) === 'io' && nodes[to] === 'idle') nodes[to] = 'done';
+        }
         break;
       case 'activate':
         nodes[ev.node] = live ? ev.status : SETTLED[ev.status];
