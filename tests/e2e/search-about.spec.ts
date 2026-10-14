@@ -83,3 +83,14 @@ test('Enter right after typing opens the result for the current query', async ({
   await box.press('Enter');
   await page.waitForURL(/debate/, { timeout: 5000 });
 });
+
+test('every page has one canonical link: site + base + its own path', async ({ page }) => {
+  for (const path of ['/', '/atlas/', '/families/', '/families/workflows/', '/patterns/evaluator-optimizer/', '/about/']) {
+    await page.goto(path);
+    const canon = page.locator('link[rel="canonical"]');
+    await expect(canon).toHaveCount(1);
+    await expect(canon).toHaveAttribute('href', `https://dangerousbeans.github.io${path}`);
+  }
+  await page.goto('/nope-not-here/');
+  await expect(page.locator('link[rel="canonical"]')).toHaveCount(0); // a 404 names no canonical page
+});
