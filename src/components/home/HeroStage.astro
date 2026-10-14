@@ -45,7 +45,11 @@ const json = JSON.stringify(list).replace(/</g, '\\u003c');
   /* The frame is the chrome: drop the stage card, the step list and the parts list. */
   .hero-stage :global(.diagram-stage) { border: 0; border-radius: 0; background: none; padding: 0; overflow: visible; }
   .hero-stage :global(.diagram-svg) { max-height: min(56vh, 520px); }
-  .hero-stage :global(.fp-steps),
+  /* Step captions stay available to screen readers (the SVG desc points to them) and appear when focused. */
+  .hero-stage :global(.fp-steps:not(:focus-within)) {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .hero-stage :global(.fp-steps:focus-within) { margin-top: 16px; font-size: 14px; }
   .hero-stage :global(.fp-parts),
   .hero-stage :global(.fp-tabs),
   .hero-stage :global(.fp-caption) { display: none; }

@@ -1,11 +1,14 @@
 /**
  * Atlas map behaviour: DOM transforms only (no canvas, no libraries).
  *
- * - Pan by drag (pointer events); pinch with two pointers; wheel zooms around the cursor while hovered.
+ * - Mouse/pen: drag pans; the wheel zooms around the cursor (and lets the page scroll at the zoom limits).
+ * - Touch is cooperative (touch-action: pan-y): one finger scrolls the page (a hint says to use two),
+ *   two fingers pan and pinch the map.
  * - flyTo() animates centre + log-zoom; instant under reduced motion.
  * - Roving tabindex: the map is one tab stop. ←/→ walk tiles in DOM order (family, then pattern),
  *   ↑/↓ move to the nearest tile above/below, Home/End jump, Enter follows the link, +/− zoom, 0 resets.
- *   Any focused tile is flown into view, so focus is never stranded off-screen.
+ *   Any keyboard-focused tile is flown into the safe area (the viewport minus the overlay controls),
+ *   so focus is never stranded off-screen or hidden under a control (WCAG 2.4.11). Pointer focus never flies.
  * - Search dims non-matches and frames the matches; Enter flies to and focuses the first.
  * - Playback: below MIN_PLAY zoom every tile player gets `data-suspended`; off-screen tiles are
  *   paused by flow-player's own IntersectionObserver (the viewport clips its overflow).
@@ -28,6 +31,9 @@ function init(root: HTMLElement) {
   const status = $<HTMLElement>('.atlas-status');
   const mm = $<SVGSVGElement>('.atlas-minimap');
   const mmView = mm.querySelector<SVGRectElement>('.mm-view')!;
+  const hint = $<HTMLElement>('.atlas-touch-hint');
+  const overlaysTop = [search, $<HTMLElement>('[data-somewhere]')];
+  const overlaysBottom = [$<HTMLElement>('.atlas-zoom'), mm as unknown as HTMLElement];
   const tiles = [...root.querySelectorAll<HTMLAnchorElement>('a.atlas-tile')];
   const islands = [...root.querySelectorAll<HTMLElement>('.atlas-island')];
   const players = [...plane.querySelectorAll<HTMLElement>('flow-player')];
@@ -64,6 +70,18 @@ function init(root: HTMLElement) {
   /** Transform that puts plane point (px, py) at the viewport centre at zoom nz. */
   const at = (px: number, py: number, nz: number): [number, number, number] => { nz = clampZ(nz); return [nz, vw / 2 - px * nz, vh / 2 - py * nz]; };
   const homeView = () => at(W / 2, H / 2, homeZ);
+  /** The part of the viewport not covered by the overlay controls, in viewport-local px. */
+  const safe = () => {
+    const v = vp.getBoundingClientRect();
+    const t = Math.max(0, ...overlaysTop.map(el => el.getBoundingClientRect().bottom - v.top)) + EDGE / 2;
+    const b = Math.min(vh, ...overlaysBottom.map(el => el.getBoundingClientRect().top - v.top)) - EDGE / 2;
+    return { l: EDGE / 2, r: vw - EDGE / 2, t, b: Math.max(t + 1, b) };
+  };
+  /** Like at(), but centres the point in the safe area. */
+  const atSafe = (px: number, py: number, nz: number): [number, number, number] => {
+    const S = safe(); nz = clampZ(nz);
+    return [nz, (S.l + S.r) / 2 - px * nz, (S.t + S.b) / 2 - py * nz];
+  };
 
   function flyTo([tz, tx, ty]: [number, number, number]) {
     cancelAnimationFrame(anim);
@@ -85,11 +103,11 @@ function init(root: HTMLElement) {
     const nz = clampZ(z * f);
     return [nz, px - ((px - x) * nz) / z, py - ((py - y) * nz) / z];
   };
-  const focusZ = () => Math.min(FOCUS_Z, (vw - 2 * EDGE) / 240, (vh - 2 * EDGE) / 190);
-  const tileView = (t: HTMLElement, nz = Math.max(z, focusZ())) => at(cx(t), cy(t), nz);
+  const focusZ = () => { const S = safe(); return Math.min(FOCUS_Z, (S.r - S.l) / 240, (S.b - S.t) / 190); };
+  const tileView = (t: HTMLElement, nz: number) => atSafe(cx(t), cy(t), nz);
   const inView = (t: HTMLElement) => {
-    const r = t.getBoundingClientRect(), v = vp.getBoundingClientRect();
-    return r.left >= v.left + EDGE / 2 && r.right <= v.right - EDGE / 2 && r.top >= v.top + EDGE / 2 && r.bottom <= v.bottom - EDGE / 2;
+    const r = t.getBoundingClientRect(), v = vp.getBoundingClientRect(), S = safe();
+    return r.left >= v.left + S.l && r.right <= v.left + S.r && r.top >= v.top + S.t && r.bottom <= v.top + S.b;
   };
 
   function measure() {
@@ -108,8 +126,9 @@ function init(root: HTMLElement) {
   vp.addEventListener('focusin', e => {
     const t = (e.target as Element).closest<HTMLAnchorElement>('a.atlas-tile');
     if (!t) return;
-    touched = true;
     setRoving(t);
+    if (ptr) return; // mouse/touch focus (Chrome focuses links on mousedown): never fly, a drag may follow
+    touched = true;
     if (z < MIN_PLAY) flyTo(tileView(t, focusZ())); else if (!inView(t)) flyTo(tileView(t, z));
   });
   vp.addEventListener('keydown', e => {
@@ -134,7 +153,7 @@ function init(root: HTMLElement) {
       e.preventDefault(); touched = true;
       if (k === '0') return flyTo(homeView());
       const f = k === '-' ? 1 / 1.4 : 1.4;
-      return flyTo(cur ? at(cx(cur), cy(cur), z * f) : zoomed(f));
+      return flyTo(cur ? atSafe(cx(cur), cy(cur), z * f) : zoomed(f));
     } else return;
     e.preventDefault();
     go(next);
@@ -142,9 +161,17 @@ function init(root: HTMLElement) {
 
   // ---- pointer: drag, pinch, wheel -------------------------------------
   const pts = new Map<number, { x: number; y: number }>();
-  let drag: { sx: number; sy: number; ox: number; oy: number; moved: boolean; id: number } | null = null;
+  let drag: { sx: number; sy: number; ox: number; oy: number; moved: boolean; id: number; touch: boolean } | null = null;
   let pinch: { d: number; z: number; px: number; py: number } | null = null;
-  let swallowClick = false;
+  let swallowClick = false, ptr = false, hintTimer = 0;
+  const showHint = () => {
+    hint.setAttribute('data-show', '');
+    clearTimeout(hintTimer); hintTimer = window.setTimeout(() => hint.removeAttribute('data-show'), 1500);
+  };
+  // Two-finger gestures belong to the map: stop the browser from scrolling the page with them.
+  const twoFinger = (e: TouchEvent) => { if (e.touches.length >= 2) e.preventDefault(); };
+  vp.addEventListener('touchstart', twoFinger, { passive: false });
+  vp.addEventListener('touchmove', twoFinger, { passive: false });
   const local = (e: PointerEvent | WheelEvent) => { const r = vp.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
   const pinchState = () => {
     const [a, b] = [...pts.values()];
@@ -153,12 +180,14 @@ function init(root: HTMLElement) {
 
   vp.addEventListener('pointerdown', e => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    stop(); touched = true;
+    ptr = true;
     pts.set(e.pointerId, local(e));
     if (pts.size === 1) {
       const p = local(e);
-      drag = { sx: p.x, sy: p.y, ox: x, oy: y, moved: false, id: e.pointerId };
+      // Touch: one finger never pans (the page scrolls instead); it only tracks movement for the hint.
+      drag = { sx: p.x, sy: p.y, ox: x, oy: y, moved: false, id: e.pointerId, touch: e.pointerType === 'touch' };
     } else if (pts.size === 2) {
+      stop(); touched = true;
       const s = pinchState();
       pinch = { d: s.d, z, px: (s.mx - x) / z, py: (s.my - y) / z };
       for (const id of pts.keys()) if (!vp.hasPointerCapture(id)) vp.setPointerCapture(id);
@@ -174,25 +203,39 @@ function init(root: HTMLElement) {
       apply(nz, s.mx - pinch.px * nz, s.my - pinch.py * nz);
     } else if (drag && e.pointerId === drag.id) {
       const dx = p.x - drag.sx, dy = p.y - drag.sy;
-      if (!drag.moved && Math.hypot(dx, dy) > 5) { drag.moved = true; vp.setPointerCapture(e.pointerId); vp.classList.add('is-dragging'); }
+      if (drag.touch) { if (Math.hypot(dx, dy) > 10) showHint(); return; }
+      if (!drag.moved && Math.hypot(dx, dy) > 5) {
+        // A real drag: cancel any flight and re-base on where the map is now.
+        stop(); touched = true;
+        drag.moved = true; drag.ox = x; drag.oy = y;
+        vp.setPointerCapture(e.pointerId); vp.classList.add('is-dragging');
+      }
       if (drag.moved) apply(z, drag.ox + dx, drag.oy + dy);
     }
   });
   const end = (e: PointerEvent) => {
     if (!pts.delete(e.pointerId)) return;
+    if (pinch) swallowClick = true;
     if (pts.size < 2) pinch = null;
     if (drag?.moved) swallowClick = true;
-    if (pts.size === 0) { drag = null; vp.classList.remove('is-dragging'); setTimeout(() => (swallowClick = false), 0); }
-    else if (pts.size === 1) { const [[id, p]] = [...pts]; drag = { sx: p.x, sy: p.y, ox: x, oy: y, moved: true, id }; }
+    if (pts.size === 0) { drag = null; vp.classList.remove('is-dragging'); setTimeout(() => { swallowClick = false; ptr = false; }, 0); }
+    // After a pinch, the remaining finger neither pans nor shows the hint.
+    else if (pts.size === 1) {
+      const [[id, p]] = [...pts];
+      drag = e.pointerType === 'touch' ? null : { sx: p.x, sy: p.y, ox: x, oy: y, moved: true, id, touch: false };
+    }
   };
   vp.addEventListener('pointerup', end);
   vp.addEventListener('pointercancel', end);
   vp.addEventListener('click', e => { if (swallowClick) { e.preventDefault(); e.stopPropagation(); swallowClick = false; } }, true);
   vp.addEventListener('dragstart', e => e.preventDefault());
   vp.addEventListener('wheel', e => {
-    e.preventDefault(); stop(); touched = true;
     const p = local(e), d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vh : 1);
-    apply(...zoomed(Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0015)), p.x, p.y));
+    const f = Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0015));
+    // At a zoom limit, let the page scroll instead of swallowing the wheel.
+    if ((f > 1 && z >= MAX_Z - 1e-6) || (f < 1 && z <= minZ + 1e-6)) return;
+    e.preventDefault(); stop(); touched = true;
+    apply(...zoomed(f, p.x, p.y));
   }, { passive: false });
 
   // ---- controls ----------------------------------------------------------
@@ -221,11 +264,12 @@ function init(root: HTMLElement) {
   });
 
   // ---- search ------------------------------------------------------------
-  let matches: HTMLAnchorElement[] = [], frameTimer = 0;
+  let matches: HTMLAnchorElement[] = [], frameTimer = 0, hadQuery = false;
   function frame(list: HTMLElement[]) {
     const xs = list.map(cx), ys = list.map(cy);
     const x0 = Math.min(...xs) - 150, x1 = Math.max(...xs) + 150, y0 = Math.min(...ys) - 125, y1 = Math.max(...ys) + 125;
-    flyTo(at((x0 + x1) / 2, (y0 + y1) / 2, Math.min(focusZ(), vw / (x1 - x0), vh / (y1 - y0))));
+    const S = safe();
+    flyTo(atSafe((x0 + x1) / 2, (y0 + y1) / 2, Math.min(focusZ(), (S.r - S.l) / (x1 - x0), (S.b - S.t) / (y1 - y0))));
   }
   search.addEventListener('input', () => {
     const q = search.value.trim().toLowerCase();
@@ -235,6 +279,8 @@ function init(root: HTMLElement) {
     islands.forEach(s => s.toggleAttribute('data-dim', !!q && !matches.some(t => s.contains(t))));
     status.textContent = q ? (matches.length ? `${matches.length} match${matches.length === 1 ? '' : 'es'}` : 'No match') : '';
     if (matches.length) { touched = true; frameTimer = window.setTimeout(() => frame(matches), 280); }
+    else if (!q && hadQuery) flyTo(homeView()); // clearing the search returns the view home
+    hadQuery = !!q;
   });
   search.addEventListener('keydown', e => {
     if (e.key === 'Escape' && search.value) { e.preventDefault(); search.value = ''; search.dispatchEvent(new Event('input')); }

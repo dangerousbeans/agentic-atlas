@@ -65,6 +65,7 @@ const px = (n: number) => `${n}px`;
     {L.tiles.map(t => <rect class="mm-tile" x={t.x} y={t.y} width={t.w} height={t.h} />)}
     <rect class="mm-view" x="0" y="0" width={L.width} height={L.height} />
   </svg>
+  <p class="atlas-ctl atlas-touch-hint" aria-hidden="true">Use two fingers to move the map</p>
 </div>
 <script>import './atlas-map.ts';</script>
 <style>
@@ -105,7 +106,7 @@ const px = (n: number) => `${n}px`;
   }
   .atlas-viewport { position: relative; }
   [data-enhanced] .atlas-viewport {
-    height: clamp(480px, 76vh, 820px); overflow: hidden; touch-action: none; cursor: grab;
+    height: clamp(480px, 76vh, 820px); overflow: hidden; touch-action: pan-y; cursor: grab;
     user-select: none; -webkit-user-select: none; outline: none;
     /* A faint survey grid; atlas-map.ts moves and scales it with the plane. */
     background-image:
@@ -142,6 +143,8 @@ const px = (n: number) => `${n}px`;
     padding: 3px 6px; background: color-mix(in oklab, var(--bg) 80%, transparent);
   }
   [data-far] .atlas-island-label .mark { display: none; }
+  /* Count on its own line keeps the narrowest label inside its island (and the plane) on phones. */
+  [data-far] .isl-count { display: block; margin: 3px 0 0; }
   [data-far] .atlas-island li { opacity: .5; }
   [data-far] .tile-name, [data-far] .tile-stats { visibility: hidden; }
   [data-enhanced] .atlas-island li { position: absolute; left: var(--rx); top: var(--ry); }
@@ -175,6 +178,13 @@ const px = (n: number) => `${n}px`;
   .mm-tile { fill: color-mix(in oklab, var(--text-2) 55%, transparent); }
   .mm-view { fill: color-mix(in oklab, var(--accent) 12%, transparent); stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 
+  .atlas-touch-hint {
+    position: absolute; z-index: 4; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    margin: 0; padding: 10px 16px; pointer-events: none; opacity: 0; transition: opacity .2s;
+    font: 500 14px/1.3 var(--font-ui); color: var(--text); white-space: nowrap;
+    background: color-mix(in oklab, var(--bg) 88%, transparent); border: 1px solid var(--line-strong); border-top: 2px solid var(--accent);
+  }
+  .atlas-touch-hint[data-show] { opacity: 1; }
   @media (max-width: 600px) {
     .atlas-bar { top: 12px; gap: 8px; }
     .atlas-search { flex: 1; min-width: 0; font-size: 16px; }

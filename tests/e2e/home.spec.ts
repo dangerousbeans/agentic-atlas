@@ -1,10 +1,14 @@
-import { test, expect, type Page, type Locator } from '@playwright/test';
+import { test, expect, type Page, type Locator, type CDPSession } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 const viewport = (page: Page) => page.locator('.atlas-viewport');
 const tiles = (page: Page) => page.locator('a.atlas-tile');
 const tile = (page: Page, slug: string) => page.locator(`a.atlas-tile[data-slug="${slug}"]`);
 const zoomOf = async (page: Page) => Number(await viewport(page).getAttribute('data-zoom'));
+const translateOf = async (page: Page) => {
+  const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec((await page.locator('.atlas-plane').getAttribute('style')) ?? '');
+  return [Number(m![1]), Number(m![2])];
+};
 const focusedSlug = (page: Page) => page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.slug ?? null);
 
 /** True when the locator's box lies fully inside the map viewport. */
@@ -131,17 +135,68 @@ test.describe('atlas map', () => {
     expect(await page.evaluate(() => scrollY)).toBe(y0);
   });
 
-  test('dragging pans without opening a tile', async ({ page }) => {
+  test('a mouse drag that starts on a tile at home zoom pans by the mouse delta, without zooming or opening it', async ({ page }) => {
     await openMap(page);
-    const plane = page.locator('.atlas-plane');
-    const before = await plane.getAttribute('style');
+    const z0 = await zoomOf(page);
+    const [x0, y0] = await translateOf(page);
     const t = (await tile(page, 'routing').boundingBox())!;
-    await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2);
+    const sx = t.x + t.width / 2, sy = t.y + t.height / 2;
+    await page.mouse.move(sx, sy);
     await page.mouse.down();
-    await page.mouse.move(t.x + t.width / 2 + 120, t.y + t.height / 2 + 60, { steps: 6 });
+    await page.mouse.move(sx + 120, sy + 60, { steps: 8 });
     await page.mouse.up();
+    await page.waitForTimeout(600); // long enough for any (unwanted) flight to show up
     await expect(page).toHaveURL(/\/$/);
-    expect(await plane.getAttribute('style')).not.toBe(before);
+    expect(await zoomOf(page)).toBeCloseTo(z0, 3);
+    const [x1, y1] = await translateOf(page);
+    expect(x1 - x0).toBeCloseTo(120, 0);
+    expect(y1 - y0).toBeCloseTo(60, 0);
+  });
+
+  test('the wheel lets the page scroll once the map cannot zoom further', async ({ page }) => {
+    await openMap(page);
+    const v = (await viewport(page).boundingBox())!;
+    await page.mouse.move(v.x + v.width / 2, v.y + v.height / 2);
+    for (let i = 0; i < 12 && (await zoomOf(page)) < 2; i++) { // zoom in to the limit (2)
+      await page.locator('[data-zoom-btn="in"]').click();
+      await expect(page.locator('.atlas-plane')).not.toHaveClass(/is-flying/);
+    }
+    await expect.poll(() => zoomOf(page)).toBe(2);
+    await page.mouse.move(v.x + v.width / 2, v.y + v.height / 2);
+    const y0 = await page.evaluate(() => scrollY);
+    expect(y0).toBeGreaterThan(0);
+    await page.mouse.wheel(0, -300);
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeLessThan(y0);
+    expect(await zoomOf(page)).toBe(2);
+  });
+
+  test('clearing the search returns the view home', async ({ page }) => {
+    await openMap(page);
+    const z0 = await zoomOf(page);
+    const box = page.getByRole('searchbox', { name: 'Find a pattern' });
+    await box.fill('reflexion');
+    await expect.poll(() => zoomOf(page)).toBeGreaterThan(z0 + 0.1);
+    await box.fill('');
+    await expect.poll(() => zoomOf(page)).toBeCloseTo(z0, 2);
+  });
+
+  test('a keyboard-focused tile is never hidden under the map controls', async ({ page }) => {
+    await openMap(page);
+    await page.locator('[data-zoom-btn="home"]').focus();
+    await page.keyboard.press('Tab');
+    const overlays = ['.atlas-search', '[data-somewhere]', '.atlas-zoom', '.atlas-minimap'];
+    for (let i = 0; i < 21; i++) {
+      await expect(page.locator('.atlas-plane')).not.toHaveClass(/is-flying/);
+      const slug = (await focusedSlug(page))!;
+      const t = (await tile(page, slug).boundingBox())!;
+      expect(await fullyInView(page, tile(page, slug)), slug).toBe(true);
+      for (const o of overlays) {
+        const b = (await page.locator(o).boundingBox())!;
+        const hit = t.x < b.x + b.width && b.x < t.x + t.width && t.y < b.y + b.height && b.y < t.y + t.height;
+        expect(hit, `${slug} under ${o}`).toBe(false);
+      }
+      await page.keyboard.press('ArrowRight');
+    }
   });
 
   test('only tiles in view and above the zoom threshold play', async ({ page }) => {
@@ -155,6 +210,7 @@ test.describe('atlas map', () => {
     await page.getByRole('searchbox', { name: 'Find a pattern' }).fill('routing');
     await page.getByRole('searchbox', { name: 'Find a pattern' }).press('Enter');
     await expect.poll(() => zoomOf(page)).toBeGreaterThanOrEqual(0.6);
+    await expect(page.locator('.atlas-plane:not(.is-flying)')).toHaveCount(1);
     await page.mouse.move(0, 0);
     await expect.poll(() => playing.count()).toBeGreaterThan(0);
     const inView = await page.evaluate(() => {
@@ -225,4 +281,53 @@ test('home is axe-clean', async ({ page }) => {
   await openMap(page);
   const res = await new AxeBuilder({ page }).analyze();
   expect(res.violations.map(v => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+});
+
+test.describe('touch (cooperative gestures)', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  // Real touch input through the browser's gesture pipeline (so touch-action and page scrolling apply).
+  const sessions = new WeakMap<Page, CDPSession>();
+  async function touch(page: Page, type: 'touchStart' | 'touchMove' | 'touchEnd', points: { x: number; y: number }[]) {
+    let cdp = sessions.get(page);
+    if (!cdp) { cdp = await page.context().newCDPSession(page); sessions.set(page, cdp); }
+    await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map((p, id) => ({ ...p, id })) });
+  }
+
+  test('a one-finger vertical swipe on the map scrolls the page, not the map', async ({ page }) => {
+    await openMap(page);
+    await page.evaluate(() => scrollTo(0, document.querySelector('.atlas-viewport')!.getBoundingClientRect().top + scrollY - 200));
+    const before = await page.locator('.atlas-plane').getAttribute('style');
+    const y0 = await page.evaluate(() => scrollY);
+    const v = (await viewport(page).boundingBox())!;
+    const x = v.x + v.width / 2;
+    await touch(page, 'touchStart', [{ x, y: v.y + 300 }]);
+    for (let i = 1; i <= 10; i++) await touch(page, 'touchMove', [{ x, y: v.y + 300 - i * 20 }]);
+    await touch(page, 'touchEnd', []);
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(y0 + 50);
+    expect(await page.locator('.atlas-plane').getAttribute('style')).toBe(before);
+  });
+
+  test('a one-finger sideways drag shows the two-finger hint and does not pan', async ({ page }) => {
+    await openMap(page);
+    const before = await page.locator('.atlas-plane').getAttribute('style');
+    const v = (await viewport(page).boundingBox())!;
+    const y = v.y + v.height / 2;
+    await touch(page, 'touchStart', [{ x: v.x + 100, y }]);
+    for (let i = 1; i <= 8; i++) await touch(page, 'touchMove', [{ x: v.x + 100 + i * 20, y }]);
+    await expect(page.locator('.atlas-touch-hint')).toHaveAttribute('data-show', '');
+    await touch(page, 'touchEnd', []);
+    expect(await page.locator('.atlas-plane').getAttribute('style')).toBe(before);
+  });
+
+  test('a two-finger pinch zooms the map', async ({ page }) => {
+    await openMap(page);
+    const z0 = await zoomOf(page);
+    const v = (await viewport(page).boundingBox())!;
+    const cx = v.x + v.width / 2, cy = v.y + v.height / 2;
+    await touch(page, 'touchStart', [{ x: cx - 30, y: cy }, { x: cx + 30, y: cy }]);
+    for (let i = 1; i <= 8; i++) await touch(page, 'touchMove', [{ x: cx - 30 - i * 12, y: cy }, { x: cx + 30 + i * 12, y: cy }]);
+    await touch(page, 'touchEnd', []);
+    await expect.poll(() => zoomOf(page)).toBeGreaterThan(z0 * 1.5);
+  });
 });

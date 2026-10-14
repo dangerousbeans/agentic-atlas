@@ -57,6 +57,13 @@ describe('atlasLayout', () => {
         expect(L.tiles.map(t => t.slug)).toEqual(ranked.flatMap(f => f.patterns));
       });
 
+      it('keeps at least 60px between vertically stacked islands, stagger included', () => {
+        for (const a of L.islands) for (const b of L.islands) {
+          if (a === b || !(a.x < b.x + b.w && b.x < a.x + a.w) || b.y <= a.y) continue;
+          expect(b.y - (a.y + a.h), `${a.slug} above ${b.slug}`).toBeGreaterThanOrEqual(60);
+        }
+      });
+
       it('is deterministic', () => {
         expect(atlasLayout(fams)).toEqual(L);
         expect(atlasLayout([...fams].reverse())).toEqual(L);

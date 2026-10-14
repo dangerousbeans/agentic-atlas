@@ -13,7 +13,7 @@ const PAD_X = 28;
 const PAD_TOP = 56; // room for the island label
 const PAD_BOTTOM = 28;
 const GUTTER_X = 120;
-const GUTTER_Y = 100;
+const GUTTER_Y = 60; // minimum vertical gap between islands, stagger included
 const STAGGER = 90;
 const MARGIN = 160;
 
@@ -38,7 +38,9 @@ export function atlasLayout(input: AtlasFamily[]): AtlasLayout {
   const gridCols = Math.max(1, Math.min(fams.length, Math.ceil(Math.sqrt(fams.length * 1.5))));
   const gridRows = Math.ceil(fams.length / gridCols);
   const colW = Array.from({ length: gridCols }, (_, c) => Math.max(0, ...shapes.filter((_, i) => i % gridCols === c).map(s => s.w)));
-  const rowH = Array.from({ length: gridRows }, (_, r) => Math.max(0, ...shapes.filter((_, i) => Math.floor(i / gridCols) === r).map(s => s.h)));
+  // A row is as tall as its tallest island *including* the stagger of odd columns, so a staggered
+  // island never reaches into the next row (the gap is always at least GUTTER_Y).
+  const rowH = Array.from({ length: gridRows }, (_, r) => Math.max(0, ...shapes.map((s, i) => [s, i] as const).filter(([, i]) => Math.floor(i / gridCols) === r).map(([s, i]) => s.h + (i % gridCols % 2 ? STAGGER : 0))));
   const colX = colW.map((_, c) => MARGIN + colW.slice(0, c).reduce((a, w) => a + w + GUTTER_X, 0));
   const rowY = rowH.map((_, r) => MARGIN + rowH.slice(0, r).reduce((a, h) => a + h + GUTTER_Y, 0));
 
