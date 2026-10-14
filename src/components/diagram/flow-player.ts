@@ -62,10 +62,19 @@ class FlowPlayer extends HTMLElement {
   private lit: Element[] = [];
   private onDoc = (e: Event) => this.onNodeRef(e as CustomEvent<{ node: string | null }>);
   private onVis = () => this.ensureLoop();
-  private onWin = () => this.showTip(null);
+  /** Window scroll/resize and stage scroll: a hover tooltip would be left behind, so hide it. A focus tooltip stays and
+   *  follows its node instead (focusing a node can itself scroll it into view, which must not hide its tooltip). */
+  private onWin = () => {
+    const el = this.tipFor;
+    if (el && el === document.activeElement) { const r = el.getBoundingClientRect(); this.place(r.left, r.top, r.right, r.bottom); }
+    else this.showTip(null);
+  };
   private onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') this.showTip(null); };
   private inited = false;
   private observers: (ResizeObserver | IntersectionObserver)[] = [];
+  /** The stage scroll handler is bound once; each observe() (first connect and every reconnect) swaps in a fresh sync. */
+  private stageSync?: () => void;
+  private stageBound = false;
 
   get compact() { return this.hasAttribute('compact'); }
 
@@ -135,7 +144,8 @@ class FlowPlayer extends HTMLElement {
         stage.toggleAttribute('data-more-left', more && stage.scrollLeft > 2);
         stage.toggleAttribute('data-more-right', more && stage.scrollLeft < max - 2);
       };
-      stage.addEventListener('scroll', sync, { passive: true });
+      this.stageSync = sync;
+      if (!this.stageBound) { this.stageBound = true; stage.addEventListener('scroll', () => this.stageSync?.(), { passive: true }); }
       const ro = new ResizeObserver(sync);
       ro.observe(stage); this.observers.push(ro);
     }
@@ -154,6 +164,7 @@ class FlowPlayer extends HTMLElement {
 
   disconnectedCallback() {
     cancelAnimationFrame(this.raf); this.raf = 0;
+    clearTimeout(this.hideTimer); this.hideTimer = 0;
     this.observers.forEach(o => o.disconnect()); this.observers = [];
     this.visible = false;
     for (const v of this.views) v.active = false;
@@ -202,7 +213,9 @@ class FlowPlayer extends HTMLElement {
     on(tip, 'pointerenter', () => { clearTimeout(this.hideTimer); this.hover = true; this.sync(); });
     on(tip, 'pointerleave', () => { this.hover = false; this.sync(); this.hideSoon(); });
     on(this, 'pointerover', e => { const el = hit(e); if (el) this.showTip(el, e); });
-    on(this, 'pointermove', e => { if (this.tipFor?.hasAttribute('data-hit') && !tip.contains(e.target as Node)) this.place(e.clientX, e.clientY, e.clientX, e.clientY); });
+    // An edge tooltip follows the pointer only while it is still over that edge's hit path; once it leaves, the tooltip
+    // stays put so the pointer can travel onto it (WCAG 1.4.13 hoverable).
+    on(this, 'pointermove', e => { if (this.tipFor?.hasAttribute('data-hit') && hit(e) === this.tipFor) this.place(e.clientX, e.clientY, e.clientX, e.clientY); });
     on(this, 'pointerout', e => {
       if (e.pointerType === 'touch') return;
       const to = (e.relatedTarget as Element | null)?.closest?.('[data-tip-t]') ?? null;

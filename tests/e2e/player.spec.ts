@@ -147,26 +147,101 @@ test('an edge tooltip is hoverable and does not chase the pointer', async ({ pag
   });
   await page.mouse.move(pt.x, pt.y);
   await expect(tip(page)).toBeVisible();
+  await expect(tip(page)).toContainText('Evaluator → Generator');
   await page.waitForTimeout(300);
+  // Record, after the player has handled each pointermove (window, bubble phase), whether the pointer is still over the
+  // edge's hit path and where the tooltip sits; and catch any moment the tooltip closes.
+  await page.evaluate(() => {
+    const t = document.querySelector<HTMLElement>('.fp-tip')!;
+    const w = window as unknown as { __rec: { onEdge: boolean; on: boolean; x: number; y: number; title: string }[]; __closed: boolean };
+    w.__rec = []; w.__closed = false;
+    new MutationObserver(() => { if (!t.classList.contains('is-on')) w.__closed = true; }).observe(t, { attributes: true, attributeFilter: ['class'] });
+    addEventListener('pointermove', e => {
+      const r = t.getBoundingClientRect();
+      const under = document.elementsFromPoint(e.clientX, e.clientY).some(el => el.getAttribute('data-hit') === 'revise');
+      w.__rec.push({ onEdge: under, on: t.classList.contains('is-on'), x: r.left, y: r.top, title: t.querySelector('.fp-tip-t')!.textContent ?? '' });
+    });
+  });
   const before = (await tip(page).boundingBox())!;
-  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2, { steps: 6 });
-  await page.mouse.move(before.x + before.width / 2 + 5, before.y + before.height / 2 + 3);
+  const target = { x: before.x + before.width / 2, y: before.y + before.height / 2 };
+  // Travel straight at the tooltip like a person would: small steps (about 1.5px each), not a few long jumps.
+  const steps = Math.ceil(Math.hypot(target.x - pt.x, target.y - pt.y) / 1.5);
+  await page.mouse.move(target.x, target.y, { steps });
   await page.waitForTimeout(400);
   await expect(tip(page)).toBeVisible();
+  const { rec, closed } = await page.evaluate(() => { const w = window as unknown as { __rec: { onEdge: boolean; on: boolean; x: number; y: number; title: string }[]; __closed: boolean }; return { rec: w.__rec, closed: w.__closed }; });
+  expect(rec.length).toBeGreaterThan(5);
+  expect(closed, 'the tooltip closed while the pointer travelled to it').toBe(false);
+  expect(rec.every(r => r.on && r.title === 'Evaluator → Generator')).toBe(true);
+  const left = rec.findIndex(r => !r.onEdge);
+  expect(left, 'the pointer left the edge on its way').toBeGreaterThan(-1);
+  for (const r of rec.slice(left)) {
+    expect(Math.abs(r.x - rec[left].x)).toBeLessThan(0.5);
+    expect(Math.abs(r.y - rec[left].y)).toBeLessThan(0.5);
+  }
+  // The pointer ends on the tooltip, which is still there and still put.
   const after = (await tip(page).boundingBox())!;
-  expect(Math.abs(after.x - before.x)).toBeLessThan(1);
-  expect(Math.abs(after.y - before.y)).toBeLessThan(1);
+  expect(target.x).toBeGreaterThanOrEqual(after.x); expect(target.x).toBeLessThanOrEqual(after.x + after.width);
+  expect(target.y).toBeGreaterThanOrEqual(after.y); expect(target.y).toBeLessThanOrEqual(after.y + after.height);
+  expect(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.fp-tip'), target)).toBe(true);
 });
 
-test('re-inserting the player clears stale hover state', async ({ page }) => {
+test('re-inserting the player clears stale hover state and does not pile up listeners', async ({ page }) => {
+  // Count scroll listeners added to the diagram stage, across the first connect and every reconnect.
+  await page.addInitScript(() => {
+    const w = window as unknown as { __stageScroll: number };
+    w.__stageScroll = 0;
+    const add = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function (this: EventTarget, type: string, ...rest: unknown[]) {
+      if (type === 'scroll' && this instanceof Element && this.classList.contains('diagram-stage')) w.__stageScroll++;
+      return (add as (...a: unknown[]) => void).call(this, type, ...rest);
+    } as typeof add;
+  });
   await page.goto(url);
   const fp = fpOf(page);
+  await expect(fp).toHaveAttribute('data-playing', 'true');
+  const count = () => page.evaluate(() => (window as unknown as { __stageScroll: number }).__stageScroll);
+  const initial = await count();
+  expect(initial).toBeGreaterThan(0);
   await node(page, 'evaluator').hover();
   await expect(fp).toHaveAttribute('data-playing', 'false');
-  await page.evaluate(() => { const el = document.querySelector('flow-player')!; const parent = el.parentElement!, next = el.nextSibling; el.remove(); parent.insertBefore(el, next); });
+  const reinsert = () => page.evaluate(() => { const el = document.querySelector('flow-player')!; const parent = el.parentElement!, next = el.nextSibling; el.remove(); parent.insertBefore(el, next); });
+  await reinsert();
   await page.mouse.move(0, 0);
   await expect(fp).toHaveAttribute('data-playing', 'true');
   await expect(tip(page)).toBeHidden();
+  for (let i = 0; i < 3; i++) await reinsert();
+  expect(await count()).toBe(initial);
+  await expect(fp).toHaveAttribute('data-playing', 'true');
+});
+
+test.describe('short viewport', () => {
+  test.use({ viewport: { width: 1280, height: 420 } });
+  test('tabbing through tree-of-thoughts nodes shows each focused node its tooltip, even when focus scrolls the page', async ({ page }) => {
+    await page.goto('/patterns/tree-of-thoughts/');
+    const fp = fpOf(page);
+    // Start just before the player, then tab into it.
+    await page.evaluate(() => {
+      const first = document.querySelector<SVGGElement>('flow-player svg.diagram-svg g.node[tabindex="0"]');
+      const all = [...document.querySelectorAll<HTMLElement | SVGElement>('a[href], button, [tabindex]')].filter(e => (e as HTMLElement).tabIndex >= 0);
+      const prev = all[all.indexOf(first!) - 1] as HTMLElement; prev.focus();
+    });
+    let seen = 0;
+    for (let i = 0; i < 30; i++) {
+      await page.keyboard.press('Tab');
+      const id = await page.evaluate(() => { const a = document.activeElement; return a?.matches('flow-player g.node') ? (a as SVGGElement).dataset.tipT ?? null : null; });
+      if (id === null) { if (seen) break; continue; }
+      seen++;
+      await page.waitForTimeout(150); // let any focus-induced scroll fire
+      await expect(tip(page), `tooltip for ${id}`).toBeVisible();
+      await expect(tip(page).locator('.fp-tip-t')).toHaveText(id);
+      const box = (await tip(page).boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(420);
+    }
+    expect(seen).toBeGreaterThan(3);
+    await expect(fp).toHaveAttribute('data-playing', 'false');
+  });
 });
 
 test('scenario tabs control labelled panels', async ({ page }) => {
