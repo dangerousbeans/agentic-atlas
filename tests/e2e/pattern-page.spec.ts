@@ -135,9 +135,22 @@ test.describe('page shortcuts', () => {
     await page.waitForTimeout(300);
     expect(pathOf(page)).toBe(at('prompt-chaining'));
   });
-  test('r picks a different pattern; esc goes to the atlas', async ({ page }) => {
+  test('there is no single-key r shortcut (WCAG 2.1.4); the legend lists arrows and esc; esc goes to the atlas', async ({ page }) => {
     await page.goto(url);
-    await page.keyboard.press('r');
+    const legend = page.locator('.legend[aria-label="Keyboard shortcuts"]');
+    await expect(legend.locator('kbd')).toHaveText(['←', '→', 'esc']);
+    await expect(legend).not.toContainText('random');
+    await page.locator('body').click({ position: { x: 2, y: 400 } });
+    for (const key of ['r', 'R']) {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(300);
+      expect(pathOf(page)).toBe(url);
+    }
+    await page.keyboard.down('CapsLock'); await page.keyboard.press('KeyR'); await page.keyboard.up('CapsLock');
+    await page.waitForTimeout(300);
+    expect(pathOf(page)).toBe(url);
+    // The visible Random button still picks a different pattern.
+    await page.locator('[data-nav="random"]').click();
     await expect(page).toHaveURL(/\/patterns\/[a-z-]+\/$/);
     expect(pathOf(page)).not.toBe(url);
     expect(order).toContain(pathOf(page).split('/')[2]);
@@ -162,7 +175,7 @@ test.describe('page shortcuts', () => {
     await expect(dialog).toBeHidden();
     await page.locator('body').click({ position: { x: 2, y: 400 } });
     await page.keyboard.press('Alt+ArrowRight');
-    await page.keyboard.press('Shift+r');
+    await page.keyboard.press('Shift+ArrowRight');
     await page.waitForTimeout(300);
     expect(pathOf(page)).toBe(at('routing'));
     await page.locator('ol.fp-captions button').first().focus();

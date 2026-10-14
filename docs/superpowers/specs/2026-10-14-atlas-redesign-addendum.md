@@ -65,7 +65,7 @@
        - the summary paragraph;
        - **"Measured over one run"**: a spec table with mono values computed at build time from the diagram and metadata (§3);
        - autonomy, cost and latency as rows in the same table.
-   - Under the stage: a keyboard legend: `← →` neighbours, `r` random, `esc` atlas. These are page-level shortcuts, ignored while typing in an input.
+   - Under the stage: a keyboard legend: `← →` neighbours, `esc` atlas. These are page-level shortcuts, ignored while typing in an input. (Amended at the final review: the `r` random shortcut was dropped because a single-character shortcut fails WCAG 2.1.4; random stays a visible button.)
    - Below, full width: prose sections with the sticky code panel (Pseudocode/Prompts, synced to the step), "often confused with" callouts, related patterns, sources.
 3. **Families index (`/families/`)**
    - A display H1, a lede ("21 patterns in 6 families"), then a grid of tall cards: one per pattern, grouped under family headings.

@@ -6,7 +6,7 @@ export function pickRandom(slugs: string[], current: string, rnd: () => number =
   return others.length ? others[Math.min(others.length - 1, Math.floor(rnd() * others.length))] : undefined;
 }
 
-/** Targets whose arrow keys and letters belong to something else. */
+/** Targets whose arrow keys belong to something else. */
 const OWNED = 'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .fp-tabs, .fp-captions, [role="tablist"]';
 
 /**
@@ -49,12 +49,10 @@ function init() {
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' || shouldIgnore(e)) return;
+    // No single-character shortcuts (WCAG 2.1.4): random is the visible Random button only.
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       const a = nav.querySelector<HTMLAnchorElement>(`[data-nav="${e.key === 'ArrowLeft' ? 'prev' : 'next'}"]`);
       if (a?.href) { e.preventDefault(); go(a.href); }
-    } else if (e.key === 'r' || e.key === 'R') {
-      const u = randomUrl();
-      if (u) { e.preventDefault(); go(u); }
     }
   });
 
