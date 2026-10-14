@@ -29,12 +29,16 @@ class FlowPlayer extends HTMLElement {
   private scrubbing = false;
   private onDoc = (e: Event) => this.onNodeRef(e as CustomEvent<{ node: string | null }>);
   private onVis = () => this.ensureLoop();
+  private inited = false;
+  private observers: (ResizeObserver | IntersectionObserver)[] = [];
 
   get compact() { return this.hasAttribute('compact'); }
 
   connectedCallback() {
+    if (this.inited) { this.attachGlobal(); this.observe(); this.render(); return; }
     const json = this.querySelector('script[data-diagram]');
     if (!json?.textContent) return;
+    this.inited = true;
     this.data = JSON.parse(json.textContent);
     this.tl = this.data.timelines[0];
     this.querySelectorAll('[data-node]').forEach(el => this.push(this.nodeEls, (el as HTMLElement).dataset.node!, el));
@@ -44,25 +48,40 @@ class FlowPlayer extends HTMLElement {
       svg.querySelectorAll<SVGPathElement>('path.edge').forEach(p => paths.set(p.dataset.edge!, p));
       const view: View = { svg, layer: svg.querySelector('g.tokens')!, paths, lengths: new Map(), pool: [], active: false };
       this.views.push(view);
-      new ResizeObserver(([entry]) => { view.active = entry.contentRect.width > 0; if (view.active) this.render(); }).observe(svg);
     });
     this.classList.add('is-enhanced');
     this.setAttribute('data-playing', 'false');
     this.querySelector('.fp-controls')?.removeAttribute('hidden');
     this.bindControls();
     this.syncScenarioLists();
-    new IntersectionObserver(([e]) => {
-      this.visible = e.isIntersecting;
-      if (this.visible && !this.userControl && !this.reduced && !this.playing) this.setPlaying(true);
-      this.ensureLoop();
-    }, { threshold: 0.3 }).observe(this);
-    document.addEventListener('visibilitychange', this.onVis);
-    if (!this.compact) document.addEventListener('noderef', this.onDoc);
+    this.observe();
+    this.attachGlobal();
     this.render();
   }
 
+  private observe() {
+    for (const view of this.views) {
+      const ro = new ResizeObserver(([entry]) => { view.active = entry.contentRect.width > 0; if (view.active) this.render(); });
+      ro.observe(view.svg); this.observers.push(ro);
+    }
+    const io = new IntersectionObserver(([e]) => {
+      this.visible = e.isIntersecting;
+      if (this.visible && !this.userControl && !this.reduced && !this.playing) this.setPlaying(true);
+      this.ensureLoop();
+    }, { threshold: 0.3 });
+    io.observe(this); this.observers.push(io);
+  }
+
+  private attachGlobal() {
+    document.addEventListener('visibilitychange', this.onVis);
+    if (!this.compact) document.addEventListener('noderef', this.onDoc);
+  }
+
   disconnectedCallback() {
-    cancelAnimationFrame(this.raf);
+    cancelAnimationFrame(this.raf); this.raf = 0;
+    this.observers.forEach(o => o.disconnect()); this.observers = [];
+    this.visible = false;
+    for (const v of this.views) v.active = false;
     document.removeEventListener('visibilitychange', this.onVis);
     document.removeEventListener('noderef', this.onDoc);
   }
@@ -77,13 +96,14 @@ class FlowPlayer extends HTMLElement {
     this.scrub = q<HTMLInputElement>('[data-scrub]') ?? undefined;
     this.scrub?.addEventListener('input', () => { this.take(); this.setPlaying(false); this.t = (+this.scrub!.value / 1000) * this.tl.duration; this.render(); });
     this.scrub?.addEventListener('pointerdown', () => (this.scrubbing = true));
-    this.scrub?.addEventListener('pointerup', () => (this.scrubbing = false));
+    const endScrub = () => (this.scrubbing = false);
+    ['pointerup', 'pointercancel', 'lostpointercapture', 'blur'].forEach(ev => this.scrub?.addEventListener(ev, endScrub));
     q<HTMLSelectElement>('[data-speed]')?.addEventListener('change', e => (this.speed = +(e.target as HTMLSelectElement).value));
     q<HTMLSelectElement>('[data-scenario]')?.addEventListener('change', e => {
       this.tl = this.data.timelines[+(e.target as HTMLSelectElement).value];
       this.t = 0; this.lastStep = -1; this.syncScenarioLists(); this.render();
     });
-    q<HTMLElement>('.diagram-stage')?.addEventListener('keydown', e => {
+    this.addEventListener('keydown', e => {
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'SELECT') return;
       const k = e.key;
@@ -131,7 +151,7 @@ class FlowPlayer extends HTMLElement {
   }
 
   private tick = (now: number) => {
-    const dt = Math.min(now - this.last, 100);
+    const dt = Math.max(0, Math.min(now - this.last, 100));
     this.last = now;
     let t = this.t + dt * this.speed;
     if (this.stopAt !== null && t >= this.stopAt) { t = this.stopAt; this.stopAt = null; this.t = t; this.render(); this.raf = 0; this.setPlaying(false); return; }
@@ -201,6 +221,8 @@ class FlowPlayer extends HTMLElement {
     const step = this.tl.steps[f.stepIndex];
     const cap = this.querySelector('.fp-caption');
     if (cap) cap.textContent = step.caption + (step.iteration ? ` (round ${step.iteration.n} of ${step.iteration.of})` : '');
+    const ref = f.codeRef;
+    this.setAttribute('data-code-ref', ref ? `${ref.block}:${ref.lines}` : '');
     const counter = this.querySelector('.fp-counter');
     if (counter) counter.textContent = `Step ${f.stepIndex + 1} / ${this.tl.steps.length}`;
     this.querySelectorAll(`ol.fp-captions[data-scenario="${this.tl.id}"] li`).forEach(li => {

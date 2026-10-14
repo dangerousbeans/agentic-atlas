@@ -66,6 +66,7 @@ test('caption is announced and the list marks the current step', async ({ page }
   await pause(page);
   await page.locator('input[data-scrub]').fill('0');
   await expect(page.locator('.fp-caption')).toHaveText('The task arrives at the generator.');
+  await expect(page.locator('flow-player').first()).toHaveAttribute('data-code-ref', 'loop:1-3');
   await expect(page.locator('ol.fp-captions li[aria-current="step"]').first()).toHaveAttribute('data-step-index', '0');
 });
 
