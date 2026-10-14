@@ -1,0 +1,78 @@
+---
+import { getCatalog } from '../../lib/catalog';
+const cat = await getCatalog();
+---
+<button type="button" class="search-btn" data-search-open aria-haspopup="dialog">Search <kbd data-kbd>Ctrl K</kbd></button>
+<dialog class="search" aria-label="Search patterns">
+  <div class="search-head">
+    <input type="search" aria-label="Search" placeholder="Search patterns, e.g. 'loop', 'memory', 'tools'" autocomplete="off" />
+    <label><span class="sr-only">Family</span>
+      <select aria-label="Family"><option value="">All families</option>{cat.families.map(f => <option value={f.name}>{f.name}</option>)}</select>
+    </label>
+    <button type="button" data-search-close aria-label="Esc, close search">Esc</button>
+  </div>
+  <p class="status" role="status"></p>
+  <ul class="results"></ul>
+</dialog>
+<script>
+  import { joinBase } from '../../lib/url';
+  const dlg = document.querySelector<HTMLDialogElement>('dialog.search')!;
+  const input = dlg.querySelector<HTMLInputElement>('input')!;
+  const fam = dlg.querySelector<HTMLSelectElement>('select')!;
+  const list = dlg.querySelector<HTMLUListElement>('.results')!;
+  const status = dlg.querySelector<HTMLElement>('.status')!;
+  type PF = { init(): Promise<void>; search(q: string, o?: object): Promise<{ results: { data(): Promise<{ url: string; meta: { title?: string }; excerpt: string; filters: Record<string, string[]> }> }[] }> };
+  let pf: PF | null = null;
+  const load = async () => {
+    if (pf) return pf;
+    try { pf = (await import(/* @vite-ignore */ joinBase(import.meta.env.BASE_URL, 'pagefind/pagefind.js'))) as PF; await pf.init(); if (status.dataset.unavailable) { status.textContent = ''; delete status.dataset.unavailable; } }
+    catch { pf = null; status.textContent = 'Search is available in the production build.'; status.dataset.unavailable = '1'; }
+    return pf;
+  };
+  const open = async () => { dlg.showModal(); input.focus(); await load(); };
+  document.querySelector('[data-search-open]')!.addEventListener('click', open);
+  addEventListener('keydown', e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); open(); } });
+  dlg.querySelector('[data-search-close]')!.addEventListener('click', () => dlg.close());
+  input.addEventListener('keydown', async e => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(timer); await run(); list.querySelector<HTMLAnchorElement>('a')?.click(); } });
+  if (/Mac|iPhone|iPad/.test(navigator.platform)) document.querySelectorAll('[data-kbd]').forEach(k => (k.textContent = '⌘K'));
+  let seq = 0;
+  const run = async () => {
+    const my = ++seq; const q = input.value.trim();
+    if (!q) { list.innerHTML = ''; status.textContent = ''; return; }
+    const p = await load(); if (!p) return;
+    let items;
+    try {
+      const r = await p.search(q, fam.value ? { filters: { family: fam.value } } : {});
+      items = await Promise.all(r.results.slice(0, 8).map(x => x.data()));
+    } catch { if (my === seq) { status.textContent = 'Search failed — try again.'; list.replaceChildren(); } return; }
+    if (my !== seq) return;
+    status.textContent = items.length ? `${items.length} result${items.length > 1 ? 's' : ''}` : 'No matches.';
+    list.replaceChildren(...items.map(it => {
+      const li = document.createElement('li'); const a = document.createElement('a'); a.href = it.url;
+      const t = document.createElement('span'); t.className = 'title'; t.textContent = it.meta.title ?? it.url;
+      const f = document.createElement('span'); f.className = 'fam'; f.textContent = it.filters.family?.[0] ?? '';
+      const ex = document.createElement('span'); ex.className = 'ex'; ex.innerHTML = it.excerpt;
+      a.append(t, f, ex); li.append(a); return li;
+    }));
+  };
+  let timer = 0;
+  input.addEventListener('input', () => { clearTimeout(timer); timer = window.setTimeout(run, 120); });
+  fam.addEventListener('change', run);
+</script>
+<style>
+  .search-btn { background: var(--bg-1); color: var(--text-2); border: 1px solid var(--line); border-radius: 99px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  kbd { font: 11px var(--font-mono); color: var(--text-3); margin-left: 6px; }
+  dialog.search { width: min(640px, 92vw); border: 1px solid var(--line); border-radius: 16px; background: var(--bg-1); color: var(--text); padding: 0; margin-top: 12vh; }
+  dialog.search::backdrop { background: #0B0F1Acc; backdrop-filter: blur(4px); }
+  .search-head { display: flex; gap: 8px; padding: 14px; border-bottom: 1px solid var(--line); }
+  .search-head input { flex: 1; background: transparent; border: 0; color: var(--text); font: 16px var(--font-ui); outline: none; }
+  .search-head select, .search-head button { background: var(--bg); color: var(--text-2); border: 1px solid var(--line); border-radius: 8px; font: 12px var(--font-ui); padding: 4px 8px; }
+  .status { margin: 0; padding: 8px 16px; font-size: 12px; color: var(--text-3); }
+  .results { list-style: none; margin: 0; padding: 0 8px 8px; max-height: 60vh; overflow: auto; }
+  .results :global(a) { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 12px; border-radius: 10px; text-decoration: none; }
+  .results :global(a:hover), .results :global(a:focus) { background: var(--bg-2); }
+  .results :global(.title) { font: 400 20px var(--font-display); }
+  .results :global(.fam) { font-size: 11px; color: var(--text-3); letter-spacing: .1em; text-transform: uppercase; align-self: center; }
+  .results :global(.ex) { grid-column: 1 / -1; font-size: 13px; color: var(--text-2); }
+  .results :global(.ex mark) { background: none; color: var(--family-accent, var(--brand)); }
+</style>

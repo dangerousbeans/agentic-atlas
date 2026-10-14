@@ -1,0 +1,44 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import NodeShape from '../components/diagram/NodeShape.astro';
+import '../components/diagram/diagram.css';
+import { NODE_KINDS } from '../lib/diagram/types';
+const desc: Record<string, string> = {
+  io: 'Input or output: where a request enters or a result leaves.', llm: 'A single LLM call with a specific prompt.', agent: 'A full agent: an LLM in a loop with its own tools.',
+  tool: 'A tool or API the model can call.', router: 'A classifier or code branch that picks a path.', evaluator: 'A judge: tests, a validator or an LLM grader.',
+  aggregator: 'Combines several results: a vote, a merge or a judge.', memory: 'A store: vector DB, plan, scratchpad or long-term memory.', human: 'A person in the loop who approves, edits or rejects.', guard: 'A guardrail check that can block the flow.',
+};
+---
+<BaseLayout title="About" description="How to read the diagrams, and how this atlas was made.">
+  <article class="wrap about">
+    <p class="eyebrow">About</p>
+    <h1>How to read the <em>sky</em></h1>
+    <h2>Node shapes</h2>
+    <ul class="legend">
+      {NODE_KINDS.map(k => (
+        <li class="legend-item"><svg viewBox="0 -8 136 72" aria-hidden="true"><g class="node" style="--accent:#F5B14C;--halo:#F5B14C"><NodeShape kind={k} cx={68} /></g></svg><div><strong>{k}</strong><span>{desc[k]}</span></div></li>
+      ))}
+    </ul>
+    <h2>Edges and tokens</h2>
+    <ul class="plain">
+      <li><strong>Solid line:</strong> a fixed path that runs every time.</li>
+      <li><strong>Dashed line:</strong> a return path or optional route.</li>
+      <li><strong>Dashed arc with an italic label:</strong> a loop back to an earlier step.</li>
+      <li><strong>Comet tokens:</strong> messages in flight. Cream is a prompt, cyan a tool call, the family color a result, coral feedback.</li>
+    </ul>
+    <h2>Methodology</h2>
+    <p>Patterns are curated from Anthropic's <a href="https://www.anthropic.com/engineering/building-effective-agents">Building effective agents</a>, OpenAI's <a href="https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf">A practical guide to building agents</a>, and the original papers cited on each page. Diagrams play scripted traces that illustrate control flow; they are not live model runs. Pseudocode is framework-agnostic on purpose.</p>
+    <h2>Credits</h2>
+    <p>Built with Astro, ELK, three.js, Expressive Code and Pagefind. Typeset in Instrument Serif, Inter Tight and JetBrains Mono.</p>
+  </article>
+</BaseLayout>
+<style>
+  .about { max-width: 820px; }
+  .legend { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px 24px; }
+  .legend-item { display: flex; align-items: center; gap: 14px; }
+  .legend-item svg { width: 96px; flex: none; }
+  .legend-item strong { display: block; text-transform: uppercase; letter-spacing: .1em; font-size: 12px; }
+  .legend-item span { color: var(--text-2); font-size: 14px; }
+  .plain li { margin: 8px 0; color: var(--text-2); } .plain strong { color: var(--text); font-weight: 500; }
+  p { color: var(--text-2); }
+</style>

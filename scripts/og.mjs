@@ -1,0 +1,11 @@
+import { chromium } from '@playwright/test';
+const url = process.env.OG_URL ?? `http://localhost:${process.env.PORT ?? 4321}/`;
+const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 1200, height: 630 }, deviceScaleFactor: 1 });
+await page.goto(url);
+await page.waitForSelector('.constellation.is-gl', { timeout: 15000 }).catch(() => {});
+await page.addStyleTag({ content: '.site-header{display:none}' });
+await page.waitForTimeout(2500);
+await page.screenshot({ path: 'public/og.png', clip: { x: 0, y: 0, width: 1200, height: 630 } });
+await browser.close();
+console.log('wrote public/og.png');
