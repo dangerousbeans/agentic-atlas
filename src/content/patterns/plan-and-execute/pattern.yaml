@@ -66,22 +66,82 @@ prompts:
       {"remaining_steps": ["...", "..."]}
 diagram:
   nodes:
-    - { id: user, kind: io, label: Goal }
-    - { id: planner, kind: llm, label: Planner }
-    - { id: plan, kind: memory, label: Plan }
-    - { id: executor, kind: agent, label: Executor }
-    - { id: tool, kind: tool, label: Tools }
-    - { id: replanner, kind: llm, label: Replanner }
-    - { id: out, kind: io, label: Answer }
+    - id: user
+      kind: io
+      label: Goal
+      description: "The open-ended goal, such as 'Write a brief on a competitor'."
+    - id: planner
+      kind: llm
+      label: Planner
+      description: "Writes the whole step-by-step plan once, before any tool is used; the last step yields the answer."
+    - id: plan
+      kind: memory
+      label: Plan
+      description: "The explicit, inspectable list of remaining steps; the executor reads it and the replanner rewrites it."
+    - id: executor
+      kind: agent
+      label: Executor
+      description: "A small ReAct-style agent that completes one plan step at a time using the tools."
+    - id: tool
+      kind: tool
+      label: Tools
+      description: "The tools the executor calls to do a step, such as web search for a competitor's pricing."
+    - id: replanner
+      kind: llm
+      label: Replanner
+      description: "After each step, compares the plan and results so far, then returns revised steps or the final answer."
+    - id: out
+      kind: io
+      label: Answer
+      description: "The finished deliverable, such as the competitor brief, returned when the replanner has a final_answer."
   edges:
-    - { id: goal, from: user, to: planner }
-    - { id: draft, from: planner, to: plan, label: steps }
-    - { id: next, from: plan, to: executor, label: next step }
-    - { id: call, from: executor, to: tool }
-    - { id: observe, from: tool, to: executor, style: dashed }
-    - { id: report, from: executor, to: replanner, label: result }
-    - { id: revise, from: replanner, to: plan, style: loop, label: revise }
-    - { id: finish, from: replanner, to: out, label: done }
+    - id: goal
+      from: user
+      to: planner
+      description: "The goal goes to the planner before any tool is touched."
+      example: "Write a one-page brief on competitor Acme: products, pricing and recent news."
+    - id: draft
+      from: planner
+      to: plan
+      label: steps
+      description: "The planner's numbered step list is stored as the plan."
+      example: "1. Find Acme's product lines and pricing. 2. Find recent news. 3. Write the brief from the findings."
+    - id: next
+      from: plan
+      to: executor
+      label: next step
+      description: "The first remaining step is handed to the executor as a self-contained task."
+      example: "Find Acme's product lines and pricing."
+    - id: call
+      from: executor
+      to: tool
+      description: "A tool call the executor makes while working on the current step."
+      example: "web_search(query=\"Acme pricing plans 2026\")"
+    - id: observe
+      from: tool
+      to: executor
+      style: dashed
+      description: "The tool's output returns to the executor to use in finishing the step."
+      example: "Acme sells Basic ($20/mo), Pro ($60/mo) and Enterprise (custom)."
+    - id: report
+      from: executor
+      to: replanner
+      label: result
+      description: "The finished step and its result are recorded as a past step for the replanner."
+      example: "Step 1 done: Acme has three tiers, Basic $20, Pro $60, Enterprise custom."
+    - id: revise
+      from: replanner
+      to: plan
+      style: loop
+      label: revise
+      description: "The replanner writes back the updated remaining steps, not merely the old list minus one step."
+      example: "{\"remaining_steps\": [\"Find recent Acme news, focusing on the Enterprise launch\", \"Write the brief\"]}"
+    - id: finish
+      from: replanner
+      to: out
+      label: done
+      description: "When the results already answer the goal, the replanner returns the final answer instead of steps."
+      example: "{\"final_answer\": \"Acme Competitor Brief: three pricing tiers, strong Enterprise push...\"}"
   scenarios:
     - id: competitor-brief
       label: '"Write a brief on a competitor"'
