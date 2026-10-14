@@ -3,4 +3,4 @@ name: "Knowledge & Memory"
 rank: 5
 accent: "#34D399"
 description: Pull in outside or stored knowledge, decide when to fetch it, and check what comes back.
-order: [agentic-rag, corrective-rag, hierarchical-memory]
+order: [agentic-rag, corrective-rag, hyde, multi-query-rag, retrieve-and-rerank, graph-rag, memory-stream, hierarchical-memory]

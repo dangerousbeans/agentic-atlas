@@ -1,0 +1,138 @@
+slug: hyde
+name: HyDE
+family: knowledge-memory
+aliases: [Hypothetical Document Embeddings, Hypothetical document retrieval, Generate-then-retrieve, Answer-first retrieval]
+summary: The LLM writes a hypothetical answer passage. That passage is embedded instead of the query, and the real documents nearest to it are retrieved.
+badges: { autonomy: low, cost: low, latency: medium }
+sources:
+  - title: "Precise Zero-Shot Dense Retrieval without Relevance Labels (Gao et al., 2022)"
+    url: https://arxiv.org/abs/2212.10496
+related:
+  composesWith: [retrieve-and-rerank, corrective-rag]
+  confusedWith:
+    - slug: multi-query-rag
+      difference: "HyDE writes one answer-shaped passage and searches with its embedding. Multi-query RAG writes several queries, searches with each and fuses the ranked lists."
+    - slug: corrective-rag
+      difference: "HyDE reshapes the search before retrieving, on every query. Corrective RAG rewrites the query only after a grader has rejected what came back."
+origin:
+  by: Luyu Gao et al.
+  org: Carnegie Mellon University, University of Waterloo
+  year: 2022
+  url: https://arxiv.org/abs/2212.10496
+  kind: introduced
+  note: "Published at ACL 2023. The paper generates passages with InstructGPT and encodes them with an unsupervised dense encoder (Contriever), with no relevance labels at all."
+build:
+  goal: "Answer a question from a document index by searching with the embedding of a model-written hypothetical answer instead of the embedding of the question, then answering only from the real documents found."
+  steps:
+    - "Call the writer model with the {{prompt:hypothetical}}, filling in the question. It returns one short passage written as if it came from a document that answers the question."
+    - "Embed the passage with the same embedding model that built the index. Optionally write N passages, embed each, and average their vectors together with the question's vector."
+    - "Run a nearest-neighbour search on the index with that vector and keep the top k documents (default 3)."
+    - "Discard the hypothetical passage. It only steered the search, and none of its claims may reach the answer."
+    - "Call the generator model with the {{prompt:answer}}, passing the original question and the k real documents, and return its answer."
+  stop: "Stop after one retrieval and one generation. If no document clears the similarity floor, say the index has no answer instead of answering from the hypothetical passage."
+  requirements:
+    - "Use one embedding model for both the index and the passage vectors; a mismatched encoder makes the search meaningless."
+    - "Never pass the hypothetical passage to the generator; it may contain invented facts."
+    - "Make k, the number of hypothetical passages and the similarity floor configurable, with defaults 3, 1 and 0.3."
+    - "Log the hypothetical passage next to the IDs and scores of the documents it retrieved, so bad retrievals can be traced to the passage."
+    - "Add a test with a stub LLM that returns a fixed passage and a fake embedder that records its inputs; assert the embedder received the passage, not the question, and the generator prompt holds the question and exactly 3 documents but not the passage."
+prompts:
+  - id: hypothetical
+    title: Hypothetical passage prompt
+    lang: markdown
+    source: |
+      Write a short passage that answers the question below, in the style of
+      {{document_type}}.
+
+      <question>{{question}}</question>
+
+      Write 3 to 5 sentences of plain prose with the vocabulary such a document
+      would use. Do not hedge or say you are unsure: this passage is only used to
+      search for real documents, and it is never shown to the user.
+  - id: answer
+    title: Grounded answer prompt
+    lang: markdown
+    source: |
+      Answer the question using only the documents below.
+
+      <question>{{question}}</question>
+      <documents>{{documents}}</documents>
+
+      Cite the document ID after each claim, like [doc-12]. If the documents
+      do not answer the question, say so instead of guessing.
+diagram:
+  nodes:
+    - { id: user, kind: io, label: Question, description: "A short, casually worded question, such as 'Why does my sourdough collapse in the oven?'." }
+    - { id: writer, kind: llm, label: Writer, sublabel: hypothetical answer, description: "Writes a passage that reads like a document answering the question. Its facts may be wrong; only its wording matters." }
+    - { id: embed, kind: tool, label: Embedder, description: "Turns the hypothetical passage into a vector with the same embedding model that built the index." }
+    - { id: vectordb, kind: memory, label: Vector index, description: "Holds the embedded real documents and returns those whose vectors sit nearest the passage vector." }
+    - { id: generator, kind: llm, label: Generator, description: "Answers the original question from the real documents only; the hypothetical passage never reaches it." }
+    - { id: out, kind: io, label: Answer, description: "The answer, citing the real documents it came from." }
+  edges:
+    - { id: ask, from: user, to: writer, description: "The question goes to the writer, not straight to the index.", example: "Why does my sourdough collapse in the oven?" }
+    - { id: fake, from: writer, to: embed, style: dashed, label: fake doc, description: "The hypothetical passage, drawn dashed because it is a search key, not evidence.", example: "Sourdough that collapses in the oven is usually overproofed. Long fermentation weakens the gluten network, so the loaf cannot hold the gas as it expands." }
+    - { id: vector, from: embed, to: vectordb, label: vector, description: "The passage vector is the query. It lands among documents written the same way, which the short question would have missed.", example: "[0.021, -0.113, 0.087, ...] (768 dims), nearest-neighbour search, k=3" }
+    - { id: docs, from: vectordb, to: generator, label: 3 real docs, description: "The nearest real documents, with their similarity scores, become the generator's only evidence.", example: "[doc-12] Overproofing and the poke test (0.82); [doc-40] Gluten strength in long ferments (0.79); [doc-07] Oven spring basics (0.71)" }
+    - { id: question, from: user, to: generator, style: dashed, description: "The original question goes to the generator directly, so it answers what was asked, not what the passage guessed.", example: "Question: Why does my sourdough collapse in the oven?" }
+    - { id: answer, from: generator, to: out, description: "The grounded answer, with a citation after each claim.", example: "It is most likely overproofed [doc-12]: the dough fermented so long the gluten weakened [doc-40]. Use the poke test and shorten the final proof." }
+  scenarios:
+    - id: fake-finds-real
+      label: Fake doc finds real docs
+      steps:
+        - id: ask
+          caption: A short question arrives. Embedded on its own, it would match few documents well.
+          duration: 1400
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: write
+          caption: The writer drafts a hypothetical answer passage, worded like the documents in the index.
+          duration: 2400
+          events:
+            - { type: activate, node: writer, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: fake, token: { kind: tokens, label: fake doc }, at: [0.5, 1] }
+        - id: search
+          caption: The passage is embedded, and its vector lands among real documents about overproofing.
+          duration: 2600
+          events:
+            - { type: activate, node: embed, status: calling, at: [0, 0.3] }
+            - { type: send, edge: vector, token: { kind: tool-call, label: vector }, at: [0.3, 0.6] }
+            - { type: read, node: vectordb, at: [0.6, 1] }
+        - id: answer
+          caption: The three real documents and the original question go to the generator; the fake passage is discarded.
+          duration: 3000
+          events:
+            - { type: send, edge: docs, token: { kind: result, label: 3 docs }, at: [0, 0.35] }
+            - { type: send, edge: question, token: { kind: prompt, label: question }, at: [0, 0.35] }
+            - { type: activate, node: generator, status: thinking, at: [0.35, 0.7] }
+            - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.7, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
+    - id: wrong-details
+      label: Wrong details, right neighbourhood
+      steps:
+        - id: ask
+          caption: "A question arrives: 'What temperature should I bake sourdough at?'"
+          duration: 1400
+          events:
+            - { type: send, edge: ask, token: { kind: prompt, label: question } }
+        - id: write
+          caption: "The writer guesses '200 °C for 50 minutes'. The figure may be wrong, but the passage sounds like a baking guide."
+          duration: 2400
+          events:
+            - { type: activate, node: writer, status: thinking, at: [0, 0.5] }
+            - { type: send, edge: fake, token: { kind: tokens, label: "200 °C?" }, at: [0.5, 1] }
+        - id: search
+          caption: The vector still lands among baking guides, which give the real temperatures.
+          duration: 2600
+          events:
+            - { type: activate, node: embed, status: calling, at: [0, 0.3] }
+            - { type: send, edge: vector, token: { kind: tool-call, label: vector }, at: [0.3, 0.6] }
+            - { type: read, node: vectordb, at: [0.6, 1] }
+        - id: answer
+          caption: "The generator answers from the guides, 250 °C covered then 230 °C uncovered, so the guessed figure never reaches the user."
+          duration: 3000
+          events:
+            - { type: send, edge: docs, token: { kind: result, label: 3 docs }, at: [0, 0.35] }
+            - { type: send, edge: question, token: { kind: prompt, label: question }, at: [0, 0.35] }
+            - { type: activate, node: generator, status: thinking, at: [0.35, 0.7] }
+            - { type: send, edge: answer, token: { kind: result, label: answer }, at: [0.7, 0.95] }
+            - { type: activate, node: out, status: done, at: [0.9, 1] }
