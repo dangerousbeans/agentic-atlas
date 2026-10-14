@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { layoutDiagram } from '../../src/lib/diagram/layout';
 import type { DiagramSpec } from '../../src/lib/diagram/types';
+import { first, last, attached } from './diagram-helpers';
 
 const loop: DiagramSpec = {
   nodes: [{ id: 'in', kind: 'io', label: 'In' }, { id: 'gen', kind: 'llm', label: 'Gen' }, { id: 'eval', kind: 'evaluator', label: 'Eval' }, { id: 'out', kind: 'io', label: 'Out' }],
@@ -47,26 +48,19 @@ describe('layoutDiagram', () => {
     expect(a.x).toBeGreaterThanOrEqual(g.x); expect(a.x + a.w).toBeLessThanOrEqual(g.x + g.w);
   });
 
-  const first = (d: string) => { const m = /^M(-?[\d.]+),(-?[\d.]+)/.exec(d)!; return { x: +m[1], y: +m[2] }; };
-  const last = (d: string) => { const m = /(-?[\d.]+),(-?[\d.]+)$/.exec(d)!; return { x: +m[1], y: +m[2] }; };
-  const onBorder = (b: { x: number; y: number; w: number; h: number }, p: { x: number; y: number }) => {
-    const tol = 1;
-    const inX = p.x >= b.x - tol && p.x <= b.x + b.w + tol, inY = p.y >= b.y - tol && p.y <= b.y + b.h + tol;
-    const nearX = Math.abs(p.x - b.x) <= tol || Math.abs(p.x - (b.x + b.w)) <= tol;
-    const nearY = Math.abs(p.y - b.y) <= tol || Math.abs(p.y - (b.y + b.h)) <= tol;
-    return inX && inY && (nearX || nearY);
-  };
+  // Edges end at the glyph (within 2px of its boundary), not at the edge of the wider label box.
+  const kind = (spec: DiagramSpec, id: string) => spec.nodes.find(n => n.id === id)!.kind;
   const expectEdgesOnBorders = (spec: DiagramSpec, L: Awaited<ReturnType<typeof layoutDiagram>>, only?: Set<string>) => {
     for (const e of spec.edges) {
       if (e.style === 'loop') continue;
       if (only && !only.has(e.id)) continue;
       const d = L.edges[e.id].d;
-      expect(onBorder(L.nodes[e.from], first(d)), `${e.id} start ${d}`).toBe(true);
-      expect(onBorder(L.nodes[e.to], last(d)), `${e.id} end ${d}`).toBe(true);
+      expect(attached(kind(spec, e.from), L.nodes[e.from], first(d)), `${e.id} start ${d}`).toBe(true);
+      expect(attached(kind(spec, e.to), L.nodes[e.to], last(d)), `${e.id} end ${d}`).toBe(true);
     }
   };
   for (const dir of ['RIGHT', 'DOWN'] as const) {
-    it(`${dir}: with a group, edge endpoints lie on their node borders`, async () => {
+    it(`${dir}: with a group, edge endpoints lie on their node glyph boundaries`, async () => {
       const spec: DiagramSpec = { ...loop, groups: [{ id: 'team', label: 'Team', children: ['gen', 'eval'] }] };
       expectEdgesOnBorders(spec, await layoutDiagram(spec, dir));
     });
@@ -82,7 +76,7 @@ describe('layoutDiagram', () => {
     const p = first(L.edges.ab.d), q = first(L.edges.ba.d);
     expect(Math.hypot(p.x - q.x, p.y - q.y)).toBeGreaterThanOrEqual(8);
   });
-  it('edges touching pinned nodes start and end on the pinned borders', async () => {
+  it('edges touching pinned nodes start and end on the pinned glyph boundaries', async () => {
     const spec: DiagramSpec = { ...loop, nodes: loop.nodes.map(n => n.id === 'in' ? { ...n, pos: { x: 0, y: 0 } } : n.id === 'out' ? { ...n, pos: { x: 600, y: 0 } } : n) };
     const L = await layoutDiagram(spec, 'RIGHT');
     expectEdgesOnBorders(spec, L, new Set(['task', 'accept']));

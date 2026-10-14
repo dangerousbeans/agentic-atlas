@@ -7,13 +7,8 @@ import './diagram.css';
 interface Props { uid: string; spec: DiagramSpec; title: string; compact?: boolean }
 const { uid, spec, title, compact = false } = Astro.props;
 const wide = await layoutDiagram(spec, spec.direction ?? 'RIGHT', compact ? 'compact' : 'wide');
-// Phones: top-to-bottom, unless the left-to-right layout is clearly narrower (wide hubs and fan-outs).
-let narrow = null;
-if (!compact) {
-  const down = await layoutDiagram(spec, 'DOWN', 'narrow');
-  const right = await layoutDiagram(spec, 'RIGHT', 'narrow');
-  narrow = right.width < down.width * 0.8 ? right : down;
-}
+// Phones: top-to-bottom. (A left-to-right phone layout was never narrower for any pattern, so it is not offered.)
+const narrow = compact ? null : await layoutDiagram(spec, 'DOWN', 'narrow');
 const timelines = compileDiagram(spec);
 const payload = JSON.stringify({ spec, timelines }).replace(/</g, '\\u003c');
 ---

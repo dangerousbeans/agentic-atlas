@@ -1,11 +1,22 @@
 import ELK from 'elkjs/lib/elk.bundled.js';
-import type { DiagramSpec, NodeSize } from './types';
+import type { DiagramSpec, NodeSize, NodeKind } from './types';
 import { DEFAULT_SIZE } from './types';
-import { roundedPath, cubicPath, boxArc, borderPoint, polylineMid, offsetPath, type Pt, type Box } from './geometry';
+import { roundedPath, cubicPath, boxArc, polylineMid, offsetPath, type Pt, type Box } from './geometry';
 
 export const NODE_DIMS: Record<NodeSize, { w: number; h: number }> = { sm: { w: 96, h: 72 }, md: { w: 136, h: 72 }, lg: { w: 176, h: 72 } };
 /** Vertical centre of the node glyph inside its box (see NodeShape.astro). */
 export const SHAPE_CY = 26;
+/** Radius of each glyph's outline around (box centre x, SHAPE_CY); edges stop GLYPH_GAP outside it. */
+export const GLYPH_R: Record<NodeKind, number> = { io: 8, llm: 18, agent: 18, tool: 18, router: 20, evaluator: 18, aggregator: 18, memory: 17, human: 19, guard: 19 };
+export const GLYPH_GAP = 3;
+/** Where an edge may attach to a node: on the circle of this radius around the glyph centre, or (for edges that
+ *  leave or enter below the node label, since they may not cross it) on the bottom edge of the node box. */
+export const glyphReach = (kind: NodeKind) => GLYPH_R[kind] + GLYPH_GAP;
+export const glyphCentre = (b: Box): Pt => ({ x: b.x + b.w / 2, y: b.y + SHAPE_CY });
+/** Edges whose label is drawn: of several edges converging on one node with the same label, only the first. */
+export function shownLabelIds(d: DiagramSpec): Set<string> {
+  return new Set(d.edges.filter((e, i) => e.label && !d.edges.slice(0, i).some(o => o.to === e.to && o.label === e.label)).map(e => e.id));
+}
 export interface EdgeLabelPos { x: number; y: number; anchor: 'start' | 'middle' | 'end' }
 export interface EdgeGeom { d: string; mid: Pt; label: EdgeLabelPos }
 export interface DiagramLayout { width: number; height: number; nodes: Record<string, Box>; edges: Record<string, EdgeGeom>; groups: Record<string, Box & { label: string }> }
@@ -29,7 +40,7 @@ export function returnEdges(d: DiagramSpec): Map<string, string> {
   const m = new Map<string, string>();
   d.edges.forEach((e, i) => {
     if (e.style === 'loop') return;
-    const fwd = d.edges.slice(0, i).find(o => o.style !== 'loop' && o.from === e.to && o.to === e.from && !m.has(o.id));
+    const fwd = d.edges.slice(0, i).find(o => o.style !== 'loop' && o.from === e.to && o.to === e.from && !m.has(o.id) && ![...m.values()].includes(o.id));
     if (fwd) m.set(e.id, fwd.id);
   });
   return m;
@@ -92,12 +103,42 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   const order = new Map(d.nodes.map((n, i) => [n.id, i]));
   const back = backEdges(d, returns);
   const port = (id: string, x: number, y: number, side: string): ElkPort => ({ id, x, y, width: 0, height: 0, layoutOptions: { 'elk.port.side': side } });
+  const kindOf = (id: string) => d.nodes.find(n => n.id === id)!.kind;
+  const reach = (id: string) => glyphReach(kindOf(id));
+  const elkEdges = d.edges.filter(e => e.style !== 'loop' && !returns.has(e.id) && !back.has(e.id));
+  // Hubs (a node with several outgoing edges, at least one with a return lane) get one out-port per edge, spread
+  // along the box side, so the dispatch/return lanes fan out instead of stacking up at a single port.
+  const hubs = new Set(d.nodes.map(n => n.id).filter(id => {
+    const outs = elkEdges.filter(e => e.from === id);
+    return outs.length > 1 && outs.some(e => forwards.has(e.id));
+  }));
+  // per-hub out-edge order, refined after a first layout pass (sorted by where each target ended up)
+  const hubOrder = new Map<string, string[]>([...hubs].map(id => [id, elkEdges.filter(e => e.from === id).map(e => e.id)]));
+  const edgePort = (e: { id: string; from: string }) => hubs.has(e.from) ? `${e.from}__out__${e.id}` : outPort(e.from);
+  const spreadAt = (id: string, i: number, k: number): Pt => {
+    const { w, h } = dims(id);
+    if (direction === 'RIGHT') { const S = Math.min(20, (h - 6) / (k - 1)); return { x: w, y: (h + 6) / 2 + (i - (k - 1) / 2) * S }; }
+    const S = Math.min(22, (w - 20) / (k - 1));
+    return { x: w / 2 + (i - (k - 1) / 2) * S, y: h + 6 };
+  };
   const leaf = (id: string): ElkNode => {
     const { w, h } = dims(id);
     const ports: ElkPort[] = direction === 'RIGHT'
       ? [port(inPort(id), 0, SHAPE_CY, 'WEST'), port(outPort(id), w, SHAPE_CY, 'EAST')]
       : [port(inPort(id), w / 2, 0, 'NORTH'), port(outPort(id), w / 2, h + 6, 'SOUTH')];
+    const hub = hubOrder.get(id);
+    if (hub) hub.forEach((eid, i) => { const q = spreadAt(id, i, hub.length); ports.push(port(`${id}__out__${eid}`, q.x, q.y, direction === 'RIGHT' ? 'EAST' : 'SOUTH')); });
     return { id, width: w, height: h + 6, ports, layoutOptions: { 'elk.portConstraints': 'FIXED_POS' } };
+  };
+  // RIGHT layers leave room for the longest non-loop edge label beside the routing channels (hubs use ~40px)
+  const longest = Math.max(0, ...d.edges.filter(e => e.style !== 'loop' && e.label).map(e => e.label!.length));
+  const rightGap = longest ? Math.min(140, Math.max(100, longest * 7 + 50)) : 72;
+  // spacing is set on the root and repeated on groups, whose children ELK otherwise lays out with defaults
+  const spacing: Record<string, string> = {
+    'elk.layered.spacing.nodeNodeBetweenLayers': compact ? '36' : direction === 'RIGHT' ? String(rightGap) : d.edges.some(e => e.label) ? '112' : '56',
+    'elk.spacing.nodeNode': compact ? '14' : direction === 'RIGHT' ? '32' : variant === 'narrow' ? '12' : '24',
+    'elk.spacing.edgeNode': '20', 'elk.spacing.edgeEdge': '16',
+    'elk.layered.spacing.edgeEdgeBetweenLayers': '16', 'elk.layered.spacing.edgeNodeBetweenLayers': '20',
   };
   const graph: ElkNode = {
     id: 'root',
@@ -108,23 +149,30 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
       // siblings of a fan-out share a column, rather than being pulled towards their successors
       'elk.layered.layering.strategy': 'LONGEST_PATH_SOURCE',
-      'elk.layered.spacing.nodeNodeBetweenLayers': compact ? '36' : direction === 'RIGHT' ? (d.edges.some(e => e.label) ? '100' : '72') : d.edges.some(e => e.label) ? '112' : '56',
-      'elk.spacing.nodeNode': compact ? '14' : direction === 'RIGHT' ? '32' : variant === 'narrow' ? '12' : '24',
-      'elk.spacing.edgeNode': '20', 'elk.spacing.edgeEdge': '16',
-      'elk.layered.spacing.edgeEdgeBetweenLayers': '16', 'elk.layered.spacing.edgeNodeBetweenLayers': '20',
+      ...spacing,
       'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
       'elk.layered.nodePlacement.bk.fixedAlignment': 'BALANCED',
     },
     children: [
-      ...(d.groups ?? []).map(g => ({ id: g.id, layoutOptions: { 'elk.padding': compact ? '[top=10,left=10,bottom=10,right=10]' : '[top=34,left=18,bottom=18,right=18]' }, children: g.children.map(leaf) })),
+      ...(d.groups ?? []).map(g => ({ id: g.id, layoutOptions: { ...spacing, 'elk.padding': compact ? '[top=10,left=10,bottom=10,right=10]' : '[top=34,left=18,bottom=18,right=18]' }, children: g.children.map(leaf) })),
       ...d.nodes.filter(n => !grouped.has(n.id)).map(n => leaf(n.id)),
     ],
-    edges: d.edges.filter(e => e.style !== 'loop' && !returns.has(e.id) && !back.has(e.id))
-      .map(e => ({ id: e.id, sources: [outPort(e.from)], targets: [inPort(e.to)] })),
+    edges: elkEdges.map(e => ({ id: e.id, sources: [edgePort(e)], targets: [inPort(e.to)] })),
   };
   // keep groups in model order relative to the nodes around them
   graph.children!.sort((a, b) => (order.get(a.id) ?? Math.min(...(a.children ?? []).map(c => order.get(c.id) ?? 0))) - (order.get(b.id) ?? Math.min(...(b.children ?? []).map(c => order.get(c.id) ?? 0))));
   let out = (await elk.layout(structuredClone(graph) as never)) as unknown as ElkNode;
+  if (hubs.size) {
+    // second pass: order each hub's ports by where its targets landed, so the fanned lanes never cross
+    const pos = new Map<string, number>();
+    const walkP = (n: ElkNode, ox: number, oy: number) => { for (const c of n.children ?? []) { const x = ox + (c.x ?? 0), y = oy + (c.y ?? 0); pos.set(c.id, direction === 'RIGHT' ? y : x); walkP(c, x, y); } };
+    walkP(out, 0, 0);
+    for (const list of hubOrder.values()) list.sort((a, b) => pos.get(d.edges.find(e => e.id === a)!.to)! - pos.get(d.edges.find(e => e.id === b)!.to)!);
+    const isNode = (id: string) => d.nodes.some(x => x.id === id);
+    const rebuilt = (n: ElkNode): ElkNode => ({ ...n, children: (n.children ?? []).map(c => isNode(c.id) ? leaf(c.id) : rebuilt(c)) });
+    graph.children = graph.children!.map(c => isNode(c.id) ? leaf(c.id) : rebuilt(c));
+    out = (await elk.layout(structuredClone(graph) as never)) as unknown as ElkNode;
+  }
   // Thumbnails of long chains wrap onto a second row so they keep a card-friendly shape.
   if (compact && !d.nodes.some(n => n.pos) && !d.edges.some(e => e.style === 'loop') && (out.width ?? 0) > 4.5 * (out.height ?? 1)) {
     graph.layoutOptions = { ...graph.layoutOptions, 'elk.layered.wrapping.strategy': 'MULTI_EDGE', 'elk.aspectRatio': '2.2', 'elk.layered.wrapping.additionalEdgeSpacing': '8' };
@@ -179,13 +227,22 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
     const a = nodes[e.from], b = nodes[e.to];
     const oe = outEdges.get(id);
     if (!oe?.sections?.length || moved.has(e.from) || moved.has(e.to)) {
-      // straight line between the glyphs, clipped to the boxes
-      const ga = { x: a.x + a.w / 2, y: a.y + SHAPE_CY }, gb = { x: b.x + b.w / 2, y: b.y + SHAPE_CY };
-      return [clipToBox(a, ga, gb), clipToBox(b, gb, ga)];
+      // straight line between the glyphs, from glyph edge to glyph edge (or below the label, if it heads down)
+      const ga = glyphCentre(a), gb = glyphCentre(b);
+      return [lineEnd(a, ga, gb, reach(e.from)), lineEnd(b, gb, ga, reach(e.to))];
     }
     const off = abs[oe.container ?? 'root'] ?? { x: 0, y: 0 };
     const s = oe.sections[0];
-    return [s.startPoint, ...(s.bendPoints ?? []), s.endPoint].map(q => ({ x: q.x + off.x, y: q.y + off.y }));
+    const pts = [s.startPoint, ...(s.bendPoints ?? []), s.endPoint].map(q => ({ x: q.x + off.x, y: q.y + off.y }));
+    if (hubs.has(e.from) && direction === 'RIGHT') {
+      // fan leg: from the glyph's edge out to this edge's own port. Leg starts are spread evenly over the glyph's
+      // right side (up to 40 degrees apart), wide enough apart that neighbouring dispatch/return lanes never touch.
+      const list = hubOrder.get(e.from)!, i = list.indexOf(e.id), k = list.length;
+      const step = Math.min(40, 150 / (k - 1)) * Math.PI / 180, ang = (i - (k - 1) / 2) * step;
+      const g = glyphCentre(a), r = reach(e.from);
+      pts.unshift({ x: g.x + Math.cos(ang) * r, y: g.y + Math.sin(ang) * r });
+    }
+    return pts;
   };
   const crossesNode = (p: Pt, q: Pt, from: string, to: string) => Object.entries(nodes).some(([id, b]) => {
     if (id === from || id === to) return false;
@@ -216,10 +273,17 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
     // nodes side by side get arcs over/under; nodes stacked get arcs out to one side
     const stacked = Math.abs(a.y - b.y) > Math.abs(a.x - b.x);
     const sides = stacked ? ['right', 'left'] as const : ['top', 'bottom'] as const;
-    let best = boxArc(a, b, sides[0]), bestCost = cost(best);
+    // arcs attach to the glyph (top, left, right) or below the label (bottom)
+    const att = (id: string, box: Box, side: string): Box => {
+      if (side === 'bottom') return box;
+      const g = glyphCentre(box), r = reach(id);
+      return { x: g.x - r, y: g.y - r, w: 2 * r, h: 2 * r };
+    };
+    const arcOn = (side: (typeof sides)[number], extra: number) => boxArc(att(from, a, side), att(to, b, side), side, extra);
+    let best = arcOn(sides[0], 0), bestCost = cost(best);
     for (const extra of [0, 60, 140]) for (const side of sides) {
       if (!bestCost) break;
-      const arc = boxArc(a, b, side, extra), c = cost(arc);
+      const arc = arcOn(side, extra), c = cost(arc);
       if (c < bestCost) { best = arc; bestCost = c; }
     }
     return best;
@@ -230,8 +294,9 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   const T = direction === 'RIGHT' ? (p: Pt) => ({ u: p.x, v: p.y }) : (p: Pt) => ({ u: p.y, v: p.x });
   const B = direction === 'RIGHT' ? (q: { u: number; v: number }): Pt => ({ x: q.u, y: q.v }) : (q: { u: number; v: number }): Pt => ({ x: q.v, y: q.u });
   const fb = (b: Box) => { const p = T(b); return direction === 'RIGHT' ? { u: p.u, v: p.v, du: b.w, dv: b.h } : { u: p.u, v: p.v, du: b.h, dv: b.w }; };
-  const exitV = (b: Box) => direction === 'RIGHT' ? b.y + SHAPE_CY + 12 : b.x + b.w / 2 + 14;
-  const sideV = (b: Box) => direction === 'RIGHT' ? b.y + SHAPE_CY + 12 : b.x + b.w / 2 + 14;
+  const nodeId = (b: Box) => Object.keys(nodes).find(k => nodes[k] === b)!;
+  const exitV = (b: Box) => { const o = Math.min(12, reach(nodeId(b)) * 0.55); return direction === 'RIGHT' ? b.y + SHAPE_CY + o : b.x + b.w / 2 + o; };
+  const sideV = exitV;
   const entryU = (b: Box) => direction === 'RIGHT' ? b.x + b.w / 2 : b.y + SHAPE_CY;
   const backRoutes: Record<string, Pt[]> = {};
   {
@@ -276,6 +341,15 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
     raw[e.id] = { kind: 'poly', pts, side };
   }
 
+  // ELK attaches edges at the box sides; carry each axis-aligned end on in to the glyph's edge
+  for (const e of d.edges) {
+    const r = raw[e.id];
+    if (r.kind !== 'poly' || r.pts.length < 2) continue;
+    const n = r.pts.length;
+    r.pts[0] = snapToGlyph(r.pts[0], r.pts[1], nodes[e.from], reach(e.from));
+    r.pts[n - 1] = snapToGlyph(r.pts[n - 1], r.pts[n - 2], nodes[e.to], reach(e.to));
+  }
+
   // normalize to a padded canvas
   const xs: number[] = [], ys: number[] = [];
   for (const b of [...Object.values(nodes), ...Object.values(groups)]) { xs.push(b.x, b.x + b.w); ys.push(b.y, b.y + b.h + 6); }
@@ -288,23 +362,19 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
   const polys: Record<string, Pt[]> = {};
   for (const [k, r] of Object.entries(raw)) if (r.kind === 'poly') polys[k] = r.pts.map(sh);
   // converging edges with the same label show it once (see DiagramSvg)
-  const shownLabel = (id: string) => { const i = d.edges.findIndex(x => x.id === id), e = d.edges[i]; return e.label && !d.edges.slice(0, i).some(o => o.to === e.to && o.label === e.label) ? e.label : undefined; };
+  const shown = shownLabelIds(d);
+  const shownLabel = (id: string) => shown.has(id) ? d.edges.find(x => x.id === id)!.label : undefined;
   const geo: Record<string, { pts?: Pt[]; arc?: Pt[]; mid?: Pt; label: EdgeLabelPos; text?: string }> = {};
   // Labels are placed greedily in edge order; each takes its best candidate spot that clears the nodes and the
   // labels already placed.
-  const taken: Box[] = Object.values(nodes).map(b => ({ x: b.x + 6, y: b.y, w: b.w - 12, h: b.h }));
-  const labelBox = (p: EdgeLabelPos, text: string): Box => {
-    const w = text.length * 7 + 6;
-    const x = p.anchor === 'middle' ? p.x - w / 2 : p.anchor === 'start' ? p.x : p.x - w;
-    return { x, y: p.y - 13, w, h: 17 };
-  };
-  const hits = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const taken: Box[] = Object.values(nodes).map(b => ({ ...b }));
+  const hits = boxesOverlap;
   for (const [k, r] of Object.entries(raw)) {
     if (r.kind === 'poly') {
       const pts = polys[k];
       const partner = returns.get(k) ?? [...returns].find(([, f]) => f === k)?.[0];
       const others = Object.entries(polys).filter(([o]) => o !== k && o !== partner).map(([, v]) => v);
-      const cands = labelCandidates(pts, others, direction, r.side, returns.has(k));
+      const cands = labelCandidates(pts, others, direction, r.side, returns.has(k), Object.values(nodes));
       const text = shownLabel(k);
       let label = cands[0];
       if (text) {
@@ -320,7 +390,7 @@ export async function layoutDiagram(d: DiagramSpec, direction: 'RIGHT' | 'DOWN',
       const label: EdgeLabelPos = direction === 'RIGHT'
         ? (mid.y > s.y ? { x: mid.x, y: mid.y + 17, anchor: 'middle' } : { x: mid.x, y: mid.y - 8, anchor: 'middle' })
         : (mid.x < s.x ? { x: mid.x - 8, y: mid.y + 5, anchor: 'end' } : { x: mid.x + 8, y: mid.y + 5, anchor: 'start' });
-      const text = d.edges.find(x => x.id === k)!.label;
+      const text = shownLabel(k);
       if (text) taken.push(labelBox(label, text));
       geo[k] = { arc: [s, c1, c2, e], mid, label, text };
     }
@@ -354,14 +424,69 @@ function segHitsBox(p: Pt, q: Pt, b: Box): boolean {
   return false;
 }
 
-/** Where the ray from `from` (inside the box) towards `toward` leaves the box. */
-function clipToBox(box: Box, from: Pt, toward: Pt): Pt {
-  const dx = toward.x - from.x, dy = toward.y - from.y;
-  if (!dx && !dy) return borderPoint(box, toward);
-  const tx = dx > 0 ? (box.x + box.w - from.x) / dx : dx < 0 ? (box.x - from.x) / dx : Infinity;
-  const ty = dy > 0 ? (box.y + box.h - from.y) / dy : dy < 0 ? (box.y - from.y) / dy : Infinity;
-  const t = Math.min(tx, ty);
-  return { x: from.x + dx * t, y: from.y + dy * t };
+/** Approximate box of an edge label (14px italic display font) drawn at p. */
+export function labelBox(p: EdgeLabelPos, text: string): Box {
+  const w = text.length * 7 + 6;
+  const x = p.anchor === 'middle' ? p.x - w / 2 : p.anchor === 'start' ? p.x : p.x - w;
+  return { x, y: p.y - 13, w, h: 17 };
+}
+export const boxesOverlap = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * Move the end p of a segment (neighbour q) from the box side onto the glyph's reach circle.
+ * Horizontal ends slide along their row; vertical ends from above slide down to the glyph top. Ends that come
+ * from below stay on the box bottom, under the label.
+ */
+export function snapToGlyph(p: Pt, q: Pt, box: Box, r: number): Pt {
+  const g = glyphCentre(box);
+  const dist = Math.hypot(p.x - g.x, p.y - g.y);
+  if (dist > 0 && Math.abs(dist - r) < 8 && Math.abs(p.y - q.y) >= 0.5 && Math.abs(p.x - q.x) >= 0.5) {
+    // a slanted fan leg already near the glyph (lane offsets nudge it): slide it along itself back onto the
+    // circle, which keeps the two lanes of a pair apart (projecting radially would pinch them together)
+    const ql = Math.hypot(p.x - q.x, p.y - q.y) || 1, ux = (p.x - q.x) / ql, uy = (p.y - q.y) / ql;
+    const fx = p.x - g.x, fy = p.y - g.y, b = fx * ux + fy * uy, c = fx * fx + fy * fy - r * r, disc = b * b - c;
+    if (disc >= 0) { const t1 = -b - Math.sqrt(disc), t2 = -b + Math.sqrt(disc), t = Math.abs(t1) < Math.abs(t2) ? t1 : t2; return { x: p.x + ux * t, y: p.y + uy * t }; }
+    return { x: g.x + fx / dist * r, y: g.y + fy / dist * r };
+  }
+  if (Math.abs(p.y - q.y) < 0.5) {
+    const dy = p.y - g.y;
+    if (Math.abs(dy) >= r) return p;
+    return { x: g.x + Math.sign(q.x - g.x || 1) * Math.sqrt(r * r - dy * dy), y: p.y };
+  }
+  if (Math.abs(p.x - q.x) < 0.5 && q.y < p.y && p.y <= g.y + r) {
+    const dx = p.x - g.x;
+    if (Math.abs(dx) >= r) return p;
+    return { x: p.x, y: g.y - Math.sqrt(r * r - dx * dx) };
+  }
+  return p;
+}
+
+/** End of a straight edge leaving glyph centre g towards t: on the reach circle, or on the box bottom if the line
+ *  would otherwise run down through the label. */
+function lineEnd(box: Box, g: Pt, t: Pt, r: number): Pt {
+  const dx = t.x - g.x, dy = t.y - g.y, len = Math.hypot(dx, dy) || 1;
+  const bottom = box.y + box.h;
+  if (dy > 0) {
+    const x = g.x + dx * (bottom - g.y) / dy;
+    if (Math.abs(x - g.x) < box.w / 2 - 4) return { x, y: bottom };
+  }
+  return { x: g.x + dx / len * r, y: g.y + dy / len * r };
+}
+
+/** Shorten an axis-aligned run so neither end lies inside one of the boxes. */
+function clipRun(a: Pt, b: Pt, boxes: Box[]): [Pt, Pt] {
+  const inside = (p: Pt) => boxes.find(q => p.x > q.x && p.x < q.x + q.w && p.y > q.y && p.y < q.y + q.h);
+  const pull = (p: Pt, toward: Pt): Pt => {
+    const q = inside(p);
+    if (!q) return p;
+    if (Math.abs(p.y - toward.y) < 0.5) return { x: toward.x > p.x ? q.x + q.w : q.x, y: p.y };
+    if (Math.abs(p.x - toward.x) < 0.5) return { x: p.x, y: toward.y > p.y ? q.y + q.h : q.y };
+    return p;
+  };
+  const a2 = pull(a, b), b2 = pull(b, a);
+  // a run wholly inside one box has nothing left
+  if ((a2.x - b2.x) * (a.x - b.x) < 0 || (a2.y - b2.y) * (a.y - b.y) < 0) return [a2, a2];
+  return [a2, b2];
 }
 
 const near = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol;
@@ -384,11 +509,12 @@ function shared(a: Pt, b: Pt, others: Pt[][]): boolean {
  * runs and to the right of vertical ones; the two edges of a forward/return pair (side=1) keep to their own side of
  * the pair. A return edge scores its reversed points, so it picks the same run as its forward partner.
  */
-function labelCandidates(input: Pt[], others: Pt[][], direction: 'RIGHT' | 'DOWN', side: number, isReturn: boolean): EdgeLabelPos[] {
+function labelCandidates(input: Pt[], others: Pt[][], direction: 'RIGHT' | 'DOWN', side: number, isReturn: boolean, boxes: Box[] = []): EdgeLabelPos[] {
   const pts = isReturn ? [...input].reverse() : input;
   const out: { p: EdgeLabelPos; score: number }[] = [];
   for (let i = 0; i < pts.length - 1; i++) {
-    let a = pts[i], b = pts[i + 1];
+    // only the part of a run outside the node boxes can carry a label (runs now reach in to the glyphs)
+    let [a, b] = clipRun(pts[i], pts[i + 1], boxes);
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     if (len < 1) continue;
     const horiz = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
