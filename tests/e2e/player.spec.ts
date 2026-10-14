@@ -173,6 +173,16 @@ test('scenario tabs control labelled panels', async ({ page }) => {
   await expect(panel).toHaveAttribute('aria-labelledby', (await tab.getAttribute('id'))!);
 });
 
+test('only the selected scenario shows its step list, before and after a tab pick', async ({ page }) => {
+  await page.goto(url);
+  const lists = page.locator('.fp-scenario-steps');
+  await expect(lists.nth(0)).toBeVisible();
+  await expect(lists.nth(1)).toBeHidden();
+  await page.locator('.fp-tabs [role="tab"]').nth(1).click();
+  await expect(lists.nth(0)).toBeHidden();
+  await expect(lists.nth(1)).toBeVisible();
+});
+
 test('kind fallback text appears when a node has no description', async ({ page }) => {
   await page.goto('/patterns/orchestrator-workers/');
   const n = page.locator('svg[data-layout="wide"] g.node[data-kind="llm"]').first();
