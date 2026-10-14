@@ -1,0 +1,671 @@
+slug: llm-as-judge
+name: LLM-as-Judge
+family: safety-oversight
+aliases: [Model-graded evaluation, Auto-grader, Rubric judge, Agent-as-a-Judge]
+summary: "A separate judge model scores a system's outputs against a rubric, and the scores gate releases or rank candidates."
+badges: { autonomy: low, cost: medium, latency: medium }
+sources:
+  - title: "Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena (Zheng et al., 2023)"
+    url: https://arxiv.org/abs/2306.05685
+  - title: "Replacing Judges with Juries: Evaluating LLM Generations with a Panel of Diverse Models (Verga et al., 2024)"
+    url: https://arxiv.org/abs/2404.18796
+  - title: "Agent-as-a-Judge: Evaluate Agents with Agents (Zhuge et al., 2024)"
+    url: https://arxiv.org/abs/2410.10934
+related:
+  composesWith: [human-in-the-loop, guardrails]
+  confusedWith:
+    - { slug: evaluator-optimizer, difference: "In evaluator-optimizer the evaluator sits inside the loop and drives revisions of one output. An LLM judge sits outside the system, scoring many outputs to gate a release or rank candidates; nothing gets revised." }
+    - { slug: voting, difference: "Voting aggregates the answers themselves and picks the most common one. A judge produces scores about answers, which are aggregated into a report." }
+origin:
+  by: Lianmin Zheng et al.
+  org: UC Berkeley, UC San Diego, CMU, Stanford, MBZUAI
+  year: 2023
+  url: https://arxiv.org/abs/2306.05685
+  kind: popularized
+  note: "Earlier 2023 work such as G-Eval already used GPT-4 as an evaluator; Zheng et al. named and measured the practice: strong judges agreed with human preferences over 80% of the time, about as often as humans agree with each other, and they catalogued its position, verbosity and self-enhancement biases."
+build:
+  goal: "Score a system's outputs on a fixed test set with a separate judge model and a written rubric, and block a change from shipping when the aggregate score falls below a threshold."
+  steps:
+    - "Assemble a test set of inputs that represent real traffic, and write a rubric with a 1-5 scale per criterion and an example of each score."
+    - "Run the system under test on every input and keep each output alongside its input."
+    - "For each pair, call the judge model with the {{prompt:judge}}, filling in the input, the output and the rubric. Parse its JSON reply into a reasoning string and an integer score."
+    - "Aggregate the scores into a report: the mean per criterion, the score histogram, and the lowest-scoring cases with the judge's reasons."
+    - "Compare the mean with the threshold and with the last released version. Pass if it clears both; otherwise block the release and attach the report."
+    - "Every so often, have a person score a sample of cases, and report how often the judge agrees with them."
+  stop: "Stop after every case is scored once. If more than 5% of judge replies fail to parse after one retry each, stop and report the run as invalid; an invalid run blocks the release."
+  requirements:
+    - "Use a judge from a different model family than the system under test, at temperature 0; if you cannot, say so in the report."
+    - "Make the judge write its reasoning before its score, and validate that the score is an integer on the rubric's scale."
+    - "Keep the test set, rubric and judge prompt under version control, and record their versions in every report."
+    - "Report the judge's agreement with the latest human-scored sample; if agreement drops below a set level, block releases until the judge is recalibrated."
+    - "Add a test with a stub judge that returns scores 4, 5, 2 and 5 for four cases, a threshold of 3.5 and a previous release mean of 3.9; assert the report's mean is exactly 4.0 and the gate passes."
+defaultVariantName: Pointwise
+prompts:
+  - id: judge
+    title: Pointwise judge prompt
+    lang: markdown
+    source: |
+      You are grading one reply from a customer-support assistant. Judge it only
+      against the rubric. Length and confident tone are not quality.
+
+      <rubric>{{rubric}}</rubric>
+      <customer_message>{{input}}</customer_message>
+      <assistant_reply>{{output}}</assistant_reply>
+
+      First explain in two or three sentences how the reply meets or misses each
+      criterion. Then give one integer score from 1 to 5 as defined in the rubric.
+      Respond in JSON: {"reasoning": "...", "score": 1-5}
+diagram:
+  nodes:
+    - id: dataset
+      kind: io
+      label: Test set
+      description: "200 real customer messages kept as a fixed test set, re-run on every prompt or model change."
+    - id: system
+      kind: agent
+      label: Support bot
+      sublabel: under test
+      description: "The system being evaluated: the support bot with the candidate prompt change applied."
+    - id: rubric
+      kind: memory
+      label: Rubric
+      sublabel: 1-5 per criterion
+      description: "The written scoring guide: helpfulness and policy compliance, each with a definition and an example of every score."
+    - id: judge
+      kind: evaluator
+      label: Judge
+      sublabel: separate model
+      description: "A separate model that reads each message and reply, reasons against the rubric, then gives a score."
+    - id: report
+      kind: aggregator
+      label: Report
+      sublabel: mean + histogram
+      description: "Collects the scores into a mean, a histogram and the worst cases with the judge's reasons. It ranks candidates even with no gate."
+    - id: gate
+      kind: router
+      label: Release gate
+      sublabel: vs 3.5 and last release
+      description: "Compares the report's mean with the 3.5 threshold and with the current release's mean, then lets the change ship or blocks it."
+    - id: out
+      kind: io
+      label: Ship
+      description: "The prompt change goes live, with the report attached to the release."
+  edges:
+    - id: cases
+      from: dataset
+      to: system
+      label: cases
+      description: "Each test message is sent to the system under test, exactly as a customer would send it."
+      example: "Case 17: I was charged twice for order A-1093. Can you refund one?"
+    - id: reply
+      from: system
+      to: judge
+      label: reply
+      description: "Each message and the bot's reply go to the judge as a pair."
+      example: "Reply 17: Sorry about that! I've refunded the duplicate charge of $42.10; it will appear within 5 business days."
+    - id: criteria
+      from: rubric
+      to: judge
+      style: dashed
+      label: rubric
+      description: "The same rubric goes into every judge call, so scores are comparable across cases and runs."
+      example: "Policy: 5 = follows refund policy exactly; 3 = right action, missing a required step; 1 = promises something the policy forbids."
+    - id: score
+      from: judge
+      to: report
+      label: score
+      description: "The judge's reasoning and score for one case are added to the report."
+      example: '{"reasoning": "Refunds without confirming the duplicate in billing, which the policy requires.", "score": 2}'
+    - id: summary
+      from: report
+      to: gate
+      label: mean
+      description: "The report's summary goes to the release gate: the mean, the change from the last release, and the worst cases."
+      example: "Mean 4.0 over 200 cases (current release 3.9). Lowest: case 17 (2), case 88 (2)."
+    - id: pass
+      from: gate
+      to: out
+      label: pass
+      description: "A mean that clears the threshold and does not regress lets the change ship, with the report attached."
+      example: "PASS: mean 4.0 >= 3.5, no regression against 3.9. Lowest: case 17 (2), case 88 (2)."
+    - id: block
+      from: gate
+      to: system
+      style: dashed
+      label: block
+      description: "A failing mean blocks the candidate prompt from shipping and returns the report to its author."
+      example: "BLOCKED: mean 3.1 < 3.5. Policy scores fell on refund cases 12, 17, 40 and 88."
+  scenarios:
+    - id: pointwise
+      label: Scores clear the bar
+      steps:
+        - id: run
+          caption: The test messages go to the support bot with the new prompt, and each reply goes to the judge.
+          duration: 2800
+          events:
+            - { type: send, edge: cases, token: { kind: prompt, label: 200 cases }, at: [0, 0.35] }
+            - { type: activate, node: system, status: thinking, at: [0.35, 0.6] }
+            - { type: send, edge: reply, token: { kind: result, label: replies }, at: [0.6, 1] }
+        - id: judge
+          caption: "The judge reads each reply against the rubric and scores it: 4, 5, 2, 5 and so on."
+          duration: 4000
+          events:
+            - { type: read, node: rubric, at: [0, 0.15] }
+            - { type: send, edge: criteria, token: { kind: prompt, label: rubric }, at: [0, 0.2] }
+            - { type: activate, node: judge, status: thinking, at: [0.15, 0.3] }
+            - { type: send, edge: score, token: { kind: result, label: "4" }, at: [0.3, 0.45] }
+            - { type: send, edge: score, token: { kind: result, label: "5" }, at: [0.45, 0.6] }
+            - { type: send, edge: score, token: { kind: result, label: "2" }, at: [0.6, 0.75] }
+            - { type: send, edge: score, token: { kind: result, label: "5" }, at: [0.75, 0.9] }
+        - id: gate
+          caption: The report averages the scores to 4.0, above the 3.5 threshold and the current 3.9, so the gate ships the change.
+          duration: 3200
+          events:
+            - { type: activate, node: report, status: thinking, at: [0, 0.2] }
+            - { type: send, edge: summary, token: { kind: result, label: mean 4.0 }, at: [0.15, 0.35] }
+            - { type: branch, node: gate, taken: pass, notTaken: [block], at: [0.35, 0.5] }
+            - { type: send, edge: pass, token: { kind: result, label: ship }, at: [0.5, 0.85] }
+            - { type: activate, node: out, status: done, at: [0.8, 1] }
+    - id: regression
+      label: Regression caught
+      steps:
+        - id: run
+          caption: A different prompt change goes through the same test set.
+          duration: 2400
+          events:
+            - { type: send, edge: cases, token: { kind: prompt, label: 200 cases }, at: [0, 0.45] }
+            - { type: send, edge: reply, token: { kind: result, label: replies }, at: [0.5, 1] }
+        - id: judge
+          caption: The judge scores many refund replies low, because they skip a step the policy requires.
+          duration: 3400
+          events:
+            - { type: send, edge: criteria, token: { kind: prompt, label: rubric }, at: [0, 0.2] }
+            - { type: send, edge: score, token: { kind: result, label: "2" }, at: [0.2, 0.4] }
+            - { type: send, edge: score, token: { kind: result, label: "3" }, at: [0.4, 0.6] }
+            - { type: send, edge: score, token: { kind: result, label: "2" }, at: [0.6, 0.8] }
+        - id: block
+          caption: The report's mean drops to 3.1, under the threshold. The gate blocks the change and returns the report to its author.
+          duration: 3200
+          events:
+            - { type: activate, node: report, status: thinking, at: [0, 0.2] }
+            - { type: send, edge: summary, token: { kind: result, label: mean 3.1 }, at: [0.15, 0.35] }
+            - { type: branch, node: gate, taken: block, notTaken: [pass], at: [0.35, 0.5] }
+            - { type: activate, node: gate, status: error, at: [0.45, 0.65] }
+            - { type: send, edge: block, token: { kind: feedback, label: blocked }, at: [0.6, 1] }
+variants:
+  - id: pairwise
+    name: Pairwise
+    summary: "The judge sees two systems' replies to the same input and picks the better one, asked twice with the order swapped to cancel position bias."
+    build:
+      goal: "Decide which of two system versions is better by having a judge model compare their replies case by case, in both orders, and report the win rate."
+      steps:
+        - "Run both versions, A and B, on every input in the test set."
+        - "For each input, call the judge with the {{prompt:pairwise}}, showing A's reply first and B's second. Parse the verdict: A, B or tie."
+        - "Call the judge again on the same input with the replies swapped, B first and A second, and map its verdict back to A or B."
+        - "If the two verdicts agree, count a win for that version; if they disagree, count a tie, because the judge was following the order, not the content."
+        - "Report the win, loss and tie counts, the win rate excluding ties, and the cases where the verdicts disagreed."
+      stop: "Stop after every input has been judged in both orders. If more than a quarter of cases end in disagreement, report the comparison as inconclusive instead of naming a winner."
+      requirements:
+        - "Always judge each pair in both orders; never count a single-order verdict."
+        - "Hide which version is which from the judge: label the replies only 'Reply 1' and 'Reply 2'."
+        - "Keep a fixed random seed for any sampling of the test set, so the two versions see identical inputs."
+        - "Report the tie rate as a measure of how much the judge was guided by order."
+        - "Add a test with a stub judge that always picks Reply 1; assert every case is counted as a tie and the result is reported as inconclusive."
+    prompts:
+      - id: pairwise
+        title: Pairwise judge prompt
+        lang: markdown
+        source: |
+          Two assistants answered the same customer message. Decide which reply is
+          better against the rubric. The order of the replies means nothing, and
+          a longer reply is not a better one.
+
+          <rubric>{{rubric}}</rubric>
+          <customer_message>{{input}}</customer_message>
+          <reply_1>{{first}}</reply_1>
+          <reply_2>{{second}}</reply_2>
+
+          Explain your comparison in two or three sentences, then decide.
+          Respond in JSON: {"reasoning": "...", "winner": "1" | "2" | "tie"}
+    diagram:
+      nodes:
+        - id: dataset
+          kind: io
+          label: Test set
+          description: "The same 200 customer messages, sent unchanged to both versions."
+        - id: sys-a
+          kind: agent
+          label: Prompt v1
+          sublabel: current release
+          description: "The support bot as it runs today."
+        - id: sys-b
+          kind: agent
+          label: Prompt v2
+          sublabel: candidate
+          description: "The support bot with the proposed prompt change."
+        - id: judge
+          kind: evaluator
+          label: Pairwise judge
+          sublabel: asked in both orders
+          description: "Sees both replies to one message and picks the better, then judges again with the replies swapped."
+        - id: tally
+          kind: aggregator
+          label: Win rate
+          description: "Counts a win only when both orders agree; disagreements count as ties."
+        - id: out
+          kind: io
+          label: Winner
+          description: "The version that wins more often, with its win rate and the tie rate."
+      edges:
+        - id: case-a
+          from: dataset
+          to: sys-a
+          description: "Each test message goes to the current version."
+          example: "Case 17: I was charged twice for order A-1093. Can you refund one?"
+        - id: case-b
+          from: dataset
+          to: sys-b
+          description: "The same message goes to the candidate version."
+          example: "Case 17: I was charged twice for order A-1093. Can you refund one?"
+        - id: reply-a
+          from: sys-a
+          to: judge
+          label: reply A
+          description: "The current version's reply, shown to the judge as Reply 1 in one order and Reply 2 in the other."
+          example: "Please contact billing@acme.com about duplicate charges."
+        - id: reply-b
+          from: sys-b
+          to: judge
+          label: reply B
+          description: "The candidate's reply, shown in the opposite position each time."
+          example: "I've checked billing and confirmed the duplicate. I've refunded $42.10; it will appear within 5 business days."
+        - id: verdict
+          from: judge
+          to: tally
+          label: verdict
+          description: "The two verdicts for one case are mapped back to A or B and compared before anything is counted."
+          example: "Order A,B: winner 2 (B). Order B,A: winner 1 (B). Both pick B: win for v2."
+        - id: result
+          from: tally
+          to: out
+          description: "The final counts and win rate leave as the result of the comparison."
+          example: "v2 wins 112, v1 wins 54, ties 34. v2 win rate 67% excluding ties."
+      scenarios:
+        - id: consistent
+          label: Both orders agree
+          steps:
+            - id: run
+              caption: The same message goes to both versions, and both replies go to the judge.
+              duration: 2600
+              events:
+                - { type: send, edge: case-a, token: { kind: prompt, label: case 17 }, at: [0, 0.4] }
+                - { type: send, edge: case-b, token: { kind: prompt, label: case 17 }, at: [0, 0.4] }
+                - { type: send, edge: reply-a, token: { kind: result, label: reply A }, at: [0.5, 1] }
+                - { type: send, edge: reply-b, token: { kind: result, label: reply B }, at: [0.5, 1] }
+            - id: first-order
+              caption: With A's reply shown first, the judge picks B.
+              duration: 2600
+              events:
+                - { type: activate, node: judge, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: verdict, token: { kind: result, label: B wins }, at: [0.5, 1] }
+            - id: swapped
+              caption: Asked again with B's reply shown first, the judge still picks B.
+              duration: 2600
+              events:
+                - { type: activate, node: judge, status: thinking, at: [0, 0.5] }
+                - { type: send, edge: verdict, token: { kind: result, label: B wins }, at: [0.5, 1] }
+            - id: count
+              caption: Both orders agree, so the case counts as a win for v2. Over all 200 cases, v2 wins 67% of the decided cases (ties excluded).
+              duration: 2400
+              events:
+                - { type: activate, node: tally, status: thinking, at: [0, 0.4] }
+                - { type: send, edge: result, token: { kind: result, label: v2 67% }, at: [0.4, 0.9] }
+                - { type: activate, node: out, status: done, at: [0.8, 1] }
+        - id: position-bias
+          label: Position bias caught
+          steps:
+            - id: run
+              caption: Another message goes to both versions, whose replies are close in quality.
+              duration: 2400
+              events:
+                - { type: send, edge: case-a, token: { kind: prompt, label: case 52 }, at: [0, 0.4] }
+                - { type: send, edge: case-b, token: { kind: prompt, label: case 52 }, at: [0, 0.4] }
+                - { type: send, edge: reply-a, token: { kind: result, label: reply A }, at: [0.5, 1] }
+                - { type: send, edge: reply-b, token: { kind: result, label: reply B }, at: [0.5, 1] }
+            - id: flip
+              caption: The judge picks whichever reply it sees first, so its two verdicts disagree.
+              duration: 3200
+              events:
+                - { type: activate, node: judge, status: thinking, at: [0, 0.3] }
+                - { type: send, edge: verdict, token: { kind: result, label: A wins }, at: [0.3, 0.6] }
+                - { type: send, edge: verdict, token: { kind: result, label: B wins }, at: [0.65, 0.95] }
+            - id: tie
+              caption: The case is counted as a tie instead of a win for either version.
+              duration: 2200
+              events:
+                - { type: activate, node: tally, status: error, at: [0, 0.5] }
+                - { type: send, edge: result, token: { kind: result, label: tie }, at: [0.5, 1] }
+  - id: jury
+    name: Jury
+    summary: "Several smaller judges from different model families score each output, and their votes are pooled, which cuts cost and any one model's bias."
+    origin:
+      by: Pat Verga et al.
+      org: Cohere
+      year: 2024
+      url: https://arxiv.org/abs/2404.18796
+      kind: introduced
+      note: "A Panel of LLM evaluators (PoLL) of smaller models from disjoint families outperformed a single large judge, showed less intra-model bias, and cost over seven times less."
+    build:
+      goal: "Score each output with a panel of smaller judges from different model families and pool their verdicts, so no single model's bias decides the result."
+      steps:
+        - "Pick three or more judge models from different model families. Prefer small, cheap models over one large one."
+        - "For each output, call every judge in parallel with the same {{prompt:juror}}, and parse each reply into a verdict."
+        - "Pool the verdicts: a majority vote for pass or fail, or the mean for numeric scores."
+        - "Record each judge's verdict next to the pooled one, so a judge that keeps disagreeing with the panel stands out."
+        - "Aggregate the pooled verdicts across the test set into a report, as for a single judge."
+      stop: "Stop after every output has a pooled verdict. If a judge fails to answer after one retry, pool the rest; if fewer than three answered, or the remaining votes tie, mark that case as unjudged."
+      requirements:
+        - "Draw the judges from different model families, and never include the family of the system under test."
+        - "Give every judge the identical prompt and rubric."
+        - "Use an odd number of judges for pass or fail votes, so there are no ties."
+        - "Report per-judge agreement with the pooled verdict, and review any judge that falls far below the others."
+        - "Add a test with three stub judges returning pass, pass and fail; assert the pooled verdict is exactly pass and the dissent is recorded for the third judge."
+    prompts:
+      - id: juror
+        title: Juror prompt
+        lang: markdown
+        source: |
+          You are one of several independent graders. Judge the reply only against
+          the rubric.
+
+          <rubric>{{rubric}}</rubric>
+          <customer_message>{{input}}</customer_message>
+          <assistant_reply>{{output}}</assistant_reply>
+
+          Explain your judgement in one or two sentences, then decide whether the
+          reply passes. Respond in JSON: {"reasoning": "...", "verdict": "pass" | "fail"}
+    diagram:
+      nodes:
+        - id: dataset
+          kind: io
+          label: Test set
+          description: "The 200 customer messages, run through the system under test."
+        - id: system
+          kind: agent
+          label: Support bot
+          sublabel: under test
+          description: "The system being evaluated; each of its replies goes to every judge on the panel."
+        - id: j1
+          kind: evaluator
+          label: Judge 1
+          sublabel: small, family A
+          description: "A small judge model from one family. It scores alone, without seeing the other judges' verdicts."
+        - id: j2
+          kind: evaluator
+          label: Judge 2
+          sublabel: small, family B
+          description: "A small judge from a second family, so it does not share the first judge's habits and blind spots."
+        - id: j3
+          kind: evaluator
+          label: Judge 3
+          sublabel: small, family C
+          description: "A small judge from a third family. Three judges make a majority vote possible with no ties."
+        - id: pool
+          kind: aggregator
+          label: Jury vote
+          sublabel: majority or mean
+          description: "Pools the three verdicts into one, by majority vote for pass or fail, or by the mean for scores."
+        - id: out
+          kind: io
+          label: Report
+          description: "The pooled verdicts for the test set, with each judge's agreement with the panel."
+      edges:
+        - id: cases
+          from: dataset
+          to: system
+          description: "Each test message goes to the system under test."
+          example: "Case 17: I was charged twice for order A-1093. Can you refund one?"
+        - id: to-j1
+          from: system
+          to: j1
+          description: "The message and reply go to the first judge."
+          example: "Reply 17: I've confirmed the duplicate in billing and refunded $42.10."
+        - id: to-j2
+          from: system
+          to: j2
+          description: "The same pair goes to the second judge, in parallel."
+          example: "Reply 17: I've confirmed the duplicate in billing and refunded $42.10."
+        - id: to-j3
+          from: system
+          to: j3
+          description: "The same pair goes to the third judge, in parallel."
+          example: "Reply 17: I've confirmed the duplicate in billing and refunded $42.10."
+        - id: v1
+          from: j1
+          to: pool
+          label: vote
+          description: "The first judge's verdict, with its reasoning."
+          example: '{"reasoning": "Confirms the duplicate before refunding, as the policy requires.", "verdict": "pass"}'
+        - id: v2
+          from: j2
+          to: pool
+          label: vote
+          description: "The second judge's verdict."
+          example: '{"reasoning": "Correct refund, clear timeline.", "verdict": "pass"}'
+        - id: v3
+          from: j3
+          to: pool
+          label: vote
+          description: "The third judge's verdict; here it dissents."
+          example: '{"reasoning": "Does not apologize for the error.", "verdict": "fail"}'
+        - id: result
+          from: pool
+          to: out
+          description: "The pooled verdict for each case goes into the report, with the dissents."
+          example: "Case 17: pass (2 of 3). Dissent: judge 3. Panel pass rate 91%."
+      scenarios:
+        - id: majority
+          label: Two pass, one fails
+          steps:
+            - id: run
+              caption: A test message goes to the support bot, and its reply goes to all three judges at once.
+              duration: 2600
+              events:
+                - { type: send, edge: cases, token: { kind: prompt, label: case 17 }, at: [0, 0.4] }
+                - { type: send, edge: to-j1, token: { kind: result, label: reply }, at: [0.5, 1] }
+                - { type: send, edge: to-j2, token: { kind: result, label: reply }, at: [0.5, 1] }
+                - { type: send, edge: to-j3, token: { kind: result, label: reply }, at: [0.5, 1] }
+            - id: vote
+              caption: Each judge scores alone. Two say pass and one says fail.
+              duration: 3000
+              events:
+                - { type: activate, node: j1, status: thinking, at: [0, 0.4] }
+                - { type: activate, node: j2, status: thinking, at: [0, 0.4] }
+                - { type: activate, node: j3, status: thinking, at: [0, 0.4] }
+                - { type: send, edge: v1, token: { kind: result, label: pass }, at: [0.4, 0.9] }
+                - { type: send, edge: v2, token: { kind: result, label: pass }, at: [0.4, 0.9] }
+                - { type: send, edge: v3, token: { kind: feedback, label: fail }, at: [0.4, 0.9] }
+            - id: pool
+              caption: The majority says pass. The dissent is recorded, and the case goes into the report.
+              duration: 2400
+              events:
+                - { type: activate, node: pool, status: thinking, at: [0, 0.4] }
+                - { type: send, edge: result, token: { kind: result, label: pass 2/3 }, at: [0.4, 0.9] }
+                - { type: activate, node: out, status: done, at: [0.8, 1] }
+        - id: outvoted
+          label: A biased judge is outvoted
+          steps:
+            - id: run
+              caption: Another reply goes to all three judges. It is long and confident, but wrong about the refund policy.
+              duration: 2600
+              events:
+                - { type: send, edge: cases, token: { kind: prompt, label: case 40 }, at: [0, 0.4] }
+                - { type: send, edge: to-j1, token: { kind: result, label: reply }, at: [0.5, 1] }
+                - { type: send, edge: to-j2, token: { kind: result, label: reply }, at: [0.5, 1] }
+                - { type: send, edge: to-j3, token: { kind: result, label: reply }, at: [0.5, 1] }
+            - id: vote
+              caption: Judge 1 is swayed by the length and passes it; the other two catch the policy error.
+              duration: 3000
+              events:
+                - { type: activate, node: j1, status: error, at: [0, 0.4] }
+                - { type: activate, node: j2, status: thinking, at: [0, 0.4] }
+                - { type: activate, node: j3, status: thinking, at: [0, 0.4] }
+                - { type: send, edge: v1, token: { kind: result, label: pass }, at: [0.4, 0.9] }
+                - { type: send, edge: v2, token: { kind: feedback, label: fail }, at: [0.4, 0.9] }
+                - { type: send, edge: v3, token: { kind: feedback, label: fail }, at: [0.4, 0.9] }
+            - id: pool
+              caption: The panel fails the reply 2 to 1, so one judge's bias does not decide the result.
+              duration: 2400
+              events:
+                - { type: activate, node: pool, status: thinking, at: [0, 0.4] }
+                - { type: send, edge: result, token: { kind: feedback, label: fail 2/3 }, at: [0.4, 0.9] }
+                - { type: activate, node: out, status: done, at: [0.8, 1] }
+  - id: agent-as-judge
+    name: Agent-as-a-Judge
+    summary: "The judge is an agent with tools that inspects the files and the step-by-step trace an agent produced, checking each requirement against evidence."
+    origin:
+      by: Mingchen Zhuge et al.
+      org: Meta AI, KAUST
+      year: 2024
+      url: https://arxiv.org/abs/2410.10934
+      kind: introduced
+      note: "Applied to code generation on the DevAI benchmark (55 tasks, 365 requirements), the agent judge did far better than an LLM judge and was about as reliable as the human evaluators."
+    build:
+      goal: "Evaluate an agent's run by giving a judge agent tools to read its workspace and trace, so each requirement gets a met or not-met verdict backed by evidence."
+      steps:
+        - "Write the task's requirements as a numbered checklist, each one specific enough to check, such as 'saves the plot to out/accuracy.png'."
+        - "Run the agent under test on the task, and keep its final workspace (the files it wrote) and its trace of steps and tool calls."
+        - "Give the judge agent read-only tools over the workspace and trace: list and read files, search, and run a file in a sandbox."
+        - "Run the judge with the {{prompt:agent-judge}}, one requirement at a time. It gathers evidence with its tools, then returns met or not met with the evidence it relied on."
+        - "Collect the verdicts into a report: the share of requirements met, and for each failure, the evidence."
+      stop: "Stop after every requirement has a verdict, or the judge has used 15 tool calls on one requirement; then record that requirement as unverified rather than guessing."
+      requirements:
+        - "Give the judge read-only access; a judge that can edit the workspace can change what it is judging."
+        - "Run any code the judge executes in a sandbox with a timeout."
+        - "Require every verdict to cite evidence: a file path and line, a command and its output, or a step in the trace."
+        - "Judge each requirement in its own call, so one failure does not color the rest."
+        - "Add a test with a stub judge and a fake workspace missing out/accuracy.png; assert that requirement's verdict is not met and its evidence names the missing path."
+    prompts:
+      - id: agent-judge
+        title: Agent judge prompt
+        lang: markdown
+        source: |
+          You are checking whether another agent's work meets one requirement. You can
+          inspect its workspace and its trace with your tools; you cannot change them.
+
+          <task>{{task}}</task>
+          <requirement>{{requirement}}</requirement>
+
+          Gather evidence before deciding: read the relevant files, search the trace,
+          and run code if that is the only way to know. Then respond in JSON:
+          {"verdict": "met" | "not_met", "evidence": "file paths, commands and output you relied on"}
+    diagram:
+      nodes:
+        - id: task
+          kind: io
+          label: Task
+          description: "The development task given to the agent under test, such as 'Train a classifier on this dataset and plot its accuracy'."
+        - id: system
+          kind: agent
+          label: Coding agent
+          sublabel: under test
+          description: "The agent being evaluated. It does the task, leaving files and a trace of every step it took."
+        - id: workspace
+          kind: memory
+          label: Workspace
+          sublabel: files + trace
+          description: "Everything the agent left behind: the files it wrote and the log of its steps and tool calls."
+        - id: reqs
+          kind: memory
+          label: Requirements
+          description: "The task's checklist, such as 'loads data from data/train.csv' and 'saves the plot to out/accuracy.png'."
+        - id: judge
+          kind: agent
+          label: Judge agent
+          description: "An agent with read-only tools. It checks each requirement by gathering evidence before deciding."
+        - id: tools
+          kind: tool
+          label: Inspect tools
+          sublabel: read, search, run
+          description: "Read-only tools over the workspace: list and read files, search the trace, run a script in a sandbox."
+        - id: report
+          kind: io
+          label: Verdicts
+          description: "A met or not-met verdict for each requirement, each with the evidence it rests on."
+      edges:
+        - id: assign
+          from: task
+          to: system
+          description: "The task goes to the agent under test."
+          example: "Train a logistic regression on data/train.csv, report test accuracy, and save a plot to out/accuracy.png."
+        - id: work
+          from: system
+          to: workspace
+          label: files + steps
+          description: "The agent's files and its trace of steps are kept for the judge."
+          example: "wrote train.py, out/metrics.json; 23 steps, last: python train.py (exit 0)"
+        - id: checklist
+          from: reqs
+          to: judge
+          style: dashed
+          label: requirement
+          description: "The judge takes one requirement at a time from the checklist."
+          example: "R3: saves the accuracy plot to out/accuracy.png."
+        - id: inspect
+          from: judge
+          to: tools
+          label: inspect
+          description: "The judge calls a tool to find evidence for the current requirement."
+          example: "list_files('out/'); search_trace('savefig')"
+        - id: look
+          from: workspace
+          to: tools
+          style: dashed
+          description: "The tools read the workspace; they cannot write to it."
+          example: "out/: metrics.json. Trace step 19: plt.savefig('accuracy.png')"
+        - id: evidence
+          from: tools
+          to: judge
+          style: loop
+          label: evidence
+          description: "Each tool result returns to the judge, which decides whether it needs more evidence."
+          example: "out/accuracy.png not found. Plot saved to ./accuracy.png at step 19."
+        - id: verdict
+          from: judge
+          to: report
+          label: verdict
+          description: "When it has enough evidence, the judge records a verdict for the requirement."
+          example: '{"verdict": "not_met", "evidence": "out/ has no accuracy.png; step 19 saved it to ./accuracy.png instead."}'
+      scenarios:
+        - id: check
+          label: One requirement met, one not
+          steps:
+            - id: run
+              caption: The coding agent does the task, leaving its files and a trace of its steps in the workspace.
+              duration: 2600
+              events:
+                - { type: send, edge: assign, token: { kind: prompt, label: task }, at: [0, 0.35] }
+                - { type: activate, node: system, status: thinking, at: [0.35, 0.6] }
+                - { type: send, edge: work, token: { kind: result, label: files }, at: [0.6, 0.9] }
+                - { type: write, node: workspace, at: [0.85, 1] }
+            - id: met
+              caption: "The judge checks 'loads data/train.csv': it reads train.py, finds the line, and marks it met."
+              duration: 3400
+              events:
+                - { type: send, edge: checklist, token: { kind: prompt, label: R1 }, at: [0, 0.2] }
+                - { type: send, edge: inspect, token: { kind: tool-call, label: read file }, at: [0.2, 0.4] }
+                - { type: read, node: workspace, at: [0.4, 0.5] }
+                - { type: send, edge: evidence, token: { kind: result, label: line 4 }, at: [0.5, 0.7] }
+                - { type: send, edge: verdict, token: { kind: result, label: R1 met }, at: [0.75, 1] }
+            - id: not-met
+              caption: "For 'saves the plot to out/accuracy.png', the judge finds the plot was saved somewhere else."
+              duration: 3800
+              events:
+                - { type: send, edge: checklist, token: { kind: prompt, label: R3 }, at: [0, 0.15] }
+                - { type: send, edge: inspect, token: { kind: tool-call, label: list out/ }, at: [0.15, 0.3] }
+                - { type: read, node: workspace, at: [0.3, 0.4] }
+                - { type: send, edge: evidence, token: { kind: result, label: not found }, at: [0.4, 0.55] }
+                - { type: send, edge: inspect, token: { kind: tool-call, label: search trace }, at: [0.55, 0.7] }
+                - { type: send, edge: evidence, token: { kind: result, label: step 19 }, at: [0.7, 0.85] }
+                - { type: send, edge: verdict, token: { kind: feedback, label: R3 not met }, at: [0.85, 1] }
+                - { type: activate, node: report, status: done, at: [0.9, 1] }

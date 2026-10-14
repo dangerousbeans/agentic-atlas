@@ -1,0 +1,36 @@
+## Problem
+
+You changed the support bot's prompt, and you need to know whether it got better or worse before it ships. The replies are open-ended text, so there is no exact answer to compare against, and reading 200 of them by hand on every change does not scale. Without a repeatable score, prompt changes ship on a few spot checks, and regressions show up as customer complaints.
+
+## How it works
+
+Use a second model as the grader. A fixed <NodeRef id="dataset">test set</NodeRef> of real customer messages goes through the <NodeRef id="system">support bot</NodeRef> with the change applied. Each message and its reply go to a separate <NodeRef id="judge">judge</NodeRef> model, together with a written <NodeRef id="rubric">rubric</NodeRef> that defines each score from 1 to 5 for helpfulness and policy compliance, with an example of each. The judge explains its reasoning first, then gives a score.
+
+The scores go into a <NodeRef id="report">report</NodeRef>: the mean, the histogram and the lowest-scoring cases with the judge's reasons. On its own, the report is enough to rank candidate prompts. In the example, scores of 4, 5, 2, 5 and so on average 4.0. The <NodeRef id="gate">release gate</NodeRef> compares that with a 3.5 threshold and with the current release's 3.9, and lets the change <NodeRef id="out">ship</NodeRef>. A later change that skips a step in the refund policy averages 3.1, and the gate blocks it, sending the report back with the failing cases.
+
+The judge sits outside the system it grades. It changes nothing about any single reply; it produces a signal you can track across versions. That signal is only as good as the judge's agreement with people, so a person scores a sample now and then, and the report shows how often the judge agrees.
+
+The tabs show three common changes. **Pairwise** compares two versions' replies directly, asking twice with the order swapped, because judges favour whichever reply they see first. **Jury** replaces one large judge with several small judges from different model families and pools their votes. **Agent-as-a-Judge** gives the judge tools, so it can inspect the files and trace an agent left behind instead of reading only its final message.
+
+## When to use
+
+- Outputs are open-ended text where exact-match tests do not apply.
+- Human review cannot keep up with how often you change prompts or models.
+- You want a regression signal on every change, or a ranking of several candidates.
+
+## When to avoid
+
+- An exact check exists. If a unit test, a schema or a string match can decide it, use that.
+- The judge is the same model as the system and likely shares its blind spots.
+- The stakes are high and you have no human-scored sample to calibrate the judge against.
+
+## Trade-offs
+
+A judge makes evaluation cheap enough to run on every change, but its scores are opinions with known biases. Zheng et al. found strong judges agree with people about as often as people agree with each other, and also found that they favour the first answer shown, longer answers and answers from their own model. A rubric with examples, reasoning before the score, swapped orders and a jury all reduce these. Every case costs a model call, so a 200-case run is 200 calls or more; the latency rarely matters because the judge runs offline.
+
+## Failure modes
+
+- **Verbosity bias:** longer, more confident replies score higher regardless of quality. Say in the rubric that length is not quality, and check that scores do not simply track length.
+- **Self-preference:** a judge rates its own model's style higher. Use a judge from a different family, or a jury.
+- **Drifting scale:** a change to the judge prompt or model shifts every score, making old and new runs incomparable. Version the judge with the test set and re-score the baseline when it changes.
+- **Overfitting the judge:** prompts are tuned until the judge is happy, not until users are. Keep a human-scored sample and watch agreement.
