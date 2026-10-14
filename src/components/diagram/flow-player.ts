@@ -105,7 +105,8 @@ class FlowPlayer extends HTMLElement {
     });
     this.addEventListener('keydown', e => {
       const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'BUTTON') return;
+      if (tag === 'INPUT' || tag === 'SELECT') return;
+      if (tag === 'BUTTON' && (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Enter')) return;
       const k = e.key;
       if (k === ' ' || k === 'Spacebar') { e.preventDefault(); this.togglePlay(); }
       else if (k === 'ArrowRight') { e.preventDefault(); this.next(); }

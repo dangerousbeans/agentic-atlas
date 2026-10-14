@@ -46,11 +46,25 @@ test('space on a focused control button toggles exactly once', async ({ page }) 
   await page.goto(url);
   const fp = page.locator('flow-player').first();
   await pause(page);
+  await page.evaluate(() => {
+    (window as any).__toggles = 0;
+    new MutationObserver(() => { (window as any).__toggles++; }).observe(document.querySelector('flow-player')!, { attributes: true, attributeFilter: ['data-playing'] });
+  });
   await page.locator('[data-action="play"]').first().focus();
   await page.keyboard.press('Space');
   await expect(fp).toHaveAttribute('data-playing', 'true');
-  await page.waitForFunction(() => document.querySelector('flow-player')!.getAttribute('data-playing') === 'true');
-  await expect(fp).toHaveAttribute('data-playing', 'true');
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => (window as any).__toggles)).toBe(1);
+});
+
+test('ArrowRight on a focused Next button still steps the player', async ({ page }) => {
+  await page.goto(url);
+  const fp = page.locator('flow-player').first();
+  await pause(page);
+  await page.locator('input[data-scrub]').fill('0');
+  await page.getByRole('button', { name: 'Next step' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(fp).toHaveAttribute('data-step-index', '1', { timeout: 3000 });
 });
 
 test('arrow keys inside the speed select do not step the player', async ({ page }) => {
