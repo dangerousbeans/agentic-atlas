@@ -9,6 +9,8 @@ sources:
     url: https://github.com/openai/openai-cookbook/blob/main/examples/api_request_parallel_processor.py
   - title: "Anthropic docs: Batch processing"
     url: https://platform.claude.com/docs/en/docs/build-with-claude/batch-processing
+  - title: "Introducing the Message Batches API (Anthropic, 2024)"
+    url: https://claude.com/blog/message-batches-api
 related:
   composesWith: [caching, model-fallback, schema-repair]
   confusedWith:
@@ -29,7 +31,7 @@ build:
     - "Load the items into a queue, each with a stable id, and build each request from the {{prompt:classify}}."
     - "Estimate each request's token count, and run a limiter with two token buckets: requests per minute and tokens per minute, set just below your account's limits."
     - "Start a fixed pool of concurrent workers. Each takes the next item, waits until the limiter has capacity for it, and calls the model."
-    - "On a 429 or 5xx, put the item back in the queue with exponential backoff, and pause the whole pool briefly so the other workers do not hit the same limit."
+    - "On a 429 or 5xx, put the item back in the queue with exponential backoff and jitter, and pause the whole pool briefly so the other workers do not hit the same limit."
     - "Parse each reply and write it to the results file under the item's id as soon as it arrives; record items that fail permanently in a separate errors file."
   stop: "Stop when the queue is empty and no worker is busy. Items that fail 5 times go to the errors file with their last error; the run reports counts of succeeded and failed items."
   requirements:
@@ -69,15 +71,15 @@ diagram:
     - id: w1
       kind: llm
       label: Worker 1
-      description: "One of a fixed pool of concurrent workers; each takes the next ticket, calls the model and returns its label."
+      description: "One concurrent call to the model, made by one of a fixed pool of code workers: it takes the next ticket and returns its label."
     - id: w2
       kind: llm
       label: Worker 2
-      description: "A second concurrent worker. When the provider pushes back with a 429, its item goes back to the queue."
+      description: "A second concurrent call to the same model. When the provider pushes back with a 429, its ticket goes back to the queue."
     - id: w3
       kind: llm
       label: Worker 3
-      description: "A third concurrent worker. Real runs use tens of workers; the limiter, not the pool size, sets the pace."
+      description: "A third concurrent call to the same model. Real runs keep tens in flight; the limiter, not the pool size, sets the pace."
     - id: results
       kind: aggregator
       label: Results
@@ -159,14 +161,13 @@ diagram:
 variants:
   - id: provider-batch
     name: Provider batch
-    summary: "Submit every request in one asynchronous batch job; the provider runs it within a day at half price, with no rate-limit handling on your side."
+    summary: "Submit every request in one asynchronous batch job; the provider runs it within a day at half price, with no per-minute throttling on your side."
     origin:
       by: OpenAI and Anthropic
       year: 2024
       url: https://platform.claude.com/docs/en/docs/build-with-claude/batch-processing
       kind: popularized
-      uncertain: true
-      note: "Provider batch APIs (OpenAI's Batch API and Anthropic's Message Batches API, both 2024) made asynchronous bulk inference at a 50% discount a standard option. Launch dates were not verified on the cited page."
+      note: "No single inventor: the OpenAI Batch API (April 2024) and the Anthropic Message Batches API (October 2024) made asynchronous bulk inference at a 50% discount, within 24 hours, a standard option."
     build:
       goal: "Process a large list of independent items through the provider's asynchronous batch API at the batch discount, and match every result back to its item."
       steps:

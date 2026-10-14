@@ -6,7 +6,7 @@ Some jobs are not one hard request but thousands of easy ones: classify 10,000 s
 
 The default tab shows a **throttled fan-out** that you run yourself. The tickets wait in a <NodeRef id="jobs">queue</NodeRef>. A <NodeRef id="limiter">rate limiter</NodeRef> keeps two token buckets, one for requests per minute and one for tokens per minute, set just below the account's limits, and releases a ticket only when both have room. A pool of concurrent workers (<NodeRef id="w1">worker 1</NodeRef>, <NodeRef id="w2">worker 2</NodeRef>, <NodeRef id="w3">worker 3</NodeRef> here, often dozens in practice) each take the next ticket, call the model, and send its label to the <NodeRef id="results">results</NodeRef>.
 
-When the provider still pushes back, as with worker 2's 429 in the example, the ticket goes back through the limiter after an exponential backoff, and the whole pool pauses briefly so the other workers do not hit the same wall. Every result is written to disk under its ticket id as soon as it arrives, so the order in which tickets finish does not matter, and a restarted run can skip what is already done.
+When the provider still pushes back, as with worker 2's 429 in the example, the ticket goes back through the limiter after an exponential backoff with jitter, and the whole pool pauses briefly so the other workers do not hit the same wall. Every result is written to disk under its ticket id as soon as it arrives, so the order in which tickets finish does not matter, and a restarted run can skip what is already done.
 
 If nobody needs the answers for a few hours, there is a simpler and cheaper option: the **provider batch** tab. Most providers accept a whole file of requests as one asynchronous job, run it when they have spare capacity, and charge about half the normal price. Anthropic's documentation says most batches finish within an hour, with a 24-hour limit. You submit, poll, download, and resubmit the few requests that errored.
 
@@ -24,7 +24,7 @@ If nobody needs the answers for a few hours, there is a simpler and cheaper opti
 
 ## Trade-offs
 
-The throttled fan-out is as fast as your rate limits allow, but you own the limiter, the retries and the bookkeeping, and you pay full price. The provider batch halves the cost and removes the rate-limit handling, but you give up control of timing: results arrive when the provider is done, and a busy period can push a batch towards its deadline. Both trade per-item latency for throughput, and both need results matched by id rather than by order.
+The throttled fan-out is as fast as your rate limits allow, but you own the limiter, the retries and the bookkeeping, and you pay full price. The provider batch halves the cost and removes the per-minute throttling, though batch APIs still limit batch size and queued requests, but you give up control of timing: results arrive when the provider is done, and a busy period can push a batch towards its deadline. Both trade per-item latency for throughput, and both need results matched by id rather than by order.
 
 ## Failure modes
 
