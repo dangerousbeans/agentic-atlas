@@ -4,6 +4,7 @@ import { layoutDiagram } from '../../lib/diagram/layout';
 import { compileDiagram } from '../../lib/diagram/compile';
 import { KIND_LABEL, nodeDescription, edgeDescription, edgeTitle, nodeMap } from '../../lib/diagram/kinds';
 import DiagramSvg from './DiagramSvg.astro';
+import Frame from '../site/Frame.astro';
 import './diagram.css';
 interface Props { uid: string; spec: DiagramSpec; title: string; compact?: boolean }
 const { uid, spec, title, compact = false } = Astro.props;
@@ -15,12 +16,22 @@ const timelines = compileDiagram(spec);
 const lean = { ...spec, nodes: spec.nodes.map(({ description, ...n }) => n), edges: spec.edges.map(({ description, example, ...e }) => e) };
 const payload = JSON.stringify({ spec: lean, timelines }).replace(/</g, '\\u003c');
 const labels = nodeMap(spec);
+// Full diagrams sit in the viewfinder frame (Frame.astro). Only the stage is framed: tabs, caption, steps and parts
+// follow below it, so the corner brackets never sit on the controls. Pages must not wrap Diagram in another Frame.
 ---
 <flow-player data-uid={uid} compact={compact ? '' : undefined} class:list={['diagram', { 'diagram--compact': compact }]}>
-  <div class="diagram-stage">
-    <DiagramSvg uid={uid} spec={spec} layout={wide} variant="wide" title={title} compact={compact} />
-    {narrow && <DiagramSvg uid={uid} spec={spec} layout={narrow} variant="narrow" title={title} compact={compact} />}
-  </div>
+  {compact ? (
+    <div class="diagram-stage">
+      <DiagramSvg uid={uid} spec={spec} layout={wide} variant="wide" title={title} compact />
+    </div>
+  ) : (
+    <Frame class="diagram-frame">
+      <div class="diagram-stage">
+        <DiagramSvg uid={uid} spec={spec} layout={wide} variant="wide" title={title} />
+        {narrow && <DiagramSvg uid={uid} spec={spec} layout={narrow} variant="narrow" title={title} />}
+      </div>
+    </Frame>
+  )}
   {!compact && (
     <>
       {timelines.length > 1 && (

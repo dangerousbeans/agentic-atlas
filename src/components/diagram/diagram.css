@@ -1,5 +1,22 @@
-flow-player { display: block; --accent: var(--family-accent); }
-.diagram-stage { position: relative; border: 1px solid var(--line); border-radius: 18px; background: radial-gradient(ellipse at 50% 40%, color-mix(in oklab, var(--accent) 7%, var(--bg-1)) 0%, var(--bg) 75%); padding: 12px; container-type: inline-size; overflow-x: auto; }
+/*
+ * Diagram styling, "instrument" direction (addendum §1): warm black, cream hairlines, one red accent with a glow.
+ * Every colour comes from the design tokens; the player only sets data-state / data-kind attributes.
+ */
+flow-player {
+  display: block;
+  /* diagram palette, derived from the global tokens */
+  --dg-ink: var(--text);                                          /* cream hairlines: nodes, done edges */
+  --dg-ink-2: color-mix(in oklab, var(--text) 72%, var(--bg));   /* idle node strokes */
+  --dg-edge: color-mix(in oklab, var(--text) 42%, var(--bg));    /* idle edges: cream at low opacity, still >= 3:1 (WCAG 1.4.11) */
+  --dg-edge-trav: color-mix(in oklab, var(--text) 66%, var(--bg)); /* traversed edges: cream at medium opacity */
+  --dg-hot: var(--accent);                                        /* active / thinking: red */
+  --dg-glow-c: rgb(255 59 48 / 0.6);
+  --dg-glow: drop-shadow(0 0 2px var(--dg-glow-c)) drop-shadow(0 0 7px rgb(255 59 48 / 0.35));
+  --dg-glow-ink: drop-shadow(0 0 1.5px rgb(244 237 231 / 0.35));
+}
+
+/* --- stage --- */
+.diagram-stage { position: relative; border: 0; border-radius: 0; background: var(--bg); padding: 20px 16px; container-type: inline-size; overflow-x: auto; }
 .diagram-svg { display: block; width: 100%; height: auto; max-height: 70vh; overflow: visible; }
 .diagram-svg[data-layout="narrow"] { display: none; }
 @container (max-width: 640px) {
@@ -8,113 +25,131 @@ flow-player { display: block; --accent: var(--family-accent); }
   /* compact thumbnails only have the wide layout, drawn without text so it reads at card size */
   .diagram--compact .diagram-svg[data-layout="wide"] { display: block; }
 }
-@media (max-width: 700px) { .diagram-stage { padding: 8px; } }
+@media (max-width: 700px) { .diagram-stage { padding: 14px 8px; } }
 /* scroll affordance when a narrow diagram is wider than the stage (set by flow-player) */
-.diagram-stage { --more-l: none; --more-r: none; background: var(--more-l), var(--more-r), radial-gradient(ellipse at 50% 40%, color-mix(in oklab, var(--accent) 7%, var(--bg-1)) 0%, var(--bg) 75%); scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--accent) 50%, transparent) transparent; }
-.diagram-stage[data-more-left] { --more-l: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 18'%3E%3Cpath d='M8 2L2 9l6 7' fill='none' stroke='%23C9CDE0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") left 6px center / 10px 18px no-repeat, linear-gradient(to right, color-mix(in oklab, var(--accent) 26%, transparent), transparent) left / 44px 100% no-repeat; }
-.diagram-stage[data-more-right] { --more-r: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 18'%3E%3Cpath d='M2 2l6 7-6 7' fill='none' stroke='%23C9CDE0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") right 6px center / 10px 18px no-repeat, linear-gradient(to left, color-mix(in oklab, var(--accent) 26%, transparent), transparent) right / 44px 100% no-repeat; }
-.diagram--compact .diagram-stage { padding: 6px; border-radius: 12px; }
+.diagram-stage { --more-l: none; --more-r: none; background: var(--more-l), var(--more-r), var(--bg); scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.diagram-stage[data-more-left] { --more-l: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 18'%3E%3Cpath d='M8 2L2 9l6 7' fill='none' stroke='%23F4EDE7' stroke-width='1.5' stroke-linecap='square'/%3E%3C/svg%3E") left 6px center / 10px 18px no-repeat, linear-gradient(to right, color-mix(in oklab, var(--text) 6%, transparent), transparent) left / 32px 100% no-repeat; }
+.diagram-stage[data-more-right] { --more-r: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 18'%3E%3Cpath d='M2 2l6 7-6 7' fill='none' stroke='%23F4EDE7' stroke-width='1.5' stroke-linecap='square'/%3E%3C/svg%3E") right 6px center / 10px 18px no-repeat, linear-gradient(to left, color-mix(in oklab, var(--text) 6%, transparent), transparent) right / 32px 100% no-repeat; }
+/* the viewfinder frame (Frame.astro) owns the hairline around a full diagram */
+.diagram-frame { --frame-pad: 0; }
+.diagram--compact .diagram-stage { padding: 6px; border: 1px solid var(--line); }
 .diagram--compact .diagram-svg { max-height: 180px; }
 .diagram--compact .token text { display: none; }
 
-.halo-stop-a { stop-color: var(--accent); stop-opacity: 0.55; }
-.halo-stop-b { stop-color: var(--accent); stop-opacity: 0; }
-.node .halo { fill: var(--halo); opacity: 0.18; transition: opacity 0.3s; }
-.node .shape { fill: var(--bg); stroke: var(--accent); stroke-width: 1.5; transition: stroke 0.3s, fill 0.3s, stroke-width 0.3s; }
-.node .shape.io { fill: var(--text-2); stroke: none; }
-.node .shape-inner { fill: none; stroke: var(--accent); stroke-width: 1; opacity: 0.6; }
-.node .glyph { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-.node .label { font: 500 11px var(--font-ui); letter-spacing: 0.06em; text-transform: uppercase; fill: var(--text-2); transition: fill 0.3s; }
+/* --- nodes: cream hairlines; red with a glow while working --- */
+.halo-stop-a { stop-color: var(--dg-hot); stop-opacity: 0.45; }
+.halo-stop-b { stop-color: var(--dg-hot); stop-opacity: 0; }
+.node .halo { fill: var(--halo); opacity: 0; transition: opacity 0.3s; }
+.node .shape { fill: var(--bg); stroke: var(--dg-ink-2); stroke-width: 1.25; transition: stroke 0.3s, fill 0.3s, stroke-width 0.3s, filter 0.3s; }
+.node .shape.io { fill: var(--text-3); stroke: none; }
+.node .shape-inner { fill: none; stroke: var(--dg-ink-2); stroke-width: 1; opacity: 0.55; transition: stroke 0.3s; }
+.node .glyph { fill: none; stroke: var(--dg-ink-2); stroke-width: 1.4; stroke-linecap: square; stroke-linejoin: miter; transition: stroke 0.3s; }
+.node .label { font: 500 10.5px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; fill: var(--text-2); transition: fill 0.3s; }
 .node .sublabel { font: 400 10px var(--font-mono); fill: var(--text-3); }
 .node { transition: opacity 0.4s; }
-.node[data-state="active"] .halo, .node[data-state="thinking"] .halo, .node[data-state="calling"] .halo { opacity: 0.9; }
-.node[data-state="active"] .shape, .node[data-state="thinking"] .shape, .node[data-state="calling"] .shape { stroke-width: 2.4; }
-.node[data-state="active"] .label, .node[data-state="thinking"] .label, .node[data-state="calling"] .label { fill: var(--text); }
+.node:is([data-state="active"], [data-state="thinking"], [data-state="calling"]) .halo { opacity: 0.55; }
+.node:is([data-state="active"], [data-state="thinking"], [data-state="calling"]) .shape { stroke: var(--dg-hot); stroke-width: 1.6; filter: var(--dg-glow); }
+.node:is([data-state="active"], [data-state="thinking"], [data-state="calling"]) :is(.glyph, .shape-inner) { stroke: var(--dg-hot); }
+.node:is([data-state="active"], [data-state="thinking"], [data-state="calling"]) .shape.io { fill: var(--dg-ink); filter: var(--dg-glow); }
+.node:is([data-state="active"], [data-state="thinking"], [data-state="calling"]) .label { fill: var(--text); }
 .node[data-state="thinking"] .halo { animation: think 1.1s ease-in-out infinite; }
-@keyframes think { 50% { opacity: 0.45; } }
-.node[data-state="waiting"] .shape { stroke-dasharray: 4 4; stroke: var(--text); }
-.node[data-state="done"] .shape { fill: color-mix(in oklab, var(--accent) 16%, var(--bg)); }
-.node[data-state="done"] .shape.io { fill: var(--text); }
-.node[data-state="error"] .shape { stroke: var(--danger); fill: color-mix(in oklab, var(--danger) 14%, var(--bg)); }
+@keyframes think { 50% { opacity: 0.2; } }
+.node[data-state="waiting"] .shape { stroke-dasharray: 3 3; stroke: var(--dg-ink); }
+.node[data-state="done"] .shape { stroke: var(--dg-ink); filter: var(--dg-glow-ink); }
+.node[data-state="done"] :is(.glyph, .shape-inner) { stroke: var(--dg-ink); }
+.node[data-state="done"] .shape.io { fill: var(--dg-ink); }
+.node[data-state="done"] .label { fill: var(--text); }
+.node[data-state="error"] .shape { stroke: var(--dg-hot); stroke-dasharray: 3 3; fill: color-mix(in oklab, var(--dg-hot) 12%, var(--bg)); }
 .node[data-state="error"] .halo { opacity: 0; }
 .node[data-state="dim"] { opacity: 0.28; }
 .node[data-state="hidden"] { opacity: 0; }
-.node.is-ref .halo { opacity: 1; }
-.node.is-ref .label { fill: var(--accent); }
+.node.is-ref .halo { opacity: 0.7; }
+.node.is-ref .shape { stroke: var(--dg-hot); filter: var(--dg-glow); }
+.node.is-ref .label { fill: var(--dg-hot); }
+@media (prefers-reduced-motion: reduce) { .node[data-state="thinking"] .halo { animation: none; } }
 
-.edge { fill: none; stroke: var(--line-strong); stroke-width: 1.2; transition: stroke 0.3s, opacity 0.3s, stroke-width 0.3s; }
-.edge--dashed, .edge--loop { stroke-dasharray: 3 5; }
-.edge--loop { stroke: color-mix(in oklab, var(--accent) 45%, var(--line)); }
-.edge[data-state="active"] { stroke: var(--accent); stroke-width: 1.8; }
-.edge[data-state="traversed"] { stroke: color-mix(in oklab, var(--accent) 55%, var(--line-strong)); }
+/* --- edges: cream at low opacity, red when active, cream at medium opacity once traversed --- */
+.edge { fill: none; stroke: var(--dg-edge); stroke-width: 1; transition: stroke 0.3s, opacity 0.3s, stroke-width 0.3s; }
+.edge--dashed, .edge--loop { stroke-dasharray: 3 4; }
+.edge--dashed[data-state="idle"], .edge--loop[data-state="idle"] { stroke: color-mix(in oklab, var(--text) 50%, var(--bg)); }
+.edge[data-state="active"] { stroke: var(--dg-hot); stroke-width: 1.5; filter: var(--dg-glow); }
+.edge[data-state="traversed"] { stroke: var(--dg-edge-trav); }
 .edge[data-state="dim"] { opacity: 0.2; }
 .edge--pending[data-state="idle"], .edge-label.edge--pending[data-state="idle"] { opacity: 0.12; }
-.arrow { fill: var(--line-strong); }
-.edge-label { font: italic 400 14px var(--font-display); fill: var(--text-2); }
-.edge-label--loop { fill: var(--accent); }
-.group rect { fill: color-mix(in oklab, var(--accent) 4%, transparent); stroke: var(--line); stroke-dasharray: 4 4; }
-.group text { font: 500 10px var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase; fill: var(--text-3); }
+.arrow { fill: var(--dg-edge-trav); fill: context-stroke; } /* arrowheads follow their edge's state colour */
+/* labels: mono uppercase small caps (replaces italic) */
+.edge-label { font: 500 10.5px var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; fill: var(--text-2); transition: fill 0.3s; }
+.edge-label[data-state="active"] { fill: var(--text); }
+.edge-label--loop { fill: var(--dg-hot); }
+.group rect { fill: none; stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 2 4; }
+.group text { font: 500 10px var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; fill: var(--text-3); }
 
-.token .head { fill: #FFF3DC; }
-.token .trail { fill: var(--tok); }
-.token[data-kind="prompt"] { --tok: #FFF3DC; }
-.token[data-kind="tool-call"] { --tok: #22D3EE; }
-.token[data-kind="result"] { --tok: var(--accent); }
-.token[data-kind="feedback"] { --tok: #FB7185; }
-.token[data-kind="tokens"] { --tok: #A78BFA; }
-.token .head { filter: drop-shadow(0 0 4px var(--tok)) drop-shadow(0 0 10px var(--tok)); }
-.token text { font: 500 10px var(--font-mono); fill: var(--text); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+/* --- tokens: cream comet heads with red trails --- */
+.token .head { fill: #FFF8F2; filter: drop-shadow(0 0 2px rgb(255 59 48 / 0.95)) drop-shadow(0 0 7px rgb(255 59 48 / 0.6)); }
+.token .trail { fill: color-mix(in oklab, var(--dg-hot) 75%, #FFF8F2); filter: blur(0.8px) drop-shadow(0 0 3px rgb(255 59 48 / 0.9)); }
+/* the trail swells toward the head so it reads as a comet over a red (active) edge */
+.token .trail:nth-child(1) { r: 1.6px; }
+.token .trail:nth-child(2) { r: 2.4px; }
+.token .trail:nth-child(3) { r: 3.2px; }
+.token text { font: 500 10px var(--font-mono); letter-spacing: 0.02em; fill: var(--text); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+.diagram--compact .token .head { filter: drop-shadow(0 0 3px rgb(255 59 48 / 0.9)); }
 
-.fp-caption { min-height: 3.2em; margin: 12px 0 0; font-size: 17px; color: var(--text); }
+/* --- caption, steps, tabs, parts --- */
+.fp-caption { min-height: 3.2em; margin: 16px 0 0; font-size: 17px; line-height: 1.5; color: var(--text); }
 flow-player:not(.is-enhanced) .fp-caption { display: none; }
 .fp-steps { margin-top: 12px; color: var(--text-2); font-size: 14px; }
-.fp-steps summary { cursor: pointer; color: var(--text-3); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; }
+.fp-steps summary, .fp-parts summary { cursor: pointer; color: var(--text-2); font: 500 11px/1.6 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.fp-steps summary:hover, .fp-parts summary:hover { color: var(--text); }
 .fp-steps li[aria-current="step"] { color: var(--text); }
+.fp-steps li::marker { font-family: var(--font-mono); font-size: 12px; color: var(--text-3); }
 .fp-steps li[aria-current="step"]::marker { color: var(--accent); }
 flow-player.is-enhanced .fp-scenario-steps[data-inactive] { display: none; }
+/* Before the first tab pick nothing carries data-inactive yet: show only the first scenario's list. */
+flow-player.is-enhanced:not(:has(.fp-scenario-steps[data-inactive])) .fp-scenario-steps[data-alt] { display: none; }
 .fp-scenario-title { font: 500 13px var(--font-ui); color: var(--text); margin: 12px 0 4px; }
 
 /* --- explore mode: step navigation, tabs, parts list --- */
 .fp-steps li { list-style-position: outside; }
-.fp-steps li button { all: unset; box-sizing: border-box; cursor: pointer; padding: 3px 8px; margin: 0 -8px; border-radius: 8px; color: inherit; display: inline-block; }
-.fp-steps li button:hover { color: var(--text); background: color-mix(in oklab, var(--accent) 8%, transparent); }
+.fp-steps li button { all: unset; box-sizing: border-box; cursor: pointer; padding: 3px 8px; margin: 0 -8px; border-radius: 0; color: inherit; display: block; } /* block, so the number marker sits on the first line */
+.fp-steps li button:hover { color: var(--text); background: var(--bg-1); }
+.fp-steps li[aria-current="step"] button { box-shadow: inset 2px 0 0 var(--accent); }
 .fp-steps li button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 flow-player:not(.is-enhanced) .fp-steps li button { cursor: default; }
-.fp-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.fp-tabs { display: flex; flex-wrap: wrap; gap: 0; margin-top: 16px; }
 .fp-tabs[hidden] { display: none; }
-.fp-tabs button { font: 500 13px var(--font-ui); padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg-1); color: var(--text-2); cursor: pointer; }
-.fp-tabs button:hover { border-color: var(--accent); color: var(--text); }
-.fp-tabs button[aria-selected="true"] { border-color: var(--accent); color: var(--text); background: color-mix(in oklab, var(--accent) 14%, var(--bg-1)); }
-.fp-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fp-tabs button { font: 500 13px var(--font-ui); padding: 7px 14px; border-radius: 0; border: 1px solid var(--line); background: transparent; color: var(--text-2); cursor: pointer; margin-right: -1px; }
+.fp-tabs button:hover { color: var(--text); border-color: var(--line-strong); position: relative; }
+.fp-tabs button[aria-selected="true"] { color: var(--text); background: var(--bg-1); box-shadow: inset 0 -2px 0 var(--accent); }
+.fp-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; position: relative; z-index: 1; }
 .fp-parts { margin-top: 8px; color: var(--text-2); font-size: 14px; }
-.fp-parts summary { cursor: pointer; color: var(--text-3); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; }
 .fp-parts dl { margin: 10px 0 0; display: grid; gap: 10px; }
 .fp-parts dt { color: var(--text); font-weight: 500; }
 .fp-parts dd { margin: 2px 0 0; }
-.part-kind { margin-left: 8px; font: 500 10px var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.part-kind { margin-left: 8px; font: 500 10px var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .part-ex { display: block; margin-top: 4px; padding: 4px 10px; border-left: 2px solid var(--accent); background: var(--bg-2); font: 12px/1.5 var(--font-mono); quotes: none; }
 
 /* --- hover / focus exploration --- */
 .node[tabindex] { cursor: help; outline: none; }
 .node[data-state="hidden"] { pointer-events: none; }
-.node:focus-visible .shape { stroke-width: 3; stroke: var(--text); }
-.node:focus-visible .halo { opacity: 1; }
-.node.is-hover .halo { opacity: 1; }
-.node.is-hover .shape { stroke-width: 2.6; }
+.node:focus-visible .shape { stroke-width: 2; stroke: var(--dg-ink); filter: var(--dg-glow-ink); }
+.node:focus-visible .label { fill: var(--text); text-decoration: underline; text-decoration-color: var(--accent); }
+.node.is-hover .shape { stroke: var(--dg-ink); stroke-width: 1.8; filter: drop-shadow(0 0 4px rgb(244 237 231 / 0.45)); }
+.node.is-hover :is(.glyph, .shape-inner) { stroke: var(--dg-ink); }
 .node.is-hover .label { fill: var(--text); }
 .edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: help; }
-.edge.is-hover { stroke: var(--accent); stroke-width: 2.4; filter: drop-shadow(0 0 4px var(--accent)); }
+.edge.is-hover { stroke: var(--dg-hot); stroke-width: 1.8; filter: var(--dg-glow); }
 .edge-label.is-hover { fill: var(--text); }
 flow-player.has-focus .edge:not(.is-rel), flow-player.has-focus .edge-label:not(.is-rel) { opacity: 0.22; }
 
-.fp-tip { position: fixed; z-index: 50; left: 0; top: 0; max-width: min(320px, calc(100vw - 16px)); padding: 12px 14px; border-radius: 12px; border: 1px solid color-mix(in oklab, var(--accent) 40%, var(--line)); background: color-mix(in oklab, var(--bg-1) 94%, transparent); backdrop-filter: blur(8px); box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.3), 0 0 24px -6px var(--accent); pointer-events: auto; opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity 0.12s, transform 0.12s, visibility 0.12s; }
+/* --- tooltip: sharp, bg-1, hairline border, red top rule --- */
+.fp-tip { position: fixed; z-index: 50; left: 0; top: 0; max-width: min(320px, calc(100vw - 16px)); padding: 12px 14px 13px; border-radius: 0; border: 1px solid var(--line-strong); border-top: 2px solid var(--accent); background: var(--bg-1); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6); pointer-events: auto; opacity: 0; visibility: hidden; transform: translateY(4px); transition: opacity 0.12s, transform 0.12s, visibility 0.12s; }
 .fp-tip.is-on { opacity: 1; visibility: visible; transform: none; }
-.fp-tip-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.fp-tip-t { font: 400 20px/1.1 var(--font-display); color: var(--text); }
-.fp-tip-k { font: 500 10px/1 var(--font-ui); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); padding: 4px 8px; border-radius: 999px; border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent); background: color-mix(in oklab, var(--accent) 10%, transparent); }
+.fp-tip-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; }
+.fp-tip-t { font: 700 15px/1.25 var(--font-ui); letter-spacing: -0.005em; color: var(--text); }
+.fp-tip-k { font: 500 10px/1.2 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
 .fp-tip-k:empty, .fp-tip-x:empty { display: none; }
 .fp-tip-d { margin: 6px 0 0; font: 400 13.5px/1.45 var(--font-ui); color: var(--text-2); }
-.fp-tip-x { margin: 8px 0 0; padding: 6px 10px; border-left: 2px solid var(--accent); border-radius: 0 6px 6px 0; background: var(--bg-2); font: 400 12px/1.5 var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+.fp-tip-x { margin: 10px 0 0; padding: 6px 10px; border-left: 2px solid var(--accent); background: var(--bg-2); font: 400 12px/1.5 var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { .fp-tip { transition: none; transform: none; } }
 /* With tabs present the active tab names the panel, so the in-panel title is redundant. */
 flow-player.is-enhanced .fp-scenario-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
