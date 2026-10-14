@@ -1,7 +1,7 @@
 slug: model-cascade
 name: Model Cascade
 family: efficiency-cost
-aliases: [LLM cascade, FrugalGPT, Escalation ladder, Difficulty-based routing]
+aliases: [LLM cascade, FrugalGPT, Escalation ladder, Cheap-first escalation]
 summary: Try the cheapest model first; a scorer checks the answer and escalates to a stronger, pricier model only when confidence is low.
 badges: { autonomy: low, cost: low, latency: medium }
 sources:
@@ -31,7 +31,7 @@ build:
   steps:
     - "Configure an ordered list of models from cheapest to most capable, each with a score threshold; the last rung has no threshold."
     - "Call the cheapest model with the {{prompt:answer}}."
-    - "Score the answer with the {{prompt:scorer}} on a cheap model (or with a small trained classifier), getting a number from 0 to 1."
+    - "Score the answer from 0 to 1. FrugalGPT uses a small trained scorer; until you have labelled data, use the {{prompt:scorer}} on a cheap model, and calibrate its self-reported scores before trusting a threshold."
     - "If the score meets the rung's threshold, return the answer. Otherwise call the next model up with the same prompt and score again."
     - "Return the last rung's answer without scoring it, and record which rung answered and the total cost of the request."
   stop: "Stop at the first answer that meets its threshold, or after the top model answers. If a scorer call fails, treat the score as 0 and escalate, so a broken scorer costs money rather than quality."
@@ -128,7 +128,7 @@ diagram:
             - { type: send, edge: in, token: { kind: prompt, label: question }, at: [0, 0.5] }
             - { type: activate, node: small, status: thinking, at: [0.5, 1] }
         - id: pass
-          caption: The scorer rates the answer 0.93, so it ships. Cost so far, $0.0002; the large model is never called.
+          caption: The scorer rates the answer 0.93, so it ships. Answer-model cost, $0.0002, plus a fraction of a cent for the scorer; the large model is never called.
           duration: 2600
           events:
             - { type: send, edge: draft, token: { kind: result, label: answer }, at: [0, 0.35] }
@@ -153,7 +153,7 @@ diagram:
             - { type: branch, node: scorer, taken: escalate, notTaken: [ok], at: [0.5, 0.6] }
             - { type: send, edge: escalate, token: { kind: feedback, label: "0.41" }, at: [0.6, 1] }
         - id: large
-          caption: The large model works out the firmware and DFS cause. Total cost about $0.03; the cheap attempt was wasted, but small.
+          caption: The large model works out the firmware and DFS cause. Answer-model cost is now about $0.03, plus the scorer; the cheap attempt was wasted, but small.
           duration: 2800
           events:
             - { type: activate, node: large, status: thinking, at: [0, 0.45] }
@@ -287,7 +287,7 @@ variants:
                 - { type: activate, node: out, status: done, at: [0.9, 1] }
   - id: draft-and-verify
     name: Draft and verify
-    summary: "The small model always drafts; the large model reads the draft and either accepts it or rewrites it, in one pass."
+    summary: "The small model always drafts; the large model accepts or rewrites it. Unlike speculative decoding, this saves money but costs time: two calls in sequence."
     origin:
       by: Yaniv Leviathan et al.
       org: Google Research
@@ -295,7 +295,7 @@ variants:
       url: https://arxiv.org/abs/2211.17192
       kind: introduced
       uncertain: true
-      note: "An agent-level analogue of speculative decoding, in which a small model drafts tokens and a large one verifies them inside the inference server. No single paper introduced the call-level version."
+      note: "Inspired by speculative decoding (Leviathan et al., 2022), which works inside the inference server, is lossless and saves time. No paper introduced this call-level version, which is lossy (the accept is a judgement), saves money and adds latency."
     build:
       goal: "Have a cheap model draft every answer and a strong model verify it in one call, accepting the draft unchanged when it is right and rewriting it only when it is not."
       steps:
@@ -303,7 +303,7 @@ variants:
         - "Call the large model with the {{prompt:verify}}, passing the question, the documents and the draft."
         - "Parse its JSON reply. If verdict is accept, return the draft; if it is rewrite, return the large model's answer instead."
         - "Record the verdict, so you can track how often drafts are accepted."
-      stop: "Every query makes exactly two calls. If the verifier's reply cannot be parsed, retry once, then return the draft flagged as unverified."
+      stop: "Every query makes two calls (three if the verifier's reply is retried). If the verifier's reply cannot be parsed, retry once, then return the draft flagged as unverified."
       requirements:
         - "Keep the verifier's output short when it accepts: accepting must cost far fewer output tokens than rewriting, or the pattern saves nothing."
         - "Track the acceptance rate; below about half, call the large model directly instead."
